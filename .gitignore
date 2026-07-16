@@ -60,3 +60,7 @@ cmake_install.cmake
 # Editor/IDE
 .cache/
 compile_commands.json
+
+# Python cache
+__pycache__/
+*.pyc
