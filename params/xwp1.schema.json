@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://casio-editor/params/xwp1.schema.json",
+  "title": "Casio XW-P1 parameter map",
+  "description": "Single source of truth for the XW-P1 SysEx parameter map. Consumed by the C++ codec (Chunk 5) and the JUCE UI. Derived from the CTRLR panel Lua (reference/lua/).",
+  "type": "object",
+  "required": ["device", "sysex", "addressLayout", "valueTypes", "enums", "sections"],
+  "additionalProperties": true,
+  "properties": {
+    "$schema": {"type": "string"},
+    "device": {"type": "string"},
+    "generatedFrom": {"type": "string"},
+    "sysex": {
+      "type": "object",
+      "required": ["manufacturerId", "modelId", "deviceId", "frame", "acts", "checksum"],
+      "additionalProperties": false,
+      "properties": {
+        "manufacturerId": {"type": "string", "pattern": "^0x[0-9A-Fa-f]{2}$"},
+        "modelId": {"type": "array", "items": {"type": "string", "pattern": "^0x[0-9A-Fa-f]{2}$"}, "minItems": 2, "maxItems": 2},
+        "deviceId": {"type": "string", "pattern": "^0x[0-9A-Fa-f]{2}$"},
+        "frame": {"type": "string"},
+        "acts": {
+          "type": "object",
+          "required": ["request", "set", "reject"],
+          "additionalProperties": false,
+          "properties": {
+            "request": {"type": "integer"},
+            "set": {"type": "integer"},
+            "reject": {"type": "integer"}
+          }
+        },
+        "checksum": {"type": "string"}
+      }
+    },
+    "addressLayout": {
+      "type": "object",
+      "required": ["totalBytes", "fields"],
+      "properties": {
+        "totalBytes": {"type": "integer", "const": 18},
+        "note": {"type": "string"},
+        "luaRef": {"type": "string"},
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["offset", "len", "name"],
+            "properties": {
+              "offset": {"type": "integer", "minimum": 0, "maximum": 17},
+              "len": {"type": "integer", "minimum": 1},
+              "name": {"type": "string"},
+              "desc": {"type": "string"},
+              "value": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "valueTypes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["bytes", "signed", "desc", "luaRef"],
+        "additionalProperties": false,
+        "properties": {
+          "bytes": {"type": "integer", "minimum": 1, "maximum": 3},
+          "signed": {"type": "boolean"},
+          "wireOrder": {"type": "string"},
+          "desc": {"type": "string"},
+          "luaRef": {"type": "string"}
+        }
+      }
+    },
+    "enums": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["value", "label"],
+          "additionalProperties": false,
+          "properties": {
+            "value": {"type": "integer"},
+            "label": {"type": "string"}
+          }
+        }
+      }
+    },
+    "sections": {
+      "type": "object",
+      "required": ["soloSynth"],
+      "additionalProperties": {"$ref": "#/$defs/section"},
+      "properties": {
+        "soloSynth": {"$ref": "#/$defs/section"}
+      }
+    }
+  },
+  "$defs": {
+    "section": {
+      "type": "object",
+      "required": ["status", "params"],
+      "additionalProperties": true,
+      "properties": {
+        "category": {"type": "string", "pattern": "^0x[0-9A-Fa-f]{2}$"},
+        "status": {"type": "string", "enum": ["complete", "stub", "partial"]},
+        "luaRef": {"type": "string"},
+        "note": {"type": "string"},
+        "params": {"type": "array", "items": {"$ref": "#/$defs/param"}}
+      }
+    },
+    "param": {
+      "type": "object",
+      "required": ["id", "name", "address", "vt", "range", "ui"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "name": {"type": "string"},
+        "block": {"type": "string"},
+        "address": {
+          "type": "object",
+          "required": ["ct", "id", "ai", "an"],
+          "additionalProperties": false,
+          "properties": {
+            "ct": {"type": "integer", "minimum": 0, "maximum": 127},
+            "id": {"type": "integer", "minimum": 0, "maximum": 127},
+            "ai": {"type": "integer", "minimum": 0, "maximum": 127},
+            "an": {"type": "integer", "minimum": 0, "maximum": 127}
+          }
+        },
+        "vt": {"type": "string"},
+        "range": {
+          "type": "object",
+          "required": ["min", "max"],
+          "additionalProperties": false,
+          "properties": {
+            "min": {"type": "integer"},
+            "max": {"type": "integer"}
+          }
+        },
+        "default": {"type": ["integer", "null"]},
+        "unit": {"type": "string"},
+        "ui": {
+          "type": "object",
+          "required": ["control"],
+          "additionalProperties": false,
+          "properties": {
+            "control": {"type": "string", "enum": ["slider", "combo", "toggle"]},
+            "enum": {"type": "string"},
+            "enumPerOsc": {"type": "boolean"}
+          }
+        },
+        "instances": {
+          "type": "object",
+          "required": ["count", "blkByteOffset", "addressByteIndex"],
+          "additionalProperties": false,
+          "properties": {
+            "count": {"type": "integer", "minimum": 1},
+            "blkByteOffset": {"type": "integer"},
+            "addressByteIndex": {"type": "integer"},
+            "idSuffix": {"type": "boolean"},
+            "labels": {"type": "array", "items": {"type": "string"}}
+          }
+        },
+        "perOsc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "waveBaseOffset": {"type": "object", "additionalProperties": {"type": "integer"}},
+            "enumPerOsc": {"type": "object", "additionalProperties": {"type": ["string", "null"]}},
+            "maxPerOsc": {"type": "object", "additionalProperties": {"type": "integer"}}
+          }
+        },
+        "note": {"type": "string"}
+      }
+    }
+  }
+}
