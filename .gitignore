@@ -48,3 +48,15 @@ CLAUDE.md
 .wolf/hooks/session-start.js
 .wolf/hooks/shared.js
 .wolf/hooks/stop.js
+
+# --- Build artifacts (JUCE/CMake skeleton, Phase 0 Chunk 4) ---
+# CMake build tree; FetchContent caches JUCE/Catch2 under build/_deps.
+build/
+# CMake user/config files
+CMakeUserPresets.json
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+# Editor/IDE
+.cache/
+compile_commands.json
