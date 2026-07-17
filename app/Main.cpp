@@ -1,31 +1,38 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "SoloSynthPanel.h"
+#include "casioxw/MidiIO.h"
+#include "casioxw/ParamModel.h"
 #include "casioxw/SysExCodec.h"
 
 //==============================================================================
-/** Placeholder content component. Real editor UI (params driven by
-    params/xwp1.json) is built in later chunks. */
-class PlaceholderComponent : public juce::Component
+/** Owns the long-lived model/codec/MIDI objects the GUI is wired to, plus the SoloSynthPanel
+    itself. Chunk 7a: replaces the Chunk 4 PlaceholderComponent — this is the first real editor
+    UI. codec/midiIO must outlive `panel` (SoloSynthPanel keeps references to both, and
+    ParamControl keeps a reference into codec.model()'s ParamInfo vector), so they are declared
+    before `panel` in this class and never moved/copied afterwards. */
+class MainContentComponent : public juce::Component
 {
 public:
-    PlaceholderComponent() { setSize (640, 400); }
-
-    void paint (juce::Graphics& g) override
+    MainContentComponent()
+        : codec (casioxw::ParamModel::fromFile (juce::File (CASIOXW_PARAMS_JSON))),
+          panel (codec, midiIO)
     {
-        g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
-
-        g.setColour (juce::Colours::white);
-        g.setFont (juce::FontOptions (22.0f, juce::Font::bold));
-        g.drawText ("Casio XW-P1 Editor",
-                    getLocalBounds().reduced (20).removeFromTop (120),
-                    juce::Justification::centred, false);
-
-        g.setColour (juce::Colours::grey);
-        g.setFont (juce::FontOptions (14.0f));
-        g.drawText ("casioxw_core " + juce::String (casioxw::coreVersion()) + " — placeholder",
-                    getLocalBounds().reduced (20),
-                    juce::Justification::centred, false);
+        addAndMakeVisible (panel);
+        setSize (panel.getWidth(), panel.getHeight());
     }
+
+    void resized() override
+    {
+        panel.setBounds (getLocalBounds());
+    }
+
+private:
+    casioxw::SysExCodec codec;
+    casioxw::MidiIO midiIO;
+    SoloSynthPanel panel;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainContentComponent)
 };
 
 //==============================================================================
@@ -55,7 +62,7 @@ public:
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (new PlaceholderComponent(), true);
+            setContentOwned (new MainContentComponent(), true);
             setResizable (true, true);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
