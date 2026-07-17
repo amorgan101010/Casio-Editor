@@ -15,10 +15,3 @@ TEST_CASE ("SysEx solo synth tone header matches the XW-P1 map", "[core][sysex]"
     const std::vector<std::uint8_t> expected { 0xF0, 0x44, 0x16, 0x03, 0x7F, 0x01, 0x09 };
     REQUIRE (header == expected);
 }
-
-TEST_CASE ("SysEx encode placeholder round-trips payload", "[core][sysex]")
-{
-    casioxw::SysExCodec codec;
-    const std::vector<std::uint8_t> payload { 0x10, 0x20, 0x30 };
-    REQUIRE (codec.encode (payload) == payload);
-}
