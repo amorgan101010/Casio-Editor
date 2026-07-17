@@ -1,5 +1,6 @@
 #include "casioxw/ParamModel.h"
 
+#include <algorithm>
 #include <stdexcept>
 
 namespace casioxw
@@ -39,6 +40,11 @@ namespace casioxw
             throw std::runtime_error ("ParamModel: missing 'sections' object");
 
         ParamModel model;
+
+        // Top-level "groupOrder" array (Chunk 7c) — UI metadata, ignored by SysExCodec.
+        if (auto* orderArr = root.getProperty ("groupOrder", juce::var()).getArray())
+            for (const auto& g : *orderArr)
+                model.groupOrderList.push_back (g.toString());
 
         // Top-level "enums" table (soloSynthWaves, soloPcmWaves, filterType, filterGain,
         // lfoWave, ...) — UI metadata, ignored by SysExCodec.
@@ -111,6 +117,7 @@ namespace casioxw
                 // ---- UI metadata (additive) --------------------------------------------------
                 info.name  = pv.getProperty ("name", juce::var()).toString();
                 info.block = pv.getProperty ("block", juce::var()).toString();
+                info.group = pv.getProperty ("group", juce::var()).toString();
                 info.note  = pv.getProperty ("note", juce::var()).toString();
                 info.unit  = pv.getProperty ("unit", juce::var()).toString();
 
@@ -217,5 +224,63 @@ namespace casioxw
         // "slider", or any unrecognised control string — default to a numeric slider rather
         // than silently rendering nothing.
         return ControlKind::Slider;
+    }
+
+    EnvelopeStageIds envelopeStageIds (const juce::String& anyEnvParamId)
+    {
+        // All 9 stage ids share one prefix up to and including "ENV" (e.g. "tssOSCPENV",
+        // "tssFLTFENV") followed by one of the 9 known suffixes below. Find "ENV" and use the
+        // characters before+through it as the prefix; if any of the 9 candidate ids formed this
+        // way don't actually match anyEnvParamId for its own suffix, this isn't an envelope
+        // param at all — bail out with an invalid (default-constructed) result rather than
+        // guessing.
+        const int envAt = anyEnvParamId.indexOf ("ENV");
+        if (envAt < 0)
+            return {};
+
+        const juce::String prefix = anyEnvParamId.substring (0, envAt + 3);   // .. up through "ENV"
+        const juce::String suffix = anyEnvParamId.substring (envAt + 3);
+
+        static const juce::StringArray kSuffixes { "iL", "aT", "aL", "dT", "sL",
+                                                     "r1T", "r1L", "r2T", "r2L" };
+        if (! kSuffixes.contains (suffix))
+            return {};
+
+        EnvelopeStageIds ids;
+        ids.initLevel     = prefix + "iL";
+        ids.attackTime    = prefix + "aT";
+        ids.attackLevel   = prefix + "aL";
+        ids.decayTime     = prefix + "dT";
+        ids.sustainLevel  = prefix + "sL";
+        ids.release1Time  = prefix + "r1T";
+        ids.release1Level = prefix + "r1L";
+        ids.release2Time  = prefix + "r2T";
+        ids.release2Level = prefix + "r2L";
+        return ids;
+    }
+
+    std::vector<juce::String> orderedGroupsForBlock (const ParamModel& model,
+                                                       const juce::String& section,
+                                                       const juce::String& block)
+    {
+        // Groups actually present in this block, first-seen order (JSON param order).
+        juce::StringArray present;
+        for (const auto& p : model.all())
+            if (p.section == section && p.block == block && p.group.isNotEmpty()
+                && ! present.contains (p.group))
+                present.add (p.group);
+
+        std::vector<juce::String> ordered;
+        for (const auto& g : model.groupOrder())
+            if (present.contains (g))
+                ordered.push_back (g);
+
+        // Fallback: anything present but not mentioned in groupOrder (generator omission) still
+        // gets rendered, appended in first-seen order rather than silently dropped.
+        for (const auto& g : present)
+            if (std::find (ordered.begin(), ordered.end(), g) == ordered.end())
+                ordered.push_back (g);
+
+        return ordered;
     }
 }

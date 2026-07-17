@@ -112,17 +112,62 @@ OVR = {
                        "Verified on hardware 2026-07-17."),
   "tssLFOsync":   dict(rng=(0,2), default=0, ui="combo", note="midi-spec p78-79: Clock Sync 0=NoSync/1=Sync LFO1(LFO2 only)/2=Sync Tempo; Lua vt='nf'."),
   "tssLFOwf":     dict(rng=(0,7), default=0, ui="combo", enum="lfoWave", note="midi-spec p78-79: LFO Wave 0-7; Lua vt='nf' (would imply 0-127)."),
-  "tssLFOclk":    dict(rng=(0,17), note="midi-spec p78-79: Clock Trigger 0-17; Lua vt='nf'."),
+  "tssLFOclk":    dict(rng=(0,17), ui="combo", enum="lfoClockTrigger",
+                       note="Manual E-27 'Clk.Sync': 1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (18 values, 0-17) -- "
+                            "same list as the envelope Clock Trigger but WITHOUT the leading 'Off' entry (LFO's "
+                            "separate Sync param already carries Off/Tempo/LFO1). Confirmed against manual text, "
+                            "not guessed. midi-spec p78-79 corroborates the 0-17 wire range."),
   "tssFLTFtype":  dict(rng=(0,2), default=0, ui="combo", enum="filterType", note="midi-spec p79: Total Filter Type 0=LPF/1=BPF/2=HPF; Lua vt='nf'."),
   "tssOSCFcoff":  dict(rng=(0,15), note="midi-spec p74: OSC Filter Cutoff 0-15; Lua vt='nf' (NRPN uses nf-15)."),
   "tssOSCFgain":  dict(rng=(0,4), ui="combo", enum="filterGain", note="midi-spec p74: OSC Filter Gain 0=Flat/1=-3/2=-6/3=-12/4=-18dB; Lua vt='nf' (NRPN uses nf-4)."),
-  "tssOSCPEclk":  dict(rng=(0,18), note="midi-spec p74: Clock Trigger 0-18; Lua vt='nf'."),
-  "tssOSCFEclk":  dict(rng=(0,18), note="midi-spec p74: Clock Trigger 0-18; Lua vt='nf'."),
-  "tssOSCAEclk":  dict(rng=(0,18), note="midi-spec p75: Clock Trigger 0-18; Lua vt='nf'."),
-  "tssFLTFEclk":  dict(rng=(0,18), note="midi-spec p79: Clock Trigger 0-18; Lua vt='nf'."),
+  "tssOSCPEclk":  dict(rng=(0,18), ui="combo", enum="clockTrigger", note="midi-spec p74: Clock Trigger 0-18; Lua vt='nf'. Manual E-24: Off,1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (19 values)."),
+  "tssOSCFEclk":  dict(rng=(0,18), ui="combo", enum="clockTrigger", note="midi-spec p74: Clock Trigger 0-18; Lua vt='nf'. Manual E-24: Off,1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (19 values)."),
+  "tssOSCAEclk":  dict(rng=(0,18), ui="combo", enum="clockTrigger", note="midi-spec p75: Clock Trigger 0-18; Lua vt='nf'. Manual E-24: Off,1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (19 values)."),
+  "tssFLTFEclk":  dict(rng=(0,18), ui="combo", enum="clockTrigger", note="midi-spec p79: Clock Trigger 0-18; Lua vt='nf'. Manual E-24: Off,1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (19 values)."),
   "tssOSCXPshmode": dict(rng=(0,3), note="midi-spec p76: Pitch Shifter Mode 0-3; Lua vt='nf'."),
   "tssOSCXPshmix":  dict(rng=(0,15), note="midi-spec p76: Pitch Shifter Mix 0-15; Lua vt='nf'."),
+  # Key Follow Base params: MIDI note numbers 0-127, manual says "C-1 to G9" -- unit="note" is a
+  # DISPLAY FORMATTER SELECTOR for the app (Slider::textFromValueFunction via casioxw::midiNoteName),
+  # not a unit-of-measure suffix; ParamControl must not append it to the label (see displayName()).
+  "tssOSCPkeyfB": dict(unit="note"),
+  "tssOSCFkeyfB": dict(unit="note"),
+  "tssOSCAkeyfB": dict(unit="note"),
+  "tssFLTFkeyfB": dict(unit="note"),
 }
+
+# ---------------------------------------------------------------------------
+# Visual grouping (Chunk 7c item 4): purely a UI-metadata field, derived from id
+# structure and cross-checked against the manual's own grouping (E-24..E-27).
+# Never read by SysExCodec. groupOrder (below) is the canonical display order;
+# app/SoloSynthPanel renders whichever of these groups are present in a block, in
+# this order, then falls back to first-seen order for anything not listed here.
+# ---------------------------------------------------------------------------
+GROUP_ORDER = ["General", "Pitch", "Pitch Envelope", "Filter", "Filter Envelope",
+               "Amp", "Amp Envelope", "Portamento / Legato", "PWM",
+               "External Input", "External Trigger", "Pitch Shifter", "LFO"]
+
+def group_for(pid):
+    if "ENV" in pid:
+        if pid.startswith("tssOSCP"): return "Pitch Envelope"
+        if pid.startswith("tssOSCF"): return "Filter Envelope"
+        if pid.startswith("tssOSCA"): return "Amp Envelope"
+        if pid.startswith("tssFLTF"): return "Filter Envelope"
+    if re.match(r'tssOSCP(Eclk|Edep)$', pid): return "Pitch Envelope"
+    if re.match(r'tssOSCF(Eclk|Edep)$', pid): return "Filter Envelope"
+    if re.match(r'tssOSCA(Eclk)$', pid): return "Amp Envelope"
+    if re.match(r'tssFLTF(Eclk|Edep|Ertrg)$', pid): return "Filter Envelope"
+    if pid in ("tssOSCPortaSw", "tssOSCPortaTm", "tssOSCLegatoSw"): return "Portamento / Legato"
+    if pid.startswith("tssOSCPWM"): return "PWM"
+    if pid in ("tssOSCsw", "tssOSCwf", "tssOSC2sync"): return "General"
+    if pid in ("tssOSCXokey", "tssOSCXinlvl"): return "External Input"
+    if pid in ("tssOSCXPxtrg", "tssOSCXFxtrg", "tssOSCXAxtrg", "tssOSCXTFxtrg", "tssOSCXngth", "tssOSCXngrel"): return "External Trigger"
+    if pid in ("tssOSCXPshmode", "tssOSCXPshmix"): return "Pitch Shifter"
+    if pid.startswith("tssOSCP"): return "Pitch"
+    if pid.startswith("tssOSCF"): return "Filter"
+    if pid.startswith("tssOSCA"): return "Amp"
+    if pid.startswith("tssFLTF"): return "Filter"
+    if pid.startswith("tssLFO"): return "LFO"
+    raise AssertionError(f"group_for: no group rule matched {pid!r}")
 
 # Human-readable name generation ------------------------------------------------
 SEC = {"P": "Pitch", "F": "Filter", "A": "Amp"}
@@ -194,11 +239,12 @@ def build_params():
                 "id": pid,
                 "name": name_for(pid),
                 "block": BLOCK_GROUP[b],
+                "group": group_for(pid),
                 "address": {"ct": ct, "id": rec["id"], "ai": ov.get("ai", rec["ai"]), "an": rec["an"]},
                 "vt": vt,
                 "range": rng,
                 "default": default,
-                "unit": "",
+                "unit": ov.get("unit", ""),
                 "ui": {"control": ui},
             }
             # instances descriptor
@@ -267,6 +313,17 @@ enums = {
     "lfoWave": [{"value":0,"label":"Sine"},{"value":1,"label":"Triangle"},{"value":2,"label":"Saw Up"},
                  {"value":3,"label":"Saw Down"},{"value":4,"label":"Pulse 1:3"},{"value":5,"label":"Pulse 2:2"},
                  {"value":6,"label":"Pulse 3:1"},{"value":7,"label":"Random"}],
+    # Envelope Clock Trigger (manual E-24/E-25): 19 values, wire 0-18. "U" suffix = reset synced
+    # to the back beat (upbeat). Backs tssOSCPEclk/tssOSCFEclk/tssOSCAEclk/tssFLTFEclk.
+    "clockTrigger": [{"value": i, "label": lbl} for i, lbl in enumerate(
+        ["Off", "1/4", "1/3", "1/2", "2/3", "1", "3/2", "2", "3", "4",
+         "1/4U", "1/3U", "1/2U", "2/3U", "1U", "3/2U", "2U", "3U", "4U"])],
+    # LFO Clock Trigger (manual E-27 "Clk.Sync"): the SAME 18-value list minus the leading "Off"
+    # (LFO's separate Sync param already has its own Off/Tempo/LFO1 setting) -- wire 0-17,
+    # confirmed against the manual text, not inferred. Backs tssLFOclk only.
+    "lfoClockTrigger": [{"value": i, "label": lbl} for i, lbl in enumerate(
+        ["1/4", "1/3", "1/2", "2/3", "1", "3/2", "2", "3", "4",
+         "1/4U", "1/3U", "1/2U", "2/3U", "1U", "3/2U", "2U", "3U", "4U"])],
 }
 
 # ---------------------------------------------------------------------------
@@ -314,6 +371,7 @@ doc = {
   },
   "valueTypes": value_types,
   "enums": enums,
+  "groupOrder": GROUP_ORDER,
   "sections": {
     "soloSynth": {
       "category": "0x09",

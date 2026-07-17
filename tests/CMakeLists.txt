@@ -6,6 +6,7 @@ add_executable(casioxw_tests
     GoldenTests.cpp
     MidiIOTests.cpp
     ParamModelTests.cpp
+    NoteNamesTests.cpp
 )
 
 target_link_libraries(casioxw_tests PRIVATE

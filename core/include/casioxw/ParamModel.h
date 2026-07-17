@@ -38,6 +38,8 @@ namespace casioxw
         // ---- UI metadata (additive; SysExCodec never reads any of this) --------------------
         juce::String name;            // display label, e.g. "OSC Waveform"
         juce::String block;           // e.g. "OSC", "PWM", "Etc", "TotalFilter", "LFO"
+        juce::String group;           // Chunk 7c: visual sub-grouping within a block's param
+                                       // list, e.g. "Pitch Envelope" — see ParamModel::groupOrder()
         juce::String note;            // optional free-text implementer note
 
         struct Range { int min = 0; int max = 0; };
@@ -97,6 +99,24 @@ namespace casioxw
         result up with ParamModel::enumValues(). */
     juce::String resolveEnumName (const ParamInfo& info, int instance);
 
+    /** The 9 sibling param ids making up a single envelope group (Chunk 7c item 5), e.g. given
+        "tssOSCPENViL" (or any of its 8 siblings) returns { "tssOSCPENViL", "tssOSCPENVaT", ...,
+        "tssOSCPENVr2L" }. Field order matches the manual's own IL/AT/AL/DT/SL/RT1/RL1/RT2/RL2
+        envelope diagram (E-24), and franky's 017_ENVpaint.lua drawing order. */
+    struct EnvelopeStageIds
+    {
+        juce::String initLevel, attackTime, attackLevel, decayTime, sustainLevel,
+                      release1Time, release1Level, release2Time, release2Level;
+
+        bool isValid() const noexcept { return initLevel.isNotEmpty(); }
+    };
+
+    /** Derives the 9 sibling ids from any one envelope-stage param id by string substitution
+        (pure — no ParamModel lookup needed). `anyEnvParamId` must contain "ENV" followed by one
+        of the 9 known stage suffixes (iL/aT/aL/dT/sL/r1T/r1L/r2T/r2L); anything else returns a
+        default-constructed (invalid, see isValid()) result rather than guessing. */
+    EnvelopeStageIds envelopeStageIds (const juce::String& anyEnvParamId);
+
     /** Loads and indexes the XW-P1 parameter map. GUI-less. */
     class ParamModel
     {
@@ -133,6 +153,11 @@ namespace casioxw
             right table name for a given ParamInfo/instance. */
         const std::vector<EnumEntry>* enumValues (const juce::String& name) const;
 
+        /** Top-level "groupOrder" array (Chunk 7c) — the canonical display order for
+            ParamInfo::group values, single source of truth (params/xwp1.json), not hardcoded in
+            the UI layer. May be empty if the JSON omits it. Use with orderedGroupsForBlock(). */
+        const std::vector<juce::String>& groupOrder() const noexcept { return groupOrderList; }
+
     private:
         void index();
 
@@ -140,5 +165,16 @@ namespace casioxw
         std::map<juce::String, int> byId;                          // id -> index into params
         std::map<juce::String, std::vector<AddressHit>> byAddress;  // 18-byte key -> hits
         std::map<juce::String, std::vector<EnumEntry>> enums;       // name -> {value,label} list
+        std::vector<juce::String> groupOrderList;                   // top-level "groupOrder"
     };
+
+    /** The groups actually present among `section`+`block`'s params (in model.all()), ordered
+        per model.groupOrder() first, then any leftover group not mentioned there appended in
+        first-seen (JSON param) order as a fallback safety net (so a group is never silently
+        dropped just because the generator forgot to list it in groupOrder). Pure function of
+        already-parsed ParamModel data — used by SoloSynthPanel to render group headers without
+        hardcoding group names/order in the app layer (single source of truth stays the JSON). */
+    std::vector<juce::String> orderedGroupsForBlock (const ParamModel& model,
+                                                       const juce::String& section,
+                                                       const juce::String& block);
 }

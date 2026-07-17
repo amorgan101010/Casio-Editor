@@ -6,6 +6,10 @@ namespace
     constexpr int kRowGap = 6;
     constexpr int kMargin = 8;
     constexpr int kControlRowHeight = 26;
+    constexpr int kGroupHeaderHeight = 24;
+    constexpr int kGroupHeaderGapAbove = 8;    // extra breathing room before a new group (not the first)
+    constexpr int kEnvelopeDisplayHeight = 94;
+    constexpr int kEnvelopeDisplayGap = 4;
     constexpr juce::uint32 kSyncTimeoutMs = 3000;   // stop polling if replies stop arriving
 
     juce::String syncKey (const juce::String& paramId, int instance)
@@ -22,6 +26,35 @@ namespace
             if (p.section == "soloSynth" && p.block == block)
                 return &p;
         return nullptr;
+    }
+
+    // Chunk 7c item 4: bold label + separator between param groups. Deliberately tiny/local —
+    // no state beyond the label text, so it lives here rather than as its own file pair.
+    class GroupHeader : public juce::Component
+    {
+    public:
+        explicit GroupHeader (juce::String text) : label (std::move (text)) {}
+
+        void paint (juce::Graphics& g) override
+        {
+            auto bounds = getLocalBounds();
+            g.setColour (juce::Colours::white);
+            g.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
+            g.drawText (label, bounds.removeFromTop (getHeight() - 4), juce::Justification::centredLeft);
+            g.setColour (juce::Colours::grey);
+            g.fillRect (0, getHeight() - 2, getWidth(), 1);
+        }
+
+    private:
+        juce::String label;
+    };
+
+    // Chunk 7c item 5: is `group` one of the 9-stage envelope groups (as opposed to a plain
+    // param group like "Pitch" or "LFO")? Purely a naming convention set by gen_xwp1.py's
+    // group_for() — every "*Envelope" group's members include the 9 ENV-suffixed stage ids.
+    bool isEnvelopeGroup (const juce::String& group)
+    {
+        return group.endsWith ("Envelope");
     }
 }
 
@@ -130,6 +163,7 @@ void SoloSynthPanel::connectButtonClicked()
     {
         connectButton.setButtonText ("Disconnect");
         statusLabel.setText ("Connected", juce::dontSendNotification);
+        autoSyncIfConnected();   // Chunk 7c item 1: sync immediately on a successful connect
     }
     else
     {
@@ -137,6 +171,12 @@ void SoloSynthPanel::connectButtonClicked()
         midiIO.closeOutput();
         statusLabel.setText ("Failed to open device(s)", juce::dontSendNotification);
     }
+}
+
+void SoloSynthPanel::autoSyncIfConnected()
+{
+    if (midiIO.isInputOpen() && midiIO.isOutputOpen())
+        syncButtonClicked();
 }
 
 //==============================================================================
@@ -185,6 +225,7 @@ void SoloSynthPanel::blockSelectionChanged()
 
     currentInstance = 1;
     rebuildParamControls();
+    autoSyncIfConnected();   // Chunk 7c item 1
 }
 
 void SoloSynthPanel::instanceSelectionChanged()
@@ -194,6 +235,7 @@ void SoloSynthPanel::instanceSelectionChanged()
         return;
     currentInstance = id;
     rebuildParamControls();
+    autoSyncIfConnected();   // Chunk 7c item 1
 }
 
 //==============================================================================
@@ -201,34 +243,129 @@ void SoloSynthPanel::rebuildParamControls()
 {
     stopTimer();
     outstandingSync.clear();
-
-    controls.clear();   // destroying each ParamControl removes it from paramContainer automatically
+    envelopeSinks.clear();     // sinks capture raw EnvelopeDisplay* — must die before groupRows does
+    groupRows.clear();
+    controls.clear();          // destroying each ParamControl removes it from paramContainer automatically
 
     const auto& model = codec.model();
+    const int width = paramContainer.getWidth() > 0 ? paramContainer.getWidth() : 400;
     int y = 0;
-    for (const auto& p : model.all())
+    bool firstGroup = true;
+
+    // Chunk 7c item 4: group order comes from the JSON (model.groupOrder()), not a hardcoded
+    // list here — see casioxw::orderedGroupsForBlock().
+    for (const auto& group : casioxw::orderedGroupsForBlock (model, "soloSynth", currentBlock))
     {
-        if (p.section != "soloSynth" || p.block != currentBlock)
+        // Params in this group, preserving their original JSON order (item 4's requirement).
+        std::vector<const casioxw::ParamInfo*> bucket;
+        for (const auto& p : model.all())
+            if (p.section == "soloSynth" && p.block == currentBlock && p.group == group)
+                bucket.push_back (&p);
+        if (bucket.empty())
             continue;
 
-        auto ctrl = std::make_unique<ParamControl> (model, p, currentInstance);
-        ctrl->setBounds (0, y, paramContainer.getWidth() > 0 ? paramContainer.getWidth() : 400,
-                         kControlRowHeight);
-        y += kControlRowHeight + 2;
+        if (! firstGroup)
+            y += kGroupHeaderGapAbove;
+        firstGroup = false;
 
-        const juce::String paramId = ctrl->paramId();
-        const int instance = ctrl->instanceNumber();
-        ctrl->onValueChanged = [this, paramId, instance] (int value)
+        auto header = std::make_unique<GroupHeader> (group);
+        header->setBounds (0, y, width, kGroupHeaderHeight);
+        paramContainer.addAndMakeVisible (*header);
+        groupRows.push_back (std::move (header));
+        y += kGroupHeaderHeight;
+
+        // Chunk 7c item 5: one read-only EnvelopeDisplay above each envelope group's controls,
+        // seeded from the current instance's stage defaults so it isn't blank before a sync.
+        if (isEnvelopeGroup (group))
         {
-            const auto frame = codec.encode (paramId, instance, value);
-            midiIO.sendFrame (frame);
-        };
+            const casioxw::ParamInfo* anyEnvParam = nullptr;
+            for (const auto* p : bucket)
+                if (p->id.contains ("ENV"))
+                {
+                    anyEnvParam = p;
+                    break;
+                }
 
-        paramContainer.addAndMakeVisible (*ctrl);
-        controls.push_back (std::move (ctrl));
+            const auto stageIds = anyEnvParam != nullptr
+                ? casioxw::envelopeStageIds (anyEnvParam->id) : casioxw::EnvelopeStageIds {};
+
+            if (stageIds.isValid())
+            {
+                const auto* levelParam = model.find (stageIds.initLevel);   // defines the level axis range
+                const int levelMin = levelParam != nullptr ? levelParam->range.min : -64;
+                const int levelMax = levelParam != nullptr ? levelParam->range.max : 63;
+
+                auto display = std::make_unique<EnvelopeDisplay> (levelMin, levelMax);
+                display->setBounds (0, y, width, kEnvelopeDisplayHeight);
+
+                const juce::String stageIdsInOrder[EnvelopeDisplay::kNumStages] = {
+                    stageIds.initLevel,     stageIds.attackTime,    stageIds.attackLevel,
+                    stageIds.decayTime,     stageIds.sustainLevel,  stageIds.release1Time,
+                    stageIds.release1Level, stageIds.release2Time,  stageIds.release2Level
+                };
+
+                auto* displayPtr = display.get();
+                for (int i = 0; i < EnvelopeDisplay::kNumStages; ++i)
+                {
+                    const auto* stageInfo = model.find (stageIdsInOrder[i]);
+                    const int seed = stageInfo != nullptr && stageInfo->defaultValue.has_value()
+                        ? *stageInfo->defaultValue : 0;
+                    displayPtr->setStage (static_cast<EnvelopeDisplay::Stage> (i), seed);
+
+                    const auto stage = static_cast<EnvelopeDisplay::Stage> (i);
+                    envelopeSinks[syncKey (stageIdsInOrder[i], currentInstance)] =
+                        [displayPtr, stage] (int value) { displayPtr->setStage (stage, value); };
+                }
+
+                paramContainer.addAndMakeVisible (*display);
+                groupRows.push_back (std::move (display));
+                y += kEnvelopeDisplayHeight + kEnvelopeDisplayGap;
+            }
+        }
+
+        for (const auto* p : bucket)
+        {
+            auto ctrl = std::make_unique<ParamControl> (model, *p, currentInstance);
+            ctrl->setBounds (0, y, width, kControlRowHeight);
+            y += kControlRowHeight + 2;
+
+            const juce::String paramId = ctrl->paramId();
+            const int instance = ctrl->instanceNumber();
+
+            // If this control is one of the current envelope group's 9 stages, its edits should
+            // also update the EnvelopeDisplay above it (in addition to the always-present
+            // send-SysEx behaviour) — look up its sink once now rather than on every edit.
+            const auto sinkIt = envelopeSinks.find (syncKey (paramId, instance));
+            const std::function<void (int)> envSink =
+                sinkIt != envelopeSinks.end() ? sinkIt->second : std::function<void (int)> {};
+
+            ctrl->onValueChanged = [this, paramId, instance, envSink] (int value)
+            {
+                const auto frame = codec.encode (paramId, instance, value);
+                midiIO.sendFrame (frame);
+                if (envSink)
+                    envSink (value);
+            };
+
+            paramContainer.addAndMakeVisible (*ctrl);
+            controls.push_back (std::move (ctrl));
+        }
     }
 
     paramContainer.setSize (juce::jmax (400, paramViewport.getWidth()), y);
+}
+
+void SoloSynthPanel::layoutParamContainerWidth()
+{
+    const int width = juce::jmax (400, paramViewport.getWidth());
+    paramContainer.setSize (width, paramContainer.getHeight());
+
+    // Every child keeps its Y/height from rebuildParamControls() — only the width tracks the
+    // viewport. setSize() preserves the existing top-left, so this is a pure width relayout.
+    for (auto& c : controls)
+        c->setSize (width, c->getHeight());
+    for (auto& c : groupRows)
+        c->setSize (width, c->getHeight());
 }
 
 //==============================================================================
@@ -279,6 +416,13 @@ void SoloSynthPanel::timerCallback()
             it->second->setValueFromSync (d.value);
             outstandingSync.erase (it);
         }
+
+        // Chunk 7c item 5: envelope displays repaint from sync replies too, not just live edits
+        // (ParamControl::setValueFromSync() deliberately never fires onValueChanged, so this is
+        // the only path a sync reply reaches an EnvelopeDisplay).
+        const auto sinkIt = envelopeSinks.find (syncKey (d.paramId, d.instance));
+        if (sinkIt != envelopeSinks.end())
+            sinkIt->second (d.value);
     }
 
     if (outstandingSync.empty())
@@ -326,7 +470,5 @@ void SoloSynthPanel::resized()
     bounds.removeFromTop (kRowGap);
 
     paramViewport.setBounds (bounds);
-    paramContainer.setSize (paramViewport.getWidth(), paramContainer.getHeight());
-    for (auto& c : controls)
-        c->setSize (paramContainer.getWidth(), kControlRowHeight);
+    layoutParamContainerWidth();
 }

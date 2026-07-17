@@ -10,7 +10,9 @@ namespace
     juce::String displayName (const casioxw::ParamInfo& info)
     {
         juce::String s = info.name.isNotEmpty() ? info.name : info.id;
-        if (info.unit.isNotEmpty())
+        // "note" is a DISPLAY FORMATTER SELECTOR (-> Slider::textFromValueFunction below), not a
+        // unit of measure — appending "(note)" to every Key Follow Base label would be noise.
+        if (info.unit.isNotEmpty() && info.unit != "note")
             s << " (" << info.unit << ")";
         return s;
     }
@@ -73,6 +75,21 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
             slider = std::make_unique<juce::Slider> (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
             slider->setRange ((double) info.range.min, (double) info.range.max, 1.0);
             slider->onValueChange = [this] { notify ((int) slider->getValue()); };
+
+            // Key Follow Base params (unit=="note", metadata-driven per gen_xwp1.py's OVR table,
+            // not a hardcoded param-id list): show/accept MIDI note names ("C-1".."G9") instead
+            // of raw integers, via casioxw::midiNoteName()/noteNameToMidi() (Chunk 7c item 3).
+            if (info.unit == "note")
+            {
+                slider->textFromValueFunction = [] (double v) { return casioxw::midiNoteName ((int) v); };
+                slider->valueFromTextFunction = [] (const juce::String& t) -> double
+                {
+                    const auto n = casioxw::noteNameToMidi (t);
+                    return n.has_value() ? (double) *n : 0.0;
+                };
+                slider->setValue (slider->getValue(), juce::dontSendNotification);   // refresh text box
+            }
+
             addAndMakeVisible (*slider);
             break;
         }

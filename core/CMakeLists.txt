@@ -8,6 +8,7 @@ add_library(casioxw_core STATIC
     src/SysExCodec.cpp
     src/ParamModel.cpp
     src/MidiIO.cpp
+    src/NoteNames.cpp
 )
 
 target_include_directories(casioxw_core
