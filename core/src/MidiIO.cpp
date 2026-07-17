@@ -80,6 +80,30 @@ namespace casioxw
         return true;
     }
 
+    bool MidiIO::sendNoteOn (int channel, int note, int velocity)
+    {
+        if (output == nullptr)
+            return false;
+        output->sendMessageNow (juce::MidiMessage::noteOn (channel, note, (juce::uint8) velocity));
+        return true;
+    }
+
+    bool MidiIO::sendNoteOff (int channel, int note)
+    {
+        if (output == nullptr)
+            return false;
+        output->sendMessageNow (juce::MidiMessage::noteOff (channel, note));
+        return true;
+    }
+
+    bool MidiIO::sendAllNotesOff (int channel)
+    {
+        if (output == nullptr)
+            return false;
+        output->sendMessageNow (juce::MidiMessage::controllerEvent (channel, 123, 0));
+        return true;
+    }
+
     bool MidiIO::openInput (const juce::String& deviceIdentifier)
     {
         input = juce::MidiInput::openDevice (deviceIdentifier, this);
