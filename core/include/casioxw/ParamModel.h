@@ -117,6 +117,16 @@ namespace casioxw
         default-constructed (invalid, see isValid()) result rather than guessing. */
     EnvelopeStageIds envelopeStageIds (const juce::String& anyEnvParamId);
 
+    /** True if `group` is one of the 9-stage envelope groups (e.g. "Pitch Envelope") as opposed
+        to a plain param group (e.g. "Pitch", "LFO"). Purely a naming convention set by
+        gen_xwp1.py's group_for() — every "*Envelope" group's members are drawn from the 9
+        ENV-suffixed stage ids (see envelopeStageIds()). Pure string check, no ParamModel lookup
+        needed — used by the app layer both to decide whether to show an EnvelopeDisplay above a
+        group's controls (Chunk 7c item 5) and whether a plain Slider-kind param in that group
+        should render as a full-width bar (envelope stages, unchanged) or a compact rotary knob
+        (everything else, Chunk 7d item 2) — see SoloSynthPanel::rebuildParamControls(). */
+    bool isEnvelopeGroup (const juce::String& group);
+
     /** Loads and indexes the XW-P1 parameter map. GUI-less. */
     class ParamModel
     {

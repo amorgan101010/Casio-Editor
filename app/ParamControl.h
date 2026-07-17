@@ -37,12 +37,26 @@ public:
                           codec.model(), a long-lived member — see app/SoloSynthPanel.h).
         @param instance  1-based instance number (oscillator/LFO/etc — fixed for this control's
                           lifetime; the owning panel rebuilds its ParamControls rather than
-                          re-pointing one at a different instance). */
-    ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& info, int instance);
+                          re-pointing one at a different instance).
+        @param asKnob    Chunk 7d item 2: render a ControlKind::Slider as a compact rotary knob
+                          (small fixed-size cell, label above, value text box below) instead of
+                          the default full-width linear bar. This is a purely visual layout
+                          choice made by the caller (SoloSynthPanel, based on whether the param's
+                          group is an envelope group — see casioxw::isEnvelopeGroup()) — it is
+                          NOT part of casioxw::decideControlKind()'s decision (which widget KIND a
+                          param needs at all) and has no effect on any ControlKind other than
+                          Slider; ignored (stays list-style) otherwise. */
+    ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& info, int instance,
+                  bool asKnob = false);
 
     const juce::String& paramId() const noexcept { return info.id; }
     int instanceNumber() const noexcept { return instance; }
     casioxw::ControlKind controlKind() const noexcept { return kind; }
+
+    /** True if this control is rendering as a rotary knob (see `asKnob` above) rather than the
+        default one-row list style. Used by SoloSynthPanel to decide which controls participate
+        in the wrapping knob grid vs. a plain full-width relayout on viewport resize. */
+    bool isKnobMode() const noexcept { return knobMode; }
 
     /** Fired once per user-driven change (toggle click / combo selection / slider drag-release
         or value change) — never fired by setValueFromSync(). */
@@ -59,6 +73,7 @@ private:
     const casioxw::ParamInfo& info;
     int instance;
     casioxw::ControlKind kind;
+    bool knobMode = false;   // only ever true when kind == ControlKind::Slider
 
     juce::Label nameLabel;
 

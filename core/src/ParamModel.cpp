@@ -259,6 +259,11 @@ namespace casioxw
         return ids;
     }
 
+    bool isEnvelopeGroup (const juce::String& group)
+    {
+        return group.endsWith ("Envelope");
+    }
+
     std::vector<juce::String> orderedGroupsForBlock (const ParamModel& model,
                                                        const juce::String& section,
                                                        const juce::String& block)

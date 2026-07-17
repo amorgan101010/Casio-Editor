@@ -7,6 +7,14 @@ namespace
     constexpr int kLabelWidth = 170;
     constexpr int kControlHeight = 24;
 
+    // Chunk 7d item 2: knob-mode cell size — deliberately small/fixed so several fit per row in
+    // SoloSynthPanel's wrapping grid (see kKnobCellWidth/Height there, which must match this).
+    // 88 wide gives a little more breathing room than a bare 80 for longer labels like
+    // "OSC Waveform" / "Key Follow Base" before minimumHorizontalScale has to kick in.
+    constexpr int kKnobWidth = 88;
+    constexpr int kKnobHeight = 92;
+    constexpr int kKnobLabelHeight = 16;
+
     juce::String displayName (const casioxw::ParamInfo& info)
     {
         juce::String s = info.name.isNotEmpty() ? info.name : info.id;
@@ -18,13 +26,25 @@ namespace
     }
 }
 
-ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& infoIn, int instanceIn)
-    : info (infoIn), instance (instanceIn), kind (casioxw::decideControlKind (info, instance))
+ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& infoIn, int instanceIn,
+                             bool asKnob)
+    : info (infoIn), instance (instanceIn), kind (casioxw::decideControlKind (info, instance)),
+      knobMode (asKnob && kind == ControlKind::Slider)
 {
-    setSize (kLabelWidth + 220, kControlHeight);
+    setSize (knobMode ? kKnobWidth : kLabelWidth + 220, knobMode ? kKnobHeight : kControlHeight);
 
     nameLabel.setText (displayName (info), juce::dontSendNotification);
-    nameLabel.setJustificationType (juce::Justification::centredLeft);
+    nameLabel.setJustificationType (knobMode ? juce::Justification::centred
+                                              : juce::Justification::centredLeft);
+    if (knobMode)
+    {
+        // Knob cells are narrow (88px) and some param names aren't ("OSC Waveform", "Key Follow
+        // Base", "Detune (cent)" once the unit suffix is appended) — shrink-to-fit rather than
+        // hard-truncate, and keep the full name reachable via tooltip.
+        nameLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
+        nameLabel.setMinimumHorizontalScale (0.7f);
+        nameLabel.setTooltip (displayName (info));
+    }
     addAndMakeVisible (nameLabel);
 
     switch (kind)
@@ -72,9 +92,16 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
 
         case ControlKind::Slider:
         {
-            slider = std::make_unique<juce::Slider> (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+            // Chunk 7d item 2: envelope-stage sliders (SoloSynthPanel's isEnvelopeGroup() check)
+            // keep the original full-width linear bar; every other Slider-kind param renders as
+            // a compact rotary knob instead, laid out in a wrapping grid by the owning panel.
+            slider = std::make_unique<juce::Slider> (
+                knobMode ? juce::Slider::RotaryHorizontalVerticalDrag : juce::Slider::LinearHorizontal,
+                knobMode ? juce::Slider::TextBoxBelow : juce::Slider::TextBoxRight);
             slider->setRange ((double) info.range.min, (double) info.range.max, 1.0);
             slider->onValueChange = [this] { notify ((int) slider->getValue()); };
+            if (knobMode)
+                slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, kKnobWidth - 8, 16);
 
             // Key Follow Base params (unit=="note", metadata-driven per gen_xwp1.py's OVR table,
             // not a hardcoded param-id list): show/accept MIDI note names ("C-1".."G9") instead
@@ -149,6 +176,15 @@ void ParamControl::setValueFromSync (int value)
 void ParamControl::resized()
 {
     auto bounds = getLocalBounds();
+
+    if (knobMode)
+    {
+        nameLabel.setBounds (bounds.removeFromTop (kKnobLabelHeight));
+        if (slider != nullptr)
+            slider->setBounds (bounds);
+        return;
+    }
+
     nameLabel.setBounds (bounds.removeFromLeft (kLabelWidth));
 
     if (toggle != nullptr)

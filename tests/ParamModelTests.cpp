@@ -228,6 +228,23 @@ TEST_CASE ("ParamModel: params carry a group, and orderedGroupsForBlock covers e
     CHECK (std::distance (groups.begin(), pitchIt) < std::distance (groups.begin(), pitchEnvIt));
 }
 
+TEST_CASE ("ParamModel: isEnvelopeGroup distinguishes envelope groups from plain groups",
+          "[parammodel][ui][7d]")
+{
+    CHECK (casioxw::isEnvelopeGroup ("Pitch Envelope"));
+    CHECK (casioxw::isEnvelopeGroup ("Filter Envelope"));
+    CHECK (casioxw::isEnvelopeGroup ("Amp Envelope"));
+    CHECK_FALSE (casioxw::isEnvelopeGroup ("Pitch"));
+    CHECK_FALSE (casioxw::isEnvelopeGroup ("LFO"));
+    CHECK_FALSE (casioxw::isEnvelopeGroup (""));
+    // Every group actually present in the real model agrees with the naming convention this
+    // function assumes ("*Envelope" suffix, nothing else) -- catches a future gen_xwp1.py
+    // rename before it silently breaks the knob-vs-slider layout split in SoloSynthPanel.
+    const auto model = loadModel();
+    for (const auto& g : model.groupOrder())
+        CHECK (casioxw::isEnvelopeGroup (g) == g.contains ("Envelope"));
+}
+
 TEST_CASE ("ParamModel: envelopeStageIds derives all 9 siblings from any one stage id",
           "[parammodel][ui][7c]")
 {
