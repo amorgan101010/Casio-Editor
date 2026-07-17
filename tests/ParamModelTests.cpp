@@ -191,13 +191,18 @@ TEST_CASE ("ParamModel: params carry a group, and orderedGroupsForBlock covers e
 {
     const auto model = loadModel();
 
+    // Chunk 7e item 1: "Pitch Envelope" was merged into "Pitch" -- an envelope-stage param's
+    // group is now indistinguishable, at the group-name level, from any other Pitch param;
+    // envelopeStageIds(id).isValid() is the per-param way to tell them apart (see below).
     const auto* pitchEnv = model.find ("tssOSCPENViL");
     REQUIRE (pitchEnv != nullptr);
-    CHECK (pitchEnv->group == "Pitch Envelope");
+    CHECK (pitchEnv->group == "Pitch");
+    CHECK (casioxw::envelopeStageIds (pitchEnv->id).isValid());
 
     const auto* pitch = model.find ("tssOSCPdtne");
     REQUIRE (pitch != nullptr);
     CHECK (pitch->group == "Pitch");
+    CHECK_FALSE (casioxw::envelopeStageIds (pitch->id).isValid());
 
     CHECK (model.groupOrder().size() > 0);
 
@@ -220,12 +225,10 @@ TEST_CASE ("ParamModel: params carry a group, and orderedGroupsForBlock covers e
         CHECK (seenGroups.contains (p.group));
     }
 
-    // Canonical order from groupOrder() is respected where both groups are present.
-    const auto pitchIt = std::find (groups.begin(), groups.end(), juce::String ("Pitch"));
-    const auto pitchEnvIt = std::find (groups.begin(), groups.end(), juce::String ("Pitch Envelope"));
-    REQUIRE (pitchIt != groups.end());
-    REQUIRE (pitchEnvIt != groups.end());
-    CHECK (std::distance (groups.begin(), pitchIt) < std::distance (groups.begin(), pitchEnvIt));
+    // The OSC block's group merge (Chunk 7e item 1) halved 8 groups down to exactly these 4, in
+    // groupOrder's canonical order.
+    const std::vector<juce::String> expected { "General", "Pitch", "Filter", "Amp" };
+    CHECK (groups == expected);
 }
 
 TEST_CASE ("ParamModel: envelopeStageIds derives all 9 siblings from any one stage id",

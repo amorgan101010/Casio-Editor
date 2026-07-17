@@ -31,18 +31,40 @@
 class ParamControl : public juce::Component
 {
 public:
+    /** Chunk 7e item 3: how a ControlKind::Slider should render. Purely a visual layout choice
+        made by the caller (SoloSynthPanel, from a PER-PARAM check — see
+        casioxw::envelopeStageIds()) — NOT part of casioxw::decideControlKind()'s decision (which
+        widget KIND a param needs at all) and has no effect on any ControlKind other than Slider;
+        ignored (stays Default/list-style) otherwise. Replaced the Chunk 7d `bool asKnob` flag now
+        that there are three mutually-exclusive render styles rather than two. */
+    enum class RenderMode
+    {
+        Default,       // full-width juce::Slider::LinearHorizontal row (list style, unchanged)
+        Knob,          // compact rotary knob (Chunk 7d item 2) — non-envelope-stage Slider params
+        VerticalFader  // compact juce::Slider::LinearVertical (Chunk 7e item 3) — the 9
+                       // envelope-stage params, laid out side-by-side in a fader-bank row
+    };
+
     /** @param model     used only during construction, to resolve the enum value list backing
                           a combo (ComboEnum/ComboEnumPerOsc); not retained afterwards.
         @param info      must outlive this ParamControl (SoloSynthPanel holds it via
                           codec.model(), a long-lived member — see app/SoloSynthPanel.h).
         @param instance  1-based instance number (oscillator/LFO/etc — fixed for this control's
                           lifetime; the owning panel rebuilds its ParamControls rather than
-                          re-pointing one at a different instance). */
-    ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& info, int instance);
+                          re-pointing one at a different instance).
+        @param mode      see RenderMode above. */
+    ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& info, int instance,
+                  RenderMode mode = RenderMode::Default);
 
     const juce::String& paramId() const noexcept { return info.id; }
     int instanceNumber() const noexcept { return instance; }
     casioxw::ControlKind controlKind() const noexcept { return kind; }
+
+    /** Which RenderMode this control actually ended up using (mode as requested, unless kind !=
+        Slider, in which case it's always Default — see the constructor). Used by SoloSynthPanel
+        to decide which controls participate in which wrapping grid (knob vs. vertical-fader) vs.
+        a plain full-width relayout on viewport resize. */
+    RenderMode renderMode() const noexcept { return mode; }
 
     /** Fired once per user-driven change (toggle click / combo selection / slider drag-release
         or value change) — never fired by setValueFromSync(). */
@@ -59,6 +81,7 @@ private:
     const casioxw::ParamInfo& info;
     int instance;
     casioxw::ControlKind kind;
+    RenderMode mode = RenderMode::Default;   // only ever != Default when kind == ControlKind::Slider
 
     juce::Label nameLabel;
 

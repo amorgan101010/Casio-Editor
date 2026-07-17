@@ -7,6 +7,25 @@ namespace
     constexpr int kLabelWidth = 170;
     constexpr int kControlHeight = 24;
 
+    // Chunk 7f: both compact render modes share ONE cell width now — owner feedback that the
+    // knob row and the vertical-fader row (different widths, 88 vs 56, before this chunk) looked
+    // like two mismatched grids stacked on top of each other. Must match kCompactCellWidth in
+    // SoloSynthPanel.cpp ("ParamControl owns its own size, the grid just tiles it" pattern).
+    constexpr int kCompactCellWidth = 100;
+
+    // Label height bumped (16/20 -> 34) so a 2-line wrap at a readable font size replaces the old
+    // aggressive single-line shrink-to-fit (owner: "the labels are too dang small"). See the
+    // comment below on why minimumHorizontalScale was dropped in favour of natural wrapping.
+    constexpr int kCompactLabelHeight = 34;
+    constexpr int kCompactTextBoxHeight = 16;   // shared by both compact modes' value text box
+
+    // Knob: labelHeight + rotary-and-textbox region. Fader: labelHeight + the vertical throw +
+    // textbox. Both taller than their Chunk 7e predecessors (92/150) by exactly the label-height
+    // increase, so the rotary/throw area itself is unchanged (label growth is scoped to just the
+    // label). Must match kKnobCellHeight/kFaderCellHeight in SoloSynthPanel.cpp.
+    constexpr int kKnobHeight = kCompactLabelHeight + 76;
+    constexpr int kFaderHeight = kCompactLabelHeight + 130;
+
     juce::String displayName (const casioxw::ParamInfo& info)
     {
         juce::String s = info.name.isNotEmpty() ? info.name : info.id;
@@ -18,13 +37,34 @@ namespace
     }
 }
 
-ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& infoIn, int instanceIn)
-    : info (infoIn), instance (instanceIn), kind (casioxw::decideControlKind (info, instance))
+ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& infoIn, int instanceIn,
+                             RenderMode modeIn)
+    : info (infoIn), instance (instanceIn), kind (casioxw::decideControlKind (info, instance)),
+      mode (kind == ControlKind::Slider ? modeIn : RenderMode::Default)
 {
-    setSize (kLabelWidth + 220, kControlHeight);
+    const bool knobMode = mode == RenderMode::Knob;
+    const bool faderMode = mode == RenderMode::VerticalFader;
+    const bool compact = knobMode || faderMode;
+
+    setSize (compact ? kCompactCellWidth : kLabelWidth + 220,
+             knobMode ? kKnobHeight : faderMode ? kFaderHeight : kControlHeight);
 
     nameLabel.setText (displayName (info), juce::dontSendNotification);
-    nameLabel.setJustificationType (juce::Justification::centredLeft);
+    nameLabel.setJustificationType (compact ? juce::Justification::centred
+                                             : juce::Justification::centredLeft);
+    if (compact)
+    {
+        // Chunk 7f: the old approach (aggressive setMinimumHorizontalScale down to 0.6, keeping
+        // everything on one line) is exactly what made these labels "too dang small" -- squeezing
+        // "Pitch Env Attack Time" onto one 100px line needs a tiny font. juce::Label's normal
+        // paint path (Graphics::drawFittedText under the hood) already WRAPS onto multiple lines
+        // on its own once the box is tall enough, at full font size, only shrinking as a last
+        // resort -- so simply giving it two lines of height (kCompactLabelHeight) at a normal
+        // font and NOT setting a minimum scale gets natural, readable wrapping instead. Tooltip
+        // stays as a fallback for the rare name that's long even wrapped.
+        nameLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
+        nameLabel.setTooltip (displayName (info));
+    }
     addAndMakeVisible (nameLabel);
 
     switch (kind)
@@ -72,9 +112,22 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
 
         case ControlKind::Slider:
         {
-            slider = std::make_unique<juce::Slider> (juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight);
+            // Chunk 7e item 3: the 9 envelope-stage params (SoloSynthPanel's per-param
+            // envelopeStageIds() check) render as a compact VERTICAL fader instead of the
+            // original full-width bar, laid out side-by-side in a row by the owning panel — the
+            // actual space-saving move (9 vertical faders in a row vs. 9 full-width bars
+            // stacked). Every other Slider-kind param still renders as a compact rotary knob
+            // (Chunk 7d item 2, unchanged); anything left over stays the default full-width bar.
+            const auto sliderStyle = knobMode  ? juce::Slider::RotaryHorizontalVerticalDrag
+                                    : faderMode ? juce::Slider::LinearVertical
+                                                : juce::Slider::LinearHorizontal;
+            const auto textBoxPos = compact ? juce::Slider::TextBoxBelow : juce::Slider::TextBoxRight;
+            slider = std::make_unique<juce::Slider> (sliderStyle, textBoxPos);
             slider->setRange ((double) info.range.min, (double) info.range.max, 1.0);
             slider->onValueChange = [this] { notify ((int) slider->getValue()); };
+            if (compact)
+                slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false,
+                                         kCompactCellWidth - 8, kCompactTextBoxHeight);
 
             // Key Follow Base params (unit=="note", metadata-driven per gen_xwp1.py's OVR table,
             // not a hardcoded param-id list): show/accept MIDI note names ("C-1".."G9") instead
@@ -108,6 +161,22 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
 
     if (info.defaultValue.has_value() && kind != ControlKind::Disabled)
         setValueFromSync (*info.defaultValue);
+
+    // setSize() above ran before toggle/combo/slider existed (they're constructed lazily inside
+    // the switch, since a ParamControl is exactly ONE of several mutually-exclusive widget types
+    // -- unlike e.g. a fixed pair of always-present knobs). That first resized() pass therefore
+    // skipped positioning the widget entirely (resized()'s null guard). Whether anything ever
+    // repositions it again depends on the CALLER's later setBounds() using a genuinely different
+    // size -- true for every list-style control (SoloSynthPanel assigns the real container width,
+    // which differs from this constructor's default and so DOES re-trigger resized()), but FALSE
+    // for compact-mode controls (Knob AND VerticalFader), where the owning grid/row layout reuses
+    // this exact same fixed cell size, so JUCE's setBounds() sees no size change and never calls
+    // resized() again -- leaving the widget stuck at its default zero bounds forever (confirmed
+    // via tools/gui-preview: a rendered knob produced zero non-text pixels before this fix; same
+    // check re-run against the new vertical-fader mode below). Same failure class as
+    // bug-009/MainWindow's fix; force one final, correct layout pass now that the widget is
+    // guaranteed to exist, regardless of what the caller does with setBounds() afterward.
+    resized();
 }
 
 void ParamControl::notify (int uiValue)
@@ -127,18 +196,35 @@ void ParamControl::setValueFromSync (int value)
 
         case ControlKind::ComboEnum:
         case ControlKind::ComboEnumPerOsc:
-            if (combo != nullptr)
-                combo->setSelectedId (value + 1, juce::dontSendNotification);
+            // Clamp before display: a synced value can legitimately fall outside the UI's known
+            // range (e.g. tssOSCwf decoding to -1 when the real hardware's wire value is 0 --
+            // verified against franky's own SX2v.wf formula and reproducible across repeated
+            // reads, not a decode bug -- the Lua's own encoder comment notes waveform wire values
+            // "start at 1", so 0 is simply outside the normal domain for this tone's current
+            // state). Without this, setSelectedId() on an out-of-range id silently selects
+            // nothing (JUCE combo id 0 = no selection), leaving the combo looking broken/blank
+            // with no indication why. Clamping to the nearest real entry keeps the display honest
+            // (shows a plausible value) rather than mysterious.
+            if (combo != nullptr && combo->getNumItems() > 0)
+                combo->setSelectedId (juce::jlimit (0, combo->getNumItems() - 1, value) + 1,
+                                      juce::dontSendNotification);
             break;
 
         case ControlKind::ComboRange:
             if (combo != nullptr)
-                combo->setSelectedId ((value - info.range.min) + 1, juce::dontSendNotification);
+            {
+                const int clamped = juce::jlimit (info.range.min, info.range.max, value);
+                combo->setSelectedId ((clamped - info.range.min) + 1, juce::dontSendNotification);
+            }
             break;
 
         case ControlKind::Slider:
+            // juce::Slider clamps to its own setRange() bounds internally, so this is defensive
+            // consistency with the combo cases above rather than a required fix on its own.
             if (slider != nullptr)
-                slider->setValue ((double) value, juce::dontSendNotification);
+                slider->setValue (juce::jlimit ((double) info.range.min, (double) info.range.max,
+                                                (double) value),
+                                  juce::dontSendNotification);
             break;
 
         case ControlKind::Disabled:
@@ -149,6 +235,23 @@ void ParamControl::setValueFromSync (int value)
 void ParamControl::resized()
 {
     auto bounds = getLocalBounds();
+
+    if (mode == RenderMode::Knob)
+    {
+        nameLabel.setBounds (bounds.removeFromTop (kCompactLabelHeight));
+        if (slider != nullptr)
+            slider->setBounds (bounds);
+        return;
+    }
+
+    if (mode == RenderMode::VerticalFader)
+    {
+        nameLabel.setBounds (bounds.removeFromTop (kCompactLabelHeight));
+        if (slider != nullptr)
+            slider->setBounds (bounds);
+        return;
+    }
+
     nameLabel.setBounds (bounds.removeFromLeft (kLabelWidth));
 
     if (toggle != nullptr)

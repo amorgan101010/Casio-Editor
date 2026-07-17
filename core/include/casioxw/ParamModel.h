@@ -39,7 +39,11 @@ namespace casioxw
         juce::String name;            // display label, e.g. "OSC Waveform"
         juce::String block;           // e.g. "OSC", "PWM", "Etc", "TotalFilter", "LFO"
         juce::String group;           // Chunk 7c: visual sub-grouping within a block's param
-                                       // list, e.g. "Pitch Envelope" — see ParamModel::groupOrder()
+                                       // list, e.g. "Pitch" — see ParamModel::groupOrder(). Chunk
+                                       // 7e merged the old "X Envelope" sub-groups into their
+                                       // parent (Pitch Envelope -> Pitch, etc); which params WITHIN
+                                       // a group are the 9 envelope-shape stages is now a per-param
+                                       // check via envelopeStageIds(id).isValid(), not a group name.
         juce::String note;            // optional free-text implementer note
 
         struct Range { int min = 0; int max = 0; };
@@ -116,6 +120,13 @@ namespace casioxw
         of the 9 known stage suffixes (iL/aT/aL/dT/sL/r1T/r1L/r2T/r2L); anything else returns a
         default-constructed (invalid, see isValid()) result rather than guessing. */
     EnvelopeStageIds envelopeStageIds (const juce::String& anyEnvParamId);
+
+    // Chunk 7e: isEnvelopeGroup() (the old "*Envelope"-suffix group-name check) was deleted here —
+    // gen_xwp1.py's group_for() no longer ever produces a group named "X Envelope" (Pitch
+    // Envelope/Filter Envelope/Amp Envelope were merged into their parent group). Whether a param
+    // is one of the 9 envelope-shape stages is now decided PER-PARAM via
+    // envelopeStageIds(id).isValid() — see SoloSynthPanel::rebuildParamControls() (app/), which
+    // reuses that directly instead of a group-level predicate.
 
     /** Loads and indexes the XW-P1 parameter map. GUI-less. */
     class ParamModel

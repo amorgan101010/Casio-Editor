@@ -10229,12 +10229,8 @@
   "groupOrder": [
     "General",
     "Pitch",
-    "Pitch Envelope",
     "Filter",
-    "Filter Envelope",
     "Amp",
-    "Amp Envelope",
-    "Portamento / Legato",
     "PWM",
     "External Input",
     "External Trigger",
@@ -10352,7 +10348,7 @@
           "id": "tssOSCPortaSw",
           "name": "Portamento On/Off",
           "block": "OSC",
-          "group": "Portamento / Legato",
+          "group": "General",
           "address": {
             "ct": 9,
             "id": 4,
@@ -10388,7 +10384,7 @@
           "id": "tssOSCPortaTm",
           "name": "Portamento Time",
           "block": "OSC",
-          "group": "Portamento / Legato",
+          "group": "General",
           "address": {
             "ct": 9,
             "id": 5,
@@ -10424,7 +10420,7 @@
           "id": "tssOSCLegatoSw",
           "name": "Legato On/Off",
           "block": "OSC",
-          "group": "Portamento / Legato",
+          "group": "General",
           "address": {
             "ct": 9,
             "id": 6,
@@ -10460,7 +10456,7 @@
           "id": "tssOSCPENViL",
           "name": "Pitch Env Init Level",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 11,
@@ -10640,7 +10636,7 @@
           "id": "tssOSCPENVaT",
           "name": "Pitch Env Attack Time",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 12,
@@ -10676,7 +10672,7 @@
           "id": "tssOSCPENVaL",
           "name": "Pitch Env Attack Level",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 13,
@@ -10712,7 +10708,7 @@
           "id": "tssOSCPENVdT",
           "name": "Pitch Env Decay Time",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 14,
@@ -10748,7 +10744,7 @@
           "id": "tssOSCPENVsL",
           "name": "Pitch Env Sustain Level",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 15,
@@ -10784,7 +10780,7 @@
           "id": "tssOSCPENVr1T",
           "name": "Pitch Env Rel1 Time",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 16,
@@ -10820,7 +10816,7 @@
           "id": "tssOSCPENVr1L",
           "name": "Pitch Env Rel1 Level",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 17,
@@ -10856,7 +10852,7 @@
           "id": "tssOSCPENVr2T",
           "name": "Pitch Env Rel2 Time",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 18,
@@ -10892,7 +10888,7 @@
           "id": "tssOSCPENVr2L",
           "name": "Pitch Env Rel2 Level",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 19,
@@ -10928,7 +10924,7 @@
           "id": "tssOSCPEclk",
           "name": "Pitch Env Clock Trigger",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 20,
@@ -10966,7 +10962,7 @@
           "id": "tssOSCPEdep",
           "name": "Pitch Env Depth",
           "block": "OSC",
-          "group": "Pitch Envelope",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 21,
@@ -11329,7 +11325,7 @@
           "id": "tssOSCFENViL",
           "name": "Filter Env Init Level",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 31,
@@ -11365,7 +11361,7 @@
           "id": "tssOSCFENVaT",
           "name": "Filter Env Attack Time",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 32,
@@ -11401,7 +11397,7 @@
           "id": "tssOSCFENVaL",
           "name": "Filter Env Attack Level",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 33,
@@ -11437,7 +11433,7 @@
           "id": "tssOSCFENVdT",
           "name": "Filter Env Decay Time",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 34,
@@ -11473,7 +11469,7 @@
           "id": "tssOSCFENVsL",
           "name": "Filter Env Sustain Level",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 35,
@@ -11509,7 +11505,7 @@
           "id": "tssOSCFENVr1T",
           "name": "Filter Env Rel1 Time",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 36,
@@ -11545,7 +11541,7 @@
           "id": "tssOSCFENVr1L",
           "name": "Filter Env Rel1 Level",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 37,
@@ -11581,7 +11577,7 @@
           "id": "tssOSCFENVr2T",
           "name": "Filter Env Rel2 Time",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 38,
@@ -11617,7 +11613,7 @@
           "id": "tssOSCFENVr2L",
           "name": "Filter Env Rel2 Level",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 39,
@@ -11653,7 +11649,7 @@
           "id": "tssOSCFEclk",
           "name": "Filter Env Clock Trigger",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 40,
@@ -11691,7 +11687,7 @@
           "id": "tssOSCFEdep",
           "name": "Filter Env Depth",
           "block": "OSC",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 41,
@@ -11944,7 +11940,7 @@
           "id": "tssOSCAENViL",
           "name": "Amp Env Init Level",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 48,
@@ -11980,7 +11976,7 @@
           "id": "tssOSCAENVaT",
           "name": "Amp Env Attack Time",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 49,
@@ -12016,7 +12012,7 @@
           "id": "tssOSCAENVaL",
           "name": "Amp Env Attack Level",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 50,
@@ -12052,7 +12048,7 @@
           "id": "tssOSCAENVdT",
           "name": "Amp Env Decay Time",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 51,
@@ -12088,7 +12084,7 @@
           "id": "tssOSCAENVsL",
           "name": "Amp Env Sustain Level",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 52,
@@ -12124,7 +12120,7 @@
           "id": "tssOSCAENVr1T",
           "name": "Amp Env Rel1 Time",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 53,
@@ -12160,7 +12156,7 @@
           "id": "tssOSCAENVr1L",
           "name": "Amp Env Rel1 Level",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 54,
@@ -12196,7 +12192,7 @@
           "id": "tssOSCAENVr2T",
           "name": "Amp Env Rel2 Time",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 55,
@@ -12232,7 +12228,7 @@
           "id": "tssOSCAENVr2L",
           "name": "Amp Env Rel2 Level",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 56,
@@ -12268,7 +12264,7 @@
           "id": "tssOSCAEclk",
           "name": "Amp Env Clock Trigger",
           "block": "OSC",
-          "group": "Amp Envelope",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 57,
@@ -12996,7 +12992,7 @@
           "id": "tssFLTFENViL",
           "name": "Filter Env Init Level",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 79,
@@ -13027,7 +13023,7 @@
           "id": "tssFLTFENVaT",
           "name": "Filter Env Attack Time",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 80,
@@ -13058,7 +13054,7 @@
           "id": "tssFLTFENVaL",
           "name": "Filter Env Attack Level",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 81,
@@ -13089,7 +13085,7 @@
           "id": "tssFLTFENVdT",
           "name": "Filter Env Decay Time",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 82,
@@ -13120,7 +13116,7 @@
           "id": "tssFLTFENVsL",
           "name": "Filter Env Sustain Level",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 83,
@@ -13151,7 +13147,7 @@
           "id": "tssFLTFENVr1T",
           "name": "Filter Env Rel1 Time",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 84,
@@ -13182,7 +13178,7 @@
           "id": "tssFLTFENVr1L",
           "name": "Filter Env Rel1 Level",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 85,
@@ -13213,7 +13209,7 @@
           "id": "tssFLTFENVr2T",
           "name": "Filter Env Rel2 Time",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 86,
@@ -13244,7 +13240,7 @@
           "id": "tssFLTFENVr2L",
           "name": "Filter Env Rel2 Level",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 87,
@@ -13275,7 +13271,7 @@
           "id": "tssFLTFEclk",
           "name": "Filter Env Clock Trigger",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 88,
@@ -13308,7 +13304,7 @@
           "id": "tssFLTFEdep",
           "name": "Filter Env Depth",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 89,
@@ -13339,7 +13335,7 @@
           "id": "tssFLTFErtrg",
           "name": "Filter Env Retrigger",
           "block": "TotalFilter",
-          "group": "Filter Envelope",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 90,

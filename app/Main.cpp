@@ -62,9 +62,19 @@ public:
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
-            setContentOwned (new MainContentComponent(), true);
+
+            // NOT centreWithSize(getWidth(), getHeight()) -- that reads the size back off this
+            // DocumentWindow itself, implicitly trusting that setContentOwned(..., true)'s
+            // resize-to-fit has already landed by this point. On at least one Linux WM/native
+            // title bar combination that timing didn't hold, so the window opened at some tiny
+            // pre-resize default and only a manual drag fixed it (same failure class as bug-009 --
+            // an implicit "has the layout already happened?" dependency). Read the size directly
+            // from the content component we just built instead: it is known-correct the moment
+            // MainContentComponent's constructor returns, with no window-peer timing involved.
+            auto* content = new MainContentComponent();
+            setContentOwned (content, true);
             setResizable (true, true);
-            centreWithSize (getWidth(), getHeight());
+            centreWithSize (content->getWidth(), content->getHeight());
             setVisible (true);
         }
 

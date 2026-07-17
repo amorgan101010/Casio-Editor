@@ -141,22 +141,31 @@ OVR = {
 # Never read by SysExCodec. groupOrder (below) is the canonical display order;
 # app/SoloSynthPanel renders whichever of these groups are present in a block, in
 # this order, then falls back to first-seen order for anything not listed here.
+#
+# Chunk 7e item 1: the "X Envelope" sub-groups and "Portamento / Legato" were
+# merged into their parent group (Pitch Envelope -> Pitch, Filter Envelope ->
+# Filter [both OSC's and TotalFilter's], Amp Envelope -> Amp, Portamento / Legato
+# -> General) per owner feedback that 8 OSC groups was too many. Distinguishing
+# an envelope-STAGE param (the 9 graph points) from a plain modulation param
+# within the now-merged group is a per-param check now
+# (casioxw::envelopeStageIds(id).isValid()), not a per-group one — see
+# core/include/casioxw/ParamModel.h (isEnvelopeGroup() was deleted; no group is
+# ever named "X Envelope" any more).
 # ---------------------------------------------------------------------------
-GROUP_ORDER = ["General", "Pitch", "Pitch Envelope", "Filter", "Filter Envelope",
-               "Amp", "Amp Envelope", "Portamento / Legato", "PWM",
+GROUP_ORDER = ["General", "Pitch", "Filter", "Amp", "PWM",
                "External Input", "External Trigger", "Pitch Shifter", "LFO"]
 
 def group_for(pid):
     if "ENV" in pid:
-        if pid.startswith("tssOSCP"): return "Pitch Envelope"
-        if pid.startswith("tssOSCF"): return "Filter Envelope"
-        if pid.startswith("tssOSCA"): return "Amp Envelope"
-        if pid.startswith("tssFLTF"): return "Filter Envelope"
-    if re.match(r'tssOSCP(Eclk|Edep)$', pid): return "Pitch Envelope"
-    if re.match(r'tssOSCF(Eclk|Edep)$', pid): return "Filter Envelope"
-    if re.match(r'tssOSCA(Eclk)$', pid): return "Amp Envelope"
-    if re.match(r'tssFLTF(Eclk|Edep|Ertrg)$', pid): return "Filter Envelope"
-    if pid in ("tssOSCPortaSw", "tssOSCPortaTm", "tssOSCLegatoSw"): return "Portamento / Legato"
+        if pid.startswith("tssOSCP"): return "Pitch"
+        if pid.startswith("tssOSCF"): return "Filter"
+        if pid.startswith("tssOSCA"): return "Amp"
+        if pid.startswith("tssFLTF"): return "Filter"
+    if re.match(r'tssOSCP(Eclk|Edep)$', pid): return "Pitch"
+    if re.match(r'tssOSCF(Eclk|Edep)$', pid): return "Filter"
+    if re.match(r'tssOSCA(Eclk)$', pid): return "Amp"
+    if re.match(r'tssFLTF(Eclk|Edep|Ertrg)$', pid): return "Filter"
+    if pid in ("tssOSCPortaSw", "tssOSCPortaTm", "tssOSCLegatoSw"): return "General"
     if pid.startswith("tssOSCPWM"): return "PWM"
     if pid in ("tssOSCsw", "tssOSCwf", "tssOSC2sync"): return "General"
     if pid in ("tssOSCXokey", "tssOSCXinlvl"): return "External Input"
