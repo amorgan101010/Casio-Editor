@@ -10,15 +10,17 @@ namespace
     constexpr int kEnvelopeDisplayGap = 4;
     constexpr juce::uint32 kSyncTimeoutMs = 3000;   // stop polling if replies stop arriving
 
-    // Chunk 7d item 2: knob-mode grid cell size — must match ParamControl.cpp's kKnobWidth/Height
-    // (ParamControl owns its own size for a given RenderMode; the grid just tiles that fixed cell).
-    constexpr int kKnobCellWidth = 88;
-    constexpr int kKnobCellHeight = 92;
+    // Chunk 7f: knob and fader cells now share one common width (must match ParamControl.cpp's
+    // kCompactCellWidth) — owner feedback that the two rows didn't line up at 88 vs 56. Heights
+    // stay different (a knob doesn't need vertical throw, a fader does) but must match
+    // ParamControl.cpp's kKnobHeight/kFaderHeight exactly (ParamControl owns its own size for a
+    // given RenderMode; the grid here just tiles that fixed cell).
+    constexpr int kKnobCellWidth = 100;
+    constexpr int kKnobCellHeight = 110;
     constexpr int kGridGapAbove = 6;   // gap before a grid/fader-row when something precedes it
 
-    // Chunk 7e item 3: vertical-fader cell size — must match ParamControl.cpp's kFaderWidth/Height.
-    constexpr int kFaderCellWidth = 56;
-    constexpr int kFaderCellHeight = 150;
+    constexpr int kFaderCellWidth = 100;
+    constexpr int kFaderCellHeight = 164;
 
     // Chunk 7e item 2: only show the Group selector when a block has enough params that
     // group-at-a-time navigation actually helps. Current per-block totals: OSC=56, PWM=3, Etc=11,
@@ -48,10 +50,41 @@ namespace
 
     // Chunk 7d item 1: with one group shown at a time (when the selector is visible — see
     // groupSelectorNeeded), the old GroupHeader (bold label + separator, one per stacked group)
-    // became redundant with groupCombo already naming the group — removed rather than shown
-    // twice. Chunk 7e item 1: whether a param is one of the 9 envelope-shape stages is now a
-    // PER-PARAM check (casioxw::envelopeStageIds(id).isValid()) rather than a whole-group one —
-    // see rebuildParamControls().
+    // became redundant with groupCombo already naming the group. Chunk 7e item 1: whether a param
+    // is one of the 9 envelope-shape stages is now a PER-PARAM check
+    // (casioxw::envelopeStageIds(id).isValid()) rather than a whole-group one — see
+    // rebuildParamControls().
+
+    // Chunk 7f: "All Parameters" — owner feedback wanting the pre-knob/fader-redesign giant flat
+    // list back as an OPTION (not the default), reachable from the Group combo wherever it's
+    // shown. Sentinel value for SoloSynthPanel::currentGroup (never a real group name, which
+    // always comes from gen_xwp1.py's GROUP_ORDER). Selecting it renders every group for the
+    // block together, with every param as a plain full-width list row (no knob/fader split at
+    // all) — GroupHeader (below) comes back specifically for this case, since multiple groups
+    // are visible together again and need distinguishing.
+    const juce::String kAllParamsLabel = "All Parameters";
+
+    // Bold label + separator between groups — only used in "All Parameters" mode (see above);
+    // a single selected group still doesn't need one, groupCombo already names it.
+    class GroupHeader : public juce::Component
+    {
+    public:
+        explicit GroupHeader (juce::String text) : label (std::move (text)) {}
+
+        void paint (juce::Graphics& g) override
+        {
+            auto bounds = getLocalBounds();
+            g.setColour (juce::Colours::white);
+            g.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
+            g.drawText (label, bounds.removeFromTop (getHeight() - 4), juce::Justification::centredLeft);
+            g.setColour (juce::Colours::grey);
+            g.fillRect (0, getHeight() - 2, getWidth(), 1);
+        }
+
+    private:
+        juce::String label;
+    };
+    constexpr int kGroupHeaderHeight = 24;
 }
 
 //==============================================================================
@@ -278,12 +311,20 @@ void SoloSynthPanel::buildGroupList()
     // one call that's meant to (re-)drive selection; onChange only needs to fire from an actual
     // user pick (see groupCombo.onChange in the constructor).
     groupCombo.clear (juce::dontSendNotification);
+
+    // Chunk 7f: "All Parameters" is always item id=1 when the selector is shown at all -- the
+    // owner's requested escape hatch back to the pre-split flat list. Real groups follow, id
+    // offset by 1 (see groupSelectionChanged()'s matching id math).
+    if (groupSelectorNeeded)
+        groupCombo.addItem (kAllParamsLabel, 1);
     for (int i = 0; i < (int) currentGroupList.size(); ++i)
-        groupCombo.addItem (currentGroupList[(size_t) i], i + 1);
+        groupCombo.addItem (currentGroupList[(size_t) i], i + (groupSelectorNeeded ? 2 : 1));
 
     if (! currentGroupList.empty())
     {
-        groupCombo.setSelectedId (1, juce::dontSendNotification);
+        // Default selection stays the first REAL group, not "All Parameters" -- this is an
+        // extra option the owner can opt into, not a new default view.
+        groupCombo.setSelectedId (groupSelectorNeeded ? 2 : 1, juce::dontSendNotification);
         currentGroup = currentGroupList.front();
     }
     else
@@ -295,19 +336,23 @@ void SoloSynthPanel::buildGroupList()
 void SoloSynthPanel::groupSelectionChanged()
 {
     const int id = groupCombo.getSelectedId();
-    if (id <= 0 || id > (int) currentGroupList.size())
+    const int maxId = (int) currentGroupList.size() + (groupSelectorNeeded ? 1 : 0);
+    if (id <= 0 || id > maxId)
         return;
-    currentGroup = currentGroupList[(size_t) (id - 1)];
+    currentGroup = (groupSelectorNeeded && id == 1) ? kAllParamsLabel
+                                                     : currentGroupList[(size_t) (id - (groupSelectorNeeded ? 2 : 1))];
     rebuildParamControls();
     autoSyncIfConnected();   // Chunk 7c item 1
 }
 
 std::vector<juce::String> SoloSynthPanel::groupsToRender() const
 {
-    if (groupSelectorNeeded)
-        return currentGroup.isEmpty() ? std::vector<juce::String> {}
-                                       : std::vector<juce::String> { currentGroup };
-    return currentGroupList;   // small block: show every one of its groups together
+    if (! groupSelectorNeeded)
+        return currentGroupList;   // small block: show every one of its groups together
+    if (currentGroup == kAllParamsLabel)
+        return currentGroupList;   // owner's explicit "All Parameters" choice
+    return currentGroup.isEmpty() ? std::vector<juce::String> {}
+                                   : std::vector<juce::String> { currentGroup };
 }
 
 //==============================================================================
@@ -343,6 +388,11 @@ void SoloSynthPanel::rebuildParamControls()
         };
     };
 
+    // Chunk 7f: "All Parameters" bypasses the knob/fader split entirely and reproduces the
+    // pre-7d/7e giant flat list (every param as a plain full-width row) -- see kAllParamsLabel's
+    // doc comment above. Only reachable when the Group selector is shown at all.
+    const bool flatMode = groupSelectorNeeded && currentGroup == kAllParamsLabel;
+
     const auto groups = groupsToRender();
     for (size_t groupIdx = 0; groupIdx < groups.size(); ++groupIdx)
     {
@@ -356,23 +406,37 @@ void SoloSynthPanel::rebuildParamControls()
         if (bucket.empty())
             continue;
 
+        // Flat mode gets its GroupHeader back (bold label + separator) -- with several groups
+        // visible together again, they need distinguishing; a single selected group still
+        // doesn't (groupCombo already names it).
+        if (flatMode)
+        {
+            auto header = std::make_unique<GroupHeader> (group);
+            paramContainer.addAndMakeVisible (*header);
+            layoutItems.push_back ({ header.get(), kGroupHeaderHeight, {}, 0, 0, 0 });
+            groupRows.push_back (std::move (header));
+        }
+
         // Chunk 7e item 1: envelope-stage-ness is now a PER-PARAM check (casioxw::envelopeStageIds
         // ().isValid()), not a whole-group one — after merging "X Envelope" groups into their
         // parent "X" group, a single group can contain both the 9 envelope-shape points (which
         // still need the graphic + fader treatment) and plain modulation params (which don't).
+        // In flatMode every param goes to listStyle regardless (the whole point of "All
+        // Parameters" is bypassing the split) — but anyEnvParam is still tracked so the
+        // EnvelopeDisplay graphic keeps showing, matching "the giant list view we had before".
         std::vector<const casioxw::ParamInfo*> listStyle, knobStyle, faderStyle;
         const casioxw::ParamInfo* anyEnvParam = nullptr;
         for (const auto* p : bucket)
         {
-            if (casioxw::envelopeStageIds (p->id).isValid())
-            {
+            const bool isEnvStage = casioxw::envelopeStageIds (p->id).isValid();
+            if (isEnvStage && anyEnvParam == nullptr)
+                anyEnvParam = p;
+
+            if (flatMode)
+                listStyle.push_back (p);
+            else if (isEnvStage)
                 faderStyle.push_back (p);
-                if (anyEnvParam == nullptr)
-                    anyEnvParam = p;
-                continue;
-            }
-            const auto kind = casioxw::decideControlKind (*p, currentInstance);
-            if (kind == casioxw::ControlKind::Slider)
+            else if (casioxw::decideControlKind (*p, currentInstance) == casioxw::ControlKind::Slider)
                 knobStyle.push_back (p);
             else
                 listStyle.push_back (p);

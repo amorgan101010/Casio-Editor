@@ -7,27 +7,24 @@ namespace
     constexpr int kLabelWidth = 170;
     constexpr int kControlHeight = 24;
 
-    // Chunk 7d item 2: knob-mode cell size — deliberately small/fixed so several fit per row in
-    // SoloSynthPanel's wrapping grid (see kKnobCellWidth/Height there, which must match this).
-    // 88 wide gives a little more breathing room than a bare 80 for longer labels like
-    // "OSC Waveform" / "Key Follow Base" before minimumHorizontalScale has to kick in.
-    constexpr int kKnobWidth = 88;
-    constexpr int kKnobHeight = 92;
-    constexpr int kKnobLabelHeight = 16;
+    // Chunk 7f: both compact render modes share ONE cell width now — owner feedback that the
+    // knob row and the vertical-fader row (different widths, 88 vs 56, before this chunk) looked
+    // like two mismatched grids stacked on top of each other. Must match kCompactCellWidth in
+    // SoloSynthPanel.cpp ("ParamControl owns its own size, the grid just tiles it" pattern).
+    constexpr int kCompactCellWidth = 100;
 
-    // Chunk 7e item 3: vertical-fader cell size — narrow so 9 (one full envelope shape) fit
-    // side-by-side in one row without wrapping on SoloSynthPanel's ~860px default content width
-    // (9 * 56 = 504px, comfortably under that). Must match kFaderCellWidth/Height in
-    // SoloSynthPanel.cpp, same "ParamControl owns its own size, the grid just tiles it" pattern
-    // as the knob cell above. Taller than the knob cell (150 vs 92) so the vertical throw is
-    // actually usable — a cramped vertical slider is worse than a horizontal bar, not better.
-    constexpr int kFaderWidth = 56;
-    constexpr int kFaderHeight = 150;
-    // Still one line (same shrink-to-fit + tooltip trick as knob mode below) but envelope-stage
-    // names run longer ("Pitch Env Rel1 Time") than a typical knob label, so a little extra label
-    // height reduces how aggressively minimumHorizontalScale has to shrink the font.
-    constexpr int kFaderLabelHeight = 20;
+    // Label height bumped (16/20 -> 34) so a 2-line wrap at a readable font size replaces the old
+    // aggressive single-line shrink-to-fit (owner: "the labels are too dang small"). See the
+    // comment below on why minimumHorizontalScale was dropped in favour of natural wrapping.
+    constexpr int kCompactLabelHeight = 34;
     constexpr int kCompactTextBoxHeight = 16;   // shared by both compact modes' value text box
+
+    // Knob: labelHeight + rotary-and-textbox region. Fader: labelHeight + the vertical throw +
+    // textbox. Both taller than their Chunk 7e predecessors (92/150) by exactly the label-height
+    // increase, so the rotary/throw area itself is unchanged (label growth is scoped to just the
+    // label). Must match kKnobCellHeight/kFaderCellHeight in SoloSynthPanel.cpp.
+    constexpr int kKnobHeight = kCompactLabelHeight + 76;
+    constexpr int kFaderHeight = kCompactLabelHeight + 130;
 
     juce::String displayName (const casioxw::ParamInfo& info)
     {
@@ -49,7 +46,7 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
     const bool faderMode = mode == RenderMode::VerticalFader;
     const bool compact = knobMode || faderMode;
 
-    setSize (knobMode ? kKnobWidth : faderMode ? kFaderWidth : kLabelWidth + 220,
+    setSize (compact ? kCompactCellWidth : kLabelWidth + 220,
              knobMode ? kKnobHeight : faderMode ? kFaderHeight : kControlHeight);
 
     nameLabel.setText (displayName (info), juce::dontSendNotification);
@@ -57,11 +54,15 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
                                              : juce::Justification::centredLeft);
     if (compact)
     {
-        // Both compact cells are narrower than most param names ("OSC Waveform", "Key Follow
-        // Base", "Pitch Env Rel1 Time" once the unit suffix is appended) — shrink-to-fit rather
-        // than hard-truncate, and keep the full name reachable via tooltip.
-        nameLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
-        nameLabel.setMinimumHorizontalScale (0.6f);
+        // Chunk 7f: the old approach (aggressive setMinimumHorizontalScale down to 0.6, keeping
+        // everything on one line) is exactly what made these labels "too dang small" -- squeezing
+        // "Pitch Env Attack Time" onto one 100px line needs a tiny font. juce::Label's normal
+        // paint path (Graphics::drawFittedText under the hood) already WRAPS onto multiple lines
+        // on its own once the box is tall enough, at full font size, only shrinking as a last
+        // resort -- so simply giving it two lines of height (kCompactLabelHeight) at a normal
+        // font and NOT setting a minimum scale gets natural, readable wrapping instead. Tooltip
+        // stays as a fallback for the rare name that's long even wrapped.
+        nameLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
         nameLabel.setTooltip (displayName (info));
     }
     addAndMakeVisible (nameLabel);
@@ -124,10 +125,9 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
             slider = std::make_unique<juce::Slider> (sliderStyle, textBoxPos);
             slider->setRange ((double) info.range.min, (double) info.range.max, 1.0);
             slider->onValueChange = [this] { notify ((int) slider->getValue()); };
-            if (knobMode)
-                slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, kKnobWidth - 8, kCompactTextBoxHeight);
-            else if (faderMode)
-                slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, kFaderWidth - 4, kCompactTextBoxHeight);
+            if (compact)
+                slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false,
+                                         kCompactCellWidth - 8, kCompactTextBoxHeight);
 
             // Key Follow Base params (unit=="note", metadata-driven per gen_xwp1.py's OVR table,
             // not a hardcoded param-id list): show/accept MIDI note names ("C-1".."G9") instead
@@ -238,7 +238,7 @@ void ParamControl::resized()
 
     if (mode == RenderMode::Knob)
     {
-        nameLabel.setBounds (bounds.removeFromTop (kKnobLabelHeight));
+        nameLabel.setBounds (bounds.removeFromTop (kCompactLabelHeight));
         if (slider != nullptr)
             slider->setBounds (bounds);
         return;
@@ -246,7 +246,7 @@ void ParamControl::resized()
 
     if (mode == RenderMode::VerticalFader)
     {
-        nameLabel.setBounds (bounds.removeFromTop (kFaderLabelHeight));
+        nameLabel.setBounds (bounds.removeFromTop (kCompactLabelHeight));
         if (slider != nullptr)
             slider->setBounds (bounds);
         return;
