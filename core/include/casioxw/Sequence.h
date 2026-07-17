@@ -38,6 +38,8 @@ namespace casioxw
         juce::String paramId;
         int instance = 1;
         int baseValue = 0;
+        int minValue = 0;     // parameter range, seeded from ParamInfo — bounds randomized locks
+        int maxValue = 127;
     };
 
     /** A single-track, single-channel, 16-step note sequence with per-step parameter locks.
@@ -47,6 +49,7 @@ namespace casioxw
         std::array<Step, 16> steps {};
         int channel = 1;     // MIDI channel, 1-16
         int tempoBpm = 120;
+        int stepsPerBeat = 4;   // rate/time-scale: 4 = 16th notes, 2 = 8ths, 8 = 32nds, 3 = 8th triplets
 
         /** The p-lockable parameters this sequence knows about, with their base values. The
             SequencerPanel seeds this (Filter Cutoff + Resonance to start); it is the single list
@@ -75,8 +78,9 @@ namespace casioxw
     /** Note the step sends, or nullopt for a disabled step. */
     std::optional<NoteEvent> stepEvent (const Sequence& seq, int stepIndex);
 
-    /** Milliseconds per step at the sequence's tempo. Each step is a 16th note (4 steps/beat —
-        16 steps = one 4/4 bar). */
+    /** Milliseconds per step at the sequence's tempo and rate. One step = one (1 / (stepsPerBeat*4))
+        note; stepsPerBeat=4 -> 16th notes (16 steps = one 4/4 bar), 2 -> 8ths, 8 -> 32nds,
+        3 -> 8th-note triplets. */
     double stepIntervalMs (const Sequence& seq);
 
     /** The lock a step holds for a given parameter, or nullptr if that parameter is unlocked on
@@ -106,4 +110,12 @@ namespace casioxw
 
     /** Remove every lock on a step. */
     void clearStepLocks (Sequence& seq, int stepIndex);
+
+    /** Randomize the musical content of a sequence in place: per-step gate (~60% on), note (snapped
+        to a C-minor-pentatonic scale over two octaves so it stays musical), velocity, and p-locks
+        (each lockable param has a ~30% chance to lock to a random in-range value on each step).
+        Leaves channel / tempo / rate / the lockable set + base values untouched. `rng` makes this
+        deterministic for a given seed — the whole reason it's a pure core function, so the UI's
+        Randomize button is exercised headlessly (tests/SequenceTests.cpp). */
+    void randomize (Sequence& seq, juce::Random& rng);
 }

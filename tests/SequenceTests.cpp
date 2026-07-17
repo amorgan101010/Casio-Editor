@@ -39,7 +39,7 @@ TEST_CASE ("stepEvent: steps are independent", "[sequence]")
     CHECK_FALSE (casioxw::stepEvent (seq, 1).has_value());
 }
 
-TEST_CASE ("stepIntervalMs: 16th note at given BPM (4 steps per beat)", "[sequence]")
+TEST_CASE ("stepIntervalMs: default rate is 16th notes (4 steps per beat)", "[sequence]")
 {
     casioxw::Sequence seq;
     seq.tempoBpm = 120;
@@ -50,6 +50,18 @@ TEST_CASE ("stepIntervalMs: 16th note at given BPM (4 steps per beat)", "[sequen
 
     seq.tempoBpm = 240;
     CHECK (casioxw::stepIntervalMs (seq) == 62.5);
+}
+
+TEST_CASE ("stepIntervalMs: rate/time-scale scales with stepsPerBeat", "[sequence]")
+{
+    casioxw::Sequence seq;
+    seq.tempoBpm = 120;   // 500 ms/beat
+
+    seq.stepsPerBeat = 1;   CHECK (casioxw::stepIntervalMs (seq) == 500.0);   // 1/4 notes
+    seq.stepsPerBeat = 2;   CHECK (casioxw::stepIntervalMs (seq) == 250.0);   // 1/8
+    seq.stepsPerBeat = 3;   CHECK (casioxw::stepIntervalMs (seq) == 500.0 / 3.0);  // 1/8 triplet
+    seq.stepsPerBeat = 4;   CHECK (casioxw::stepIntervalMs (seq) == 125.0);   // 1/16
+    seq.stepsPerBeat = 8;   CHECK (casioxw::stepIntervalMs (seq) == 62.5);    // 1/32
 }
 
 // ---- p-locks -------------------------------------------------------------------------------
@@ -132,4 +144,66 @@ TEST_CASE ("setBaseValue: changes what unlocked steps resolve to", "[sequence][p
     auto seq = seqWithCutoff (90);
     casioxw::setBaseValue (seq, "tssFLTFcoff", 1, 64);
     CHECK (*casioxw::effectiveParamValue (seq, 0, "tssFLTFcoff", 1) == 64);
+}
+
+// ---- randomize -----------------------------------------------------------------------------
+
+TEST_CASE ("randomize: notes/velocities/lock values stay in range", "[sequence][random]")
+{
+    auto seq = seqWithCutoff (90);
+    seq.lockable[0].minValue = 0;
+    seq.lockable[0].maxValue = 127;
+
+    juce::Random rng (12345);
+    casioxw::randomize (seq, rng);
+
+    for (const auto& step : seq.steps)
+    {
+        CHECK (step.note >= 0);
+        CHECK (step.note <= 127);
+        CHECK (step.velocity >= 1);
+        CHECK (step.velocity <= 127);
+        for (const auto& lock : step.locks)
+        {
+            CHECK (lock.value >= 0);
+            CHECK (lock.value <= 127);
+            CHECK (lock.paramId == "tssFLTFcoff");   // only ever locks known lockable params
+        }
+    }
+}
+
+TEST_CASE ("randomize: deterministic for a given seed", "[sequence][random]")
+{
+    auto a = seqWithCutoff (90);
+    auto b = seqWithCutoff (90);
+
+    juce::Random rngA (777);
+    juce::Random rngB (777);
+    casioxw::randomize (a, rngA);
+    casioxw::randomize (b, rngB);
+
+    for (int i = 0; i < 16; ++i)
+    {
+        CHECK (a.steps[(size_t) i].enabled  == b.steps[(size_t) i].enabled);
+        CHECK (a.steps[(size_t) i].note     == b.steps[(size_t) i].note);
+        CHECK (a.steps[(size_t) i].velocity == b.steps[(size_t) i].velocity);
+        REQUIRE (a.steps[(size_t) i].locks.size() == b.steps[(size_t) i].locks.size());
+    }
+}
+
+TEST_CASE ("randomize: leaves channel/tempo/rate and the lockable set untouched", "[sequence][random]")
+{
+    auto seq = seqWithCutoff (90);
+    seq.channel = 7;
+    seq.tempoBpm = 100;
+    seq.stepsPerBeat = 3;
+
+    juce::Random rng (1);
+    casioxw::randomize (seq, rng);
+
+    CHECK (seq.channel == 7);
+    CHECK (seq.tempoBpm == 100);
+    CHECK (seq.stepsPerBeat == 3);
+    REQUIRE (seq.lockable.size() == 1);
+    CHECK (seq.lockable[0].baseValue == 90);   // base untouched; only per-step locks change
 }

@@ -13,7 +13,8 @@ namespace casioxw
     double stepIntervalMs (const Sequence& seq)
     {
         const double msPerBeat = 60000.0 / (double) seq.tempoBpm;
-        return msPerBeat / 4.0;
+        const int spb = seq.stepsPerBeat > 0 ? seq.stepsPerBeat : 4;
+        return msPerBeat / (double) spb;
     }
 
     const ParamLock* findStepLock (const Step& step, const juce::String& paramId, int instance)
@@ -91,5 +92,31 @@ namespace casioxw
     void clearStepLocks (Sequence& seq, int stepIndex)
     {
         seq.steps[(size_t) stepIndex].locks.clear();
+    }
+
+    void randomize (Sequence& seq, juce::Random& rng)
+    {
+        static const int pentatonic[] = { 0, 3, 5, 7, 10 };   // C minor pentatonic degrees
+        constexpr int root = 48;                              // C3
+
+        for (auto& step : seq.steps)
+        {
+            step.enabled = rng.nextFloat() < 0.6f;
+
+            const int octave = rng.nextInt (2);              // 0..1
+            const int degree = pentatonic[rng.nextInt (5)];
+            step.note = root + octave * 12 + degree;
+
+            step.velocity = 70 + rng.nextInt (58);           // 70..127
+
+            step.locks.clear();
+            for (const auto& lp : seq.lockable)
+                if (rng.nextFloat() < 0.3f)
+                {
+                    const int span = lp.maxValue - lp.minValue + 1;
+                    const int value = lp.minValue + rng.nextInt (juce::jmax (1, span));
+                    step.locks.push_back (ParamLock { lp.paramId, lp.instance, value });
+                }
+        }
     }
 }
