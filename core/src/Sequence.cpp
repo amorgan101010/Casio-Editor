@@ -100,6 +100,103 @@ namespace casioxw
         seq.steps[(size_t) stepIndex].locks.clear();
     }
 
+    juce::String sequenceToJson (const Sequence& seq)
+    {
+        juce::DynamicObject::Ptr root = new juce::DynamicObject();
+        root->setProperty ("format", "casioxw-sequence");
+        root->setProperty ("version", 1);
+        root->setProperty ("channel", seq.channel);
+        root->setProperty ("tempoBpm", seq.tempoBpm);
+        root->setProperty ("stepsPerBeat", seq.stepsPerBeat);
+
+        juce::Array<juce::var> lockableArr;
+        for (const auto& lp : seq.lockable)
+        {
+            juce::DynamicObject::Ptr o = new juce::DynamicObject();
+            o->setProperty ("paramId", lp.paramId);
+            o->setProperty ("instance", lp.instance);
+            o->setProperty ("baseValue", lp.baseValue);
+            lockableArr.add (juce::var (o.get()));
+        }
+        root->setProperty ("lockable", lockableArr);
+
+        juce::Array<juce::var> stepsArr;
+        for (const auto& s : seq.steps)
+        {
+            juce::DynamicObject::Ptr o = new juce::DynamicObject();
+            o->setProperty ("note", s.note);
+            o->setProperty ("velocity", s.velocity);
+            o->setProperty ("enabled", s.enabled);
+            o->setProperty ("gatePercent", s.gatePercent);
+
+            juce::Array<juce::var> locksArr;
+            for (const auto& lk : s.locks)
+            {
+                juce::DynamicObject::Ptr lo = new juce::DynamicObject();
+                lo->setProperty ("paramId", lk.paramId);
+                lo->setProperty ("instance", lk.instance);
+                lo->setProperty ("value", lk.value);
+                locksArr.add (juce::var (lo.get()));
+            }
+            o->setProperty ("locks", locksArr);
+            stepsArr.add (juce::var (o.get()));
+        }
+        root->setProperty ("steps", stepsArr);
+
+        return juce::JSON::toString (juce::var (root.get()));
+    }
+
+    std::optional<Sequence> sequenceFromJson (const juce::String& text)
+    {
+        const auto parsed = juce::JSON::parse (text);
+        if (parsed.getDynamicObject() == nullptr)   // reject non-object JSON (arrays, scalars, garbage)
+            return std::nullopt;
+
+        Sequence seq;
+        seq.channel      = (int) parsed.getProperty ("channel", 1);
+        seq.tempoBpm     = (int) parsed.getProperty ("tempoBpm", 120);
+        seq.stepsPerBeat = (int) parsed.getProperty ("stepsPerBeat", 4);
+
+        seq.lockable.clear();
+        if (const auto* larr = parsed.getProperty ("lockable", {}).getArray())
+            for (const auto& v : *larr)
+            {
+                LockableParam lp;
+                lp.paramId   = v.getProperty ("paramId", "").toString();
+                lp.instance  = (int) v.getProperty ("instance", 1);
+                lp.baseValue = (int) v.getProperty ("baseValue", 0);
+                seq.lockable.push_back (lp);
+            }
+
+        if (const auto* sarr = parsed.getProperty ("steps", {}).getArray())
+        {
+            const int n = juce::jmin (16, sarr->size());
+            for (int i = 0; i < n; ++i)
+            {
+                const auto& v = sarr->getReference (i);
+                Step s;
+                s.note        = (int) v.getProperty ("note", 60);
+                s.velocity    = (int) v.getProperty ("velocity", 100);
+                s.enabled     = (bool) v.getProperty ("enabled", false);
+                s.gatePercent = (int) v.getProperty ("gatePercent", 90);
+
+                if (const auto* lk = v.getProperty ("locks", {}).getArray())
+                    for (const auto& lv : *lk)
+                    {
+                        ParamLock pl;
+                        pl.paramId  = lv.getProperty ("paramId", "").toString();
+                        pl.instance = (int) lv.getProperty ("instance", 1);
+                        pl.value    = (int) lv.getProperty ("value", 0);
+                        s.locks.push_back (pl);
+                    }
+
+                seq.steps[(size_t) i] = std::move (s);
+            }
+        }
+
+        return seq;
+    }
+
     void shiftSteps (Sequence& seq, int delta)
     {
         constexpr int n = 16;

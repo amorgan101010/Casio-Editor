@@ -117,6 +117,16 @@ namespace casioxw
     /** Remove every lock on a step. */
     void clearStepLocks (Sequence& seq, int stepIndex);
 
+    /** Serialize a sequence to a JSON string: every step (note/velocity/enabled/gatePercent/locks),
+        channel/tempo/rate, and each lockable param's base value. Round-trips with sequenceFromJson().
+        (min/max are metadata re-seeded from the param model on load, so they aren't stored.) */
+    juce::String sequenceToJson (const Sequence& seq);
+
+    /** Parse a sequence from a sequenceToJson() string. std::nullopt if the text isn't a valid
+        sequence object; missing fields fall back to defaults and at most 16 steps are read, so a
+        slightly-off or future-versioned file degrades rather than crashes. */
+    std::optional<Sequence> sequenceFromJson (const juce::String& text);
+
     /** Rotate all 16 steps (note/gate/velocity/enable/locks move together) by `delta` positions,
         wrapping around: delta>0 shifts later/right (step i -> i+delta), delta<0 earlier/left. Lets
         a pattern be re-anchored to a different starting step without re-authoring it. */

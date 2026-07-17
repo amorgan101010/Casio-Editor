@@ -158,6 +158,64 @@ TEST_CASE ("setBaseValue: changes what unlocked steps resolve to", "[sequence][p
     CHECK (*casioxw::effectiveParamValue (seq, 0, "tssFLTFcoff", 1) == 64);
 }
 
+// ---- JSON save/load ------------------------------------------------------------------------
+
+TEST_CASE ("sequenceToJson/fromJson: round-trips a populated sequence", "[sequence][json]")
+{
+    casioxw::Sequence seq;
+    seq.channel = 7;
+    seq.tempoBpm = 132;
+    seq.stepsPerBeat = 6;
+    seq.lockable.push_back (casioxw::LockableParam { "tssFLTFcoff", 1, 100 });
+    seq.lockable.push_back (casioxw::LockableParam { "tssFLTFreso", 1, 12 });
+
+    seq.steps[0].enabled = true;
+    seq.steps[0].note = 48;
+    seq.steps[0].velocity = 111;
+    seq.steps[0].gatePercent = 40;
+    casioxw::setStepLock (seq, 0, "tssFLTFcoff", 1, 33);
+    seq.steps[9].enabled = true;
+    seq.steps[9].note = 63;
+
+    const auto json = casioxw::sequenceToJson (seq);
+    const auto back = casioxw::sequenceFromJson (json);
+    REQUIRE (back.has_value());
+
+    CHECK (back->channel == 7);
+    CHECK (back->tempoBpm == 132);
+    CHECK (back->stepsPerBeat == 6);
+    REQUIRE (back->lockable.size() == 2);
+    CHECK (back->lockable[0].paramId == "tssFLTFcoff");
+    CHECK (back->lockable[0].baseValue == 100);
+    CHECK (back->lockable[1].baseValue == 12);
+
+    CHECK (back->steps[0].enabled);
+    CHECK (back->steps[0].note == 48);
+    CHECK (back->steps[0].velocity == 111);
+    CHECK (back->steps[0].gatePercent == 40);
+    REQUIRE (back->steps[0].locks.size() == 1);
+    CHECK (back->steps[0].locks[0].paramId == "tssFLTFcoff");
+    CHECK (back->steps[0].locks[0].value == 33);
+    CHECK (back->steps[9].note == 63);
+    CHECK_FALSE (back->steps[1].enabled);
+}
+
+TEST_CASE ("sequenceFromJson: rejects non-sequence text", "[sequence][json]")
+{
+    CHECK_FALSE (casioxw::sequenceFromJson ("not json at all").has_value());
+    CHECK_FALSE (casioxw::sequenceFromJson ("[1,2,3]").has_value());   // valid JSON, not an object
+}
+
+TEST_CASE ("sequenceFromJson: missing fields fall back to defaults", "[sequence][json]")
+{
+    const auto back = casioxw::sequenceFromJson ("{\"tempoBpm\":90}");
+    REQUIRE (back.has_value());
+    CHECK (back->tempoBpm == 90);
+    CHECK (back->channel == 1);        // default
+    CHECK (back->stepsPerBeat == 4);   // default
+    CHECK_FALSE (back->steps[0].enabled);
+}
+
 // ---- shiftSteps ----------------------------------------------------------------------------
 
 TEST_CASE ("shiftSteps: right by 1 moves each step's content one later, wrapping", "[sequence][shift]")
