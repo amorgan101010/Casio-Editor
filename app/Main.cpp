@@ -19,7 +19,7 @@ public:
     MainContentComponent()
         : codec (casioxw::ParamModel::fromFile (juce::File (CASIOXW_PARAMS_JSON))),
           soloSynthPanel (codec, midiIO),
-          sequencerPanel (midiIO)
+          sequencerPanel (codec, midiIO)
     {
         tabs.addTab ("Solo Synth", juce::Colours::darkgrey, &soloSynthPanel, false);
         tabs.addTab ("Sequencer", juce::Colours::darkgrey, &sequencerPanel, false);

@@ -1,28 +1,42 @@
 #pragma once
 
+#include "ParamControl.h"
+
 #include "casioxw/MidiIO.h"
 #include "casioxw/Sequence.h"
+#include "casioxw/SysExCodec.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <map>
 #include <memory>
 #include <optional>
+#include <vector>
 
-/** 16-step note sequencer MVP: a step grid (enable + note per step), tempo/channel/velocity
-    controls, and a Play/Stop transport. Sends Note On/Off directly via casioxw::MidiIO — no
-    SysExCodec involved, this is channel-voice only, not a tone/parameter edit.
+/** 16-step note sequencer with Elektron-style parameter locks.
 
-    Timer-driven, not the sequencer roadmap's look-ahead + timestamped-output scheduler — an
-    accepted MVP shortcut (SEQUENCER_HANDOFF.md scope), not a silent one. Expect some timing
-    looseness under load; full-fidelity scheduling is deferred.
+    `sequence` is the single source of truth (note/vel/enable/tempo/channel + per-step p-locks +
+    per-param base values); every widget writes into it on edit and is refreshed from it. Notes go
+    out as channel-voice messages; p-locks go out as SysEx via the shared SysExCodec — a p-lock IS
+    a tone edit scheduled to a step.
 
-    No p-locks, no chains/song mode, no persistence — this is the flattest possible slice that
-    still exercises MidiIO's channel-voice path end to end against real hardware. */
+    Interaction model (one rule: the edit target is `(selectedStep, editMode)`, surfaced in a
+    status label):
+      - `selectedStep < 0` (Base): the param controls edit each parameter's *base* value (the
+        track's main sound, applied on every unlocked step). Always editable.
+      - a step selected + Edit ON: moving a param control writes a p-lock to that step.
+      - a step selected + Edit OFF: the param controls show that step's locks read-only, with a
+        marker on each parameter that is locked (vs inheriting the base).
+
+    Timer-driven, not the roadmap's look-ahead scheduler — accepted MVP shortcut. Playback resolves
+    each step's effective parameter values (casioxw::effectiveParamValues) and only re-sends the
+    ones that changed since last applied (the parameter analogue of the note-off dedup). Stop
+    resets every parameter to its base so a p-lock can't leave the filter stuck. */
 class SequencerPanel : public juce::Component, private juce::Timer
 {
 public:
-    explicit SequencerPanel (casioxw::MidiIO& midiIO);
+    SequencerPanel (casioxw::SysExCodec& codec, casioxw::MidiIO& midiIO);
     ~SequencerPanel() override;
 
     void resized() override;
@@ -30,18 +44,38 @@ public:
 private:
     struct StepControl
     {
+        juce::TextButton select;              // shows step number; click selects it
         juce::ToggleButton enabled;
         juce::Slider note { juce::Slider::LinearVertical, juce::Slider::TextBoxBelow };
+    };
+
+    struct LockRow
+    {
+        std::unique_ptr<ParamControl> control; // reused tone-editor widget (base/effective value)
+        juce::Label lockMarker;                // "LOCKED" accent when locked on the selected step
     };
 
     void timerCallback() override;
     void play();
     void stop();
-    casioxw::Sequence buildSequence() const;
 
+    void selectStep (int step);                // -1 == Base
+    void onParamEdited (int lockableIndex, int value);
+    void refreshParamControls();               // value + enabled + lock markers from current context
+    void refreshStepButtons();                 // selected highlight + has-locks marker
+    void updateStatusLabel();
+
+    juce::String syncKey (const juce::String& paramId, int instance) const;
+    void applyParam (const juce::String& paramId, int instance, int value);  // send + track lastApplied
+
+    casioxw::SysExCodec& codec;
     casioxw::MidiIO& midiIO;
 
+    casioxw::Sequence sequence;                // source of truth
+
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
+    std::vector<std::unique_ptr<LockRow>> lockRows;   // one per sequence.lockable entry
+
     juce::TextButton playStopButton { "Play" };
     juce::Slider tempoSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Slider channelSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
@@ -49,16 +83,19 @@ private:
     juce::Label tempoLabel { {}, "Tempo (BPM)" };
     juce::Label channelLabel { {}, "MIDI Channel" };
     juce::Label velocityLabel { {}, "Velocity" };
+
+    juce::TextButton baseButton { "Base" };
+    juce::ToggleButton editButton { "Edit Locks" };
+    juce::TextButton clearLocksButton { "Clear Step Locks" };
     juce::Label statusLabel;
 
     int currentStep = 0;
     bool playing = false;
+    int selectedStep = -1;                     // -1 == Base
 
-    // The note actually sent, so note-off always targets what was sent — never re-derived from
-    // the model at note-off time, or editing a step (or the channel) mid-play would orphan the
-    // sounding note.
     std::optional<int> soundingNote;
     int soundingChannel = 1;
+    std::map<juce::String, int> lastApplied;   // keyed by syncKey(); parameter dedup for playback
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SequencerPanel)
 };
