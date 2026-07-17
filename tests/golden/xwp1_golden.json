@@ -120,14 +120,14 @@
   { "paramId": "tssOSCAlfo1D", "instance": 1, "value": -64, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 2f 00 00 00 00 00 00 f7" },
   { "paramId": "tssOSCAlfo1D", "instance": 1, "value": 0, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 2f 00 00 00 00 00 40 f7" },
   { "paramId": "tssOSCAlfo1D", "instance": 1, "value": 63, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 2f 00 00 00 00 00 7f f7" },
-  { "paramId": "tssOSCAlfo2D", "instance": 1, "value": -64, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 2f 00 00 00 00 00 00 f7" },
-  { "paramId": "tssOSCAlfo2D", "instance": 1, "value": 0, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 2f 00 00 00 00 00 40 f7" },
-  { "paramId": "tssOSCAlfo2D", "instance": 1, "value": 63, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 2f 00 00 00 00 00 7f f7" },
+  { "paramId": "tssOSCAlfo2D", "instance": 1, "value": -64, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 2f 00 01 00 00 00 00 f7" },
+  { "paramId": "tssOSCAlfo2D", "instance": 1, "value": 0, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 2f 00 01 00 00 00 40 f7" },
+  { "paramId": "tssOSCAlfo2D", "instance": 1, "value": 63, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 2f 00 01 00 00 00 7f f7" },
   { "paramId": "tssFLTFlfo1D", "instance": 1, "value": -64, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 4e 00 00 00 00 00 00 f7" },
   { "paramId": "tssFLTFlfo1D", "instance": 1, "value": 0, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 4e 00 00 00 00 00 40 f7" },
   { "paramId": "tssFLTFlfo1D", "instance": 1, "value": 63, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 4e 00 00 00 00 00 7f f7" },
-  { "paramId": "tssFLTFlfo2D", "instance": 1, "value": -64, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 4e 00 00 00 00 00 00 f7" },
-  { "paramId": "tssFLTFlfo2D", "instance": 1, "value": 0, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 4e 00 00 00 00 00 40 f7" },
-  { "paramId": "tssFLTFlfo2D", "instance": 1, "value": 63, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 4e 00 00 00 00 00 7f f7" }
+  { "paramId": "tssFLTFlfo2D", "instance": 1, "value": -64, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 4e 00 01 00 00 00 00 f7" },
+  { "paramId": "tssFLTFlfo2D", "instance": 1, "value": 0, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 4e 00 01 00 00 00 40 f7" },
+  { "paramId": "tssFLTFlfo2D", "instance": 1, "value": 63, "expectedFrameHex": "f0 44 16 03 7f 01 09 00 00 00 00 00 00 00 00 00 00 00 4e 00 01 00 00 00 7f f7" }
   ]
 }

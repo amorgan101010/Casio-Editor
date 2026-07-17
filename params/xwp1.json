@@ -11687,8 +11687,7 @@
               "EXT",
               "Noise"
             ]
-          },
-          "note": "Address collision: shares 18-byte address (id=0x2f,ai=0,an=0) with ['tssOSCAlfo2D']. Likely Lua source typo (compare NRPN table where these have distinct ids). Prefer Lua per policy; codec RX cannot disambiguate."
+          }
         },
         {
           "id": "tssOSCAlfo2D",
@@ -11697,7 +11696,7 @@
           "address": {
             "ct": 9,
             "id": 47,
-            "ai": 0,
+            "ai": 1,
             "an": 0
           },
           "vt": "cf",
@@ -11724,7 +11723,7 @@
               "Noise"
             ]
           },
-          "note": "Address collision: shares 18-byte address (id=0x2f,ai=0,an=0) with ['tssOSCAlfo1D']. Likely Lua source typo (compare NRPN table where these have distinct ids). Prefer Lua per policy; codec RX cannot disambiguate."
+          "note": "Lua typo fix: franky's table has ai=0 (colliding with tssOSCAlfo1D); midi-spec p75 (OSC Block Amp) defines LFO Depth as 'Array 02', so LFO2 depth = ai 1 (same pattern the Lua itself uses for tssOSCPlfo1D/2D). Verified on hardware 2026-07-17."
         },
         {
           "id": "tssOSCAENViL",
@@ -12712,8 +12711,7 @@
             "labels": [
               "TotalFilter"
             ]
-          },
-          "note": "Address collision: shares 18-byte address (id=0x4e,ai=0,an=0) with ['tssFLTFlfo2D']. Likely Lua source typo (compare NRPN table where these have distinct ids). Prefer Lua per policy; codec RX cannot disambiguate."
+          }
         },
         {
           "id": "tssFLTFlfo2D",
@@ -12722,7 +12720,7 @@
           "address": {
             "ct": 9,
             "id": 78,
-            "ai": 0,
+            "ai": 1,
             "an": 0
           },
           "vt": "cf",
@@ -12744,7 +12742,7 @@
               "TotalFilter"
             ]
           },
-          "note": "Address collision: shares 18-byte address (id=0x4e,ai=0,an=0) with ['tssFLTFlfo1D']. Likely Lua source typo (compare NRPN table where these have distinct ids). Prefer Lua per policy; codec RX cannot disambiguate."
+          "note": "Lua typo fix: franky's table has ai=0 (colliding with tssFLTFlfo1D); midi-spec p79 (Total Filter) defines LFO Depth as 'Array 02', so LFO2 depth = ai 1. Verified on hardware 2026-07-17."
         },
         {
           "id": "tssFLTFENViL",
