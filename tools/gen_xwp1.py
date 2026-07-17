@@ -101,9 +101,15 @@ BLOCK_GROUP = {"tssOSC": "OSC", "tssPWM": "PWM", "tssETC": "Etc", "tssFLT": "Tot
 ONOFF = {"tssOSCsw","tssOSCPortaSw","tssOSCLegatoSw","tssOSC2sync",
          "tssOSCXPxtrg","tssOSCXFxtrg","tssOSCXAxtrg","tssOSCXTFxtrg","tssFLTFErtrg"}
 
-# per-param overrides: (range_override, default, ui_control, enum_ref, note)
+# per-param overrides: (range_override, default, ui_control, enum_ref, address ai, note)
 # note = discrepancy vs midi-spec (prefer Lua vt, record the tighter range)
 OVR = {
+  "tssOSCAlfo2D": dict(ai=1, note="Lua typo fix: franky's table has ai=0 (colliding with tssOSCAlfo1D); "
+                       "midi-spec p75 (OSC Block Amp) defines LFO Depth as 'Array 02', so LFO2 depth = ai 1 "
+                       "(same pattern the Lua itself uses for tssOSCPlfo1D/2D). Verified on hardware 2026-07-17."),
+  "tssFLTFlfo2D": dict(ai=1, note="Lua typo fix: franky's table has ai=0 (colliding with tssFLTFlfo1D); "
+                       "midi-spec p79 (Total Filter) defines LFO Depth as 'Array 02', so LFO2 depth = ai 1. "
+                       "Verified on hardware 2026-07-17."),
   "tssLFOsync":   dict(rng=(0,2), default=0, ui="combo", note="midi-spec p78-79: Clock Sync 0=NoSync/1=Sync LFO1(LFO2 only)/2=Sync Tempo; Lua vt='nf'."),
   "tssLFOwf":     dict(rng=(0,7), default=0, ui="combo", enum="lfoWave", note="midi-spec p78-79: LFO Wave 0-7; Lua vt='nf' (would imply 0-127)."),
   "tssLFOclk":    dict(rng=(0,17), note="midi-spec p78-79: Clock Trigger 0-17; Lua vt='nf'."),
@@ -188,7 +194,7 @@ def build_params():
                 "id": pid,
                 "name": name_for(pid),
                 "block": BLOCK_GROUP[b],
-                "address": {"ct": ct, "id": rec["id"], "ai": rec["ai"], "an": rec["an"]},
+                "address": {"ct": ct, "id": rec["id"], "ai": ov.get("ai", rec["ai"]), "an": rec["an"]},
                 "vt": vt,
                 "range": rng,
                 "default": default,

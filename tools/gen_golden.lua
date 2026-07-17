@@ -47,6 +47,27 @@ assert(g_tsswf and g_tsswf[3] == 326, "expected P1 wave-offset model (g_tsswf[3]
 assert(g_tssModSXtx, "g_tssModSXtx not built")
 
 -- ---------------------------------------------------------------------------
+-- Deliberate deviation from the raw Lua: franky's tssOSCAlfo2D/tssFLTFlfo2D
+-- entries have ai=0, colliding with their lfo1D siblings. The official manual
+-- (midi-spec p75 OSC Amp, p79 Total Filter) defines LFO Depth as "Array 02",
+-- i.e. lfo2D = ai 1 — the same pattern the Lua itself uses for tssOSCPlfo2D.
+-- Hardware-verified 2026-07-17: with ai=1, LFO1/LFO2 depths hold independent
+-- values on a real XW-P1 (impossible under the collision). Patch the ai token
+-- (15th of the 18 address bytes: ct,0,0,0,blk*8,id,0,ai,0,an,0) before capture.
+local function fixAi1(sx)
+    local toks = {}
+    for t in sx:gmatch("%x%x") do toks[#toks + 1] = t end
+    assert(#toks == 18 and toks[15] == "00", "unexpected sx layout: " .. sx)
+    toks[15] = "01"
+    return table.concat(toks, " ")
+end
+for modid, def in pairs(g_tssModSXtx) do
+    if modid:match("^tssOSCAlfo2D") or modid:match("^tssFLTFlfo2D") then
+        def.sx = fixAi1(def.sx)
+    end
+end
+
+-- ---------------------------------------------------------------------------
 -- The genuine TX dispatch, verbatim from sendTSSParamSX (019_ToneSoloSynth.lua),
 -- minus the ENV-canvas UI side effect. Returns the captured full-frame hex.
 -- ---------------------------------------------------------------------------
