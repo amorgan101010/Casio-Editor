@@ -11,10 +11,24 @@ namespace
     constexpr juce::uint32 kSyncTimeoutMs = 3000;   // stop polling if replies stop arriving
 
     // Chunk 7d item 2: knob-mode grid cell size — must match ParamControl.cpp's kKnobWidth/Height
-    // (ParamControl owns its own size when knobMode is true; the grid just tiles that fixed cell).
+    // (ParamControl owns its own size for a given RenderMode; the grid just tiles that fixed cell).
     constexpr int kKnobCellWidth = 88;
     constexpr int kKnobCellHeight = 92;
-    constexpr int kKnobGridGapAbove = 6;   // gap before the grid when list-style controls precede it
+    constexpr int kGridGapAbove = 6;   // gap before a grid/fader-row when something precedes it
+
+    // Chunk 7e item 3: vertical-fader cell size — must match ParamControl.cpp's kFaderWidth/Height.
+    constexpr int kFaderCellWidth = 56;
+    constexpr int kFaderCellHeight = 150;
+
+    // Chunk 7e item 2: only show the Group selector when a block has enough params that
+    // group-at-a-time navigation actually helps. Current per-block totals: OSC=56, PWM=3, Etc=11,
+    // TotalFilter=20, LFO=8 — any threshold between roughly 21 and 55 produces the same "OSC
+    // only" result the owner asked for; picked with headroom on both sides rather than tuned to
+    // the exact boundary.
+    constexpr int kGroupSelectorParamThreshold = 25;
+
+    // Extra breathing room between groups when several render together (Group selector hidden).
+    constexpr int kInterGroupGap = 14;
 
     juce::String syncKey (const juce::String& paramId, int instance)
     {
@@ -32,10 +46,12 @@ namespace
         return nullptr;
     }
 
-    // Chunk 7d item 1: with one group shown at a time, the old GroupHeader (bold label +
-    // separator, one per stacked group) became redundant with groupCombo already naming the
-    // group — removed rather than shown twice. casioxw::isEnvelopeGroup() (promoted to core in
-    // this same chunk, see ParamModel.h) replaces the local copy that used to live here.
+    // Chunk 7d item 1: with one group shown at a time (when the selector is visible — see
+    // groupSelectorNeeded), the old GroupHeader (bold label + separator, one per stacked group)
+    // became redundant with groupCombo already naming the group — removed rather than shown
+    // twice. Chunk 7e item 1: whether a param is one of the 9 envelope-shape stages is now a
+    // PER-PARAM check (casioxw::envelopeStageIds(id).isValid()) rather than a whole-group one —
+    // see rebuildParamControls().
 }
 
 //==============================================================================
@@ -242,6 +258,18 @@ void SoloSynthPanel::buildGroupList()
 {
     currentGroupList = casioxw::orderedGroupsForBlock (codec.model(), "soloSynth", currentBlock);
 
+    const auto& model = codec.model();
+    int totalParams = 0;
+    for (const auto& p : model.all())
+        if (p.section == "soloSynth" && p.block == currentBlock)
+            ++totalParams;
+
+    // Chunk 7e item 2: hide the Group selector entirely for blocks small enough that
+    // group-at-a-time navigation is more friction than it's worth — see groupsToRender().
+    groupSelectorNeeded = totalParams > kGroupSelectorParamThreshold;
+    groupLabel.setVisible (groupSelectorNeeded);
+    groupCombo.setVisible (groupSelectorNeeded);
+
     // dontSendNotification: ComboBox::clear() defaults to an ASYNC notification. On a second+
     // block switch, groupCombo already has a selection (id=1), so an unguarded clear() would
     // fire groupSelectionChanged() after this function (and blockSelectionChanged()) already
@@ -274,6 +302,14 @@ void SoloSynthPanel::groupSelectionChanged()
     autoSyncIfConnected();   // Chunk 7c item 1
 }
 
+std::vector<juce::String> SoloSynthPanel::groupsToRender() const
+{
+    if (groupSelectorNeeded)
+        return currentGroup.isEmpty() ? std::vector<juce::String> {}
+                                       : std::vector<juce::String> { currentGroup };
+    return currentGroupList;   // small block: show every one of its groups together
+}
+
 //==============================================================================
 void SoloSynthPanel::rebuildParamControls()
 {
@@ -282,52 +318,77 @@ void SoloSynthPanel::rebuildParamControls()
     envelopeSinks.clear();     // sinks capture raw EnvelopeDisplay* — must die before groupRows does
     groupRows.clear();
     controls.clear();          // destroying each ParamControl removes it from paramContainer automatically
-    knobControls.clear();
-    knobGridStartY = 0;
+    layoutItems.clear();
 
     const auto& model = codec.model();
     const int width = paramContainer.getWidth() > 0 ? paramContainer.getWidth() : 400;
-    int y = 0;
 
-    // Chunk 7d item 1: exactly one group rendered at a time now (groupCombo picks it) — no
-    // per-group header/loop here any more, see buildGroupList()/groupSelectionChanged().
-    if (currentGroup.isEmpty())
+    // Shared onValueChanged wiring for every control regardless of render mode (identical
+    // send-SysEx + envelope-sink behaviour either way — only the visual layout differs).
+    auto wireControl = [this] (ParamControl& ctrl)
     {
-        paramContainer.setSize (juce::jmax (400, paramViewport.getWidth()), y);
-        return;
-    }
+        const juce::String paramId = ctrl.paramId();
+        const int instance = ctrl.instanceNumber();
 
-    // Params in currentGroup, preserving their original JSON order (Chunk 7c item 4's requirement).
-    std::vector<const casioxw::ParamInfo*> bucket;
-    for (const auto& p : model.all())
-        if (p.section == "soloSynth" && p.block == currentBlock && p.group == currentGroup)
-            bucket.push_back (&p);
+        const auto sinkIt = envelopeSinks.find (syncKey (paramId, instance));
+        const std::function<void (int)> envSink =
+            sinkIt != envelopeSinks.end() ? sinkIt->second : std::function<void (int)> {};
 
-    const bool envGroup = casioxw::isEnvelopeGroup (currentGroup);
+        ctrl.onValueChanged = [this, paramId, instance, envSink] (int value)
+        {
+            const auto frame = codec.encode (paramId, instance, value);
+            midiIO.sendFrame (frame);
+            if (envSink)
+                envSink (value);
+        };
+    };
 
-    // Chunk 7c item 5: one read-only EnvelopeDisplay above an envelope group's controls, seeded
-    // from the current instance's stage defaults so it isn't blank before a sync.
-    if (envGroup)
+    const auto groups = groupsToRender();
+    for (size_t groupIdx = 0; groupIdx < groups.size(); ++groupIdx)
     {
+        const auto& group = groups[groupIdx];
+
+        // Params in this group, preserving their original JSON order (Chunk 7c item 4).
+        std::vector<const casioxw::ParamInfo*> bucket;
+        for (const auto& p : model.all())
+            if (p.section == "soloSynth" && p.block == currentBlock && p.group == group)
+                bucket.push_back (&p);
+        if (bucket.empty())
+            continue;
+
+        // Chunk 7e item 1: envelope-stage-ness is now a PER-PARAM check (casioxw::envelopeStageIds
+        // ().isValid()), not a whole-group one — after merging "X Envelope" groups into their
+        // parent "X" group, a single group can contain both the 9 envelope-shape points (which
+        // still need the graphic + fader treatment) and plain modulation params (which don't).
+        std::vector<const casioxw::ParamInfo*> listStyle, knobStyle, faderStyle;
         const casioxw::ParamInfo* anyEnvParam = nullptr;
         for (const auto* p : bucket)
-            if (p->id.contains ("ENV"))
-            {
-                anyEnvParam = p;
-                break;
-            }
-
-        const auto stageIds = anyEnvParam != nullptr
-            ? casioxw::envelopeStageIds (anyEnvParam->id) : casioxw::EnvelopeStageIds {};
-
-        if (stageIds.isValid())
         {
+            if (casioxw::envelopeStageIds (p->id).isValid())
+            {
+                faderStyle.push_back (p);
+                if (anyEnvParam == nullptr)
+                    anyEnvParam = p;
+                continue;
+            }
+            const auto kind = casioxw::decideControlKind (*p, currentInstance);
+            if (kind == casioxw::ControlKind::Slider)
+                knobStyle.push_back (p);
+            else
+                listStyle.push_back (p);
+        }
+
+        // Chunk 7c item 5: one read-only EnvelopeDisplay above this group's envelope-stage
+        // controls (if any), seeded from the current instance's stage defaults so it isn't blank
+        // before a sync.
+        if (anyEnvParam != nullptr)
+        {
+            const auto stageIds = casioxw::envelopeStageIds (anyEnvParam->id);
             const auto* levelParam = model.find (stageIds.initLevel);   // defines the level axis range
             const int levelMin = levelParam != nullptr ? levelParam->range.min : -64;
             const int levelMax = levelParam != nullptr ? levelParam->range.max : 63;
 
             auto display = std::make_unique<EnvelopeDisplay> (levelMin, levelMax);
-            display->setBounds (0, y, width, kEnvelopeDisplayHeight);
 
             const juce::String stageIdsInOrder[EnvelopeDisplay::kNumStages] = {
                 stageIds.initLevel,     stageIds.attackTime,    stageIds.attackLevel,
@@ -349,118 +410,98 @@ void SoloSynthPanel::rebuildParamControls()
             }
 
             paramContainer.addAndMakeVisible (*display);
+            layoutItems.push_back ({ displayPtr, kEnvelopeDisplayHeight, {}, 0, 0, kEnvelopeDisplayGap });
             groupRows.push_back (std::move (display));
-            y += kEnvelopeDisplayHeight + kEnvelopeDisplayGap;
         }
-    }
 
-    // Chunk 7d item 2: split this group's params into list-style (Toggle/Combo*/Disabled, plus
-    // ALL sliders when this is an envelope group — those stay exactly as before) vs. knob-style
-    // (Slider-kind params in a non-envelope group — Pitch/Filter/Amp/LFO/PWM/etc knob dials).
-    // The split is decided here, in app/, from casioxw::decideControlKind() + isEnvelopeGroup()
-    // — NOT encoded into decideControlKind() itself, which only ever answers "which widget KIND
-    // does this param need" (see ParamControl.h's `asKnob` doc comment).
-    std::vector<const casioxw::ParamInfo*> listStyle, knobStyle;
-    for (const auto* p : bucket)
-    {
-        const auto kind = casioxw::decideControlKind (*p, currentInstance);
-        if (! envGroup && kind == casioxw::ControlKind::Slider)
-            knobStyle.push_back (p);
-        else
-            listStyle.push_back (p);
-    }
-
-    // Shared onValueChanged wiring for both list-style and knob-style controls (identical
-    // send-SysEx + envelope-sink behaviour either way — only the visual layout differs).
-    auto wireControl = [this] (ParamControl& ctrl)
-    {
-        const juce::String paramId = ctrl.paramId();
-        const int instance = ctrl.instanceNumber();
-
-        const auto sinkIt = envelopeSinks.find (syncKey (paramId, instance));
-        const std::function<void (int)> envSink =
-            sinkIt != envelopeSinks.end() ? sinkIt->second : std::function<void (int)> {};
-
-        ctrl.onValueChanged = [this, paramId, instance, envSink] (int value)
+        // List-style controls first (toggles/combos read as qualitative selectors, not "dial in a
+        // value" — always above the fader row / knob grid, deliberately and consistently).
+        for (const auto* p : listStyle)
         {
-            const auto frame = codec.encode (paramId, instance, value);
-            midiIO.sendFrame (frame);
-            if (envSink)
-                envSink (value);
-        };
-    };
-
-    // List-style controls first (toggles/combos read as qualitative selectors, not "dial in a
-    // value" — they sit above the knob grid, deliberately and consistently for every group).
-    for (const auto* p : listStyle)
-    {
-        auto ctrl = std::make_unique<ParamControl> (model, *p, currentInstance);
-        ctrl->setBounds (0, y, width, kControlRowHeight);
-        y += kControlRowHeight + 2;
-        wireControl (*ctrl);
-        paramContainer.addAndMakeVisible (*ctrl);
-        controls.push_back (std::move (ctrl));
-    }
-
-    // Knob-style controls in a wrapping grid below. See knobControls' doc comment in the header
-    // for the "always last" invariant layoutParamContainerWidth() relies on.
-    if (! knobStyle.empty())
-    {
-        if (! listStyle.empty())
-            y += kKnobGridGapAbove;
-        knobGridStartY = y;
-
-        for (const auto* p : knobStyle)
-        {
-            auto ctrl = std::make_unique<ParamControl> (model, *p, currentInstance, /*asKnob=*/ true);
+            auto ctrl = std::make_unique<ParamControl> (model, *p, currentInstance);
             wireControl (*ctrl);
             paramContainer.addAndMakeVisible (*ctrl);
-            knobControls.push_back (ctrl.get());
+            layoutItems.push_back ({ ctrl.get(), kControlRowHeight + 2, {}, 0, 0, 0 });
             controls.push_back (std::move (ctrl));
         }
 
-        y = layoutKnobGrid (width);
+        // Vertical-fader row: the envelope-shape controls, side by side.
+        if (! faderStyle.empty())
+        {
+            std::vector<ParamControl*> faderPtrs;
+            for (const auto* p : faderStyle)
+            {
+                auto ctrl = std::make_unique<ParamControl> (model, *p, currentInstance,
+                                                             ParamControl::RenderMode::VerticalFader);
+                wireControl (*ctrl);
+                paramContainer.addAndMakeVisible (*ctrl);
+                faderPtrs.push_back (ctrl.get());
+                controls.push_back (std::move (ctrl));
+            }
+            layoutItems.push_back ({ nullptr, 0, std::move (faderPtrs), kFaderCellWidth, kFaderCellHeight, 0 });
+        }
+
+        // Knob grid: everything else (plain numeric params, not envelope-shape points).
+        if (! knobStyle.empty())
+        {
+            std::vector<ParamControl*> knobPtrs;
+            for (const auto* p : knobStyle)
+            {
+                auto ctrl = std::make_unique<ParamControl> (model, *p, currentInstance,
+                                                             ParamControl::RenderMode::Knob);
+                wireControl (*ctrl);
+                paramContainer.addAndMakeVisible (*ctrl);
+                knobPtrs.push_back (ctrl.get());
+                controls.push_back (std::move (ctrl));
+            }
+            layoutItems.push_back ({ nullptr, 0, std::move (knobPtrs), kKnobCellWidth, kKnobCellHeight, 0 });
+        }
+
+        // Extra breathing room before the next group, only when several render together.
+        if (groupIdx + 1 < groups.size() && ! layoutItems.empty())
+            layoutItems.back().gapAfter += kInterGroupGap;
     }
 
-    paramContainer.setSize (juce::jmax (400, paramViewport.getWidth()), y);
+    layoutSequential (width);
 }
 
-int SoloSynthPanel::layoutKnobGrid (int width)
+int SoloSynthPanel::layoutSequential (int width)
 {
-    const int cols = juce::jmax (1, width / kKnobCellWidth);
-    int col = 0, rowY = knobGridStartY;
-
-    for (auto* c : knobControls)
+    int y = 0;
+    for (auto& item : layoutItems)
     {
-        c->setBounds (col * kKnobCellWidth, rowY, kKnobCellWidth, kKnobCellHeight);
-        if (++col >= cols)
+        if (item.rowComponent != nullptr)
         {
-            col = 0;
-            rowY += kKnobCellHeight;
+            item.rowComponent->setBounds (0, y, width, item.rowHeight);
+            y += item.rowHeight;
         }
+        else if (! item.gridControls.empty())
+        {
+            const int cols = juce::jmax (1, width / item.cellWidth);
+            int col = 0, rowY = y;
+            for (auto* c : item.gridControls)
+            {
+                c->setBounds (col * item.cellWidth, rowY, item.cellWidth, item.cellHeight);
+                if (++col >= cols)
+                {
+                    col = 0;
+                    rowY += item.cellHeight;
+                }
+            }
+            if (col != 0)
+                rowY += item.cellHeight;   // a partially-filled last row still consumes a full row
+            y = rowY;
+        }
+        y += item.gapAfter;
     }
-    if (col != 0)
-        rowY += kKnobCellHeight;   // a partially-filled last row still consumes a full row height
 
-    return rowY;
+    paramContainer.setSize (juce::jmax (400, width), y);
+    return y;
 }
 
 void SoloSynthPanel::layoutParamContainerWidth()
 {
-    const int width = juce::jmax (400, paramViewport.getWidth());
-
-    for (auto& c : groupRows)
-        c->setSize (width, c->getHeight());
-
-    // List-style controls: keep their Y/height, only width tracks the viewport (setSize()
-    // preserves the existing top-left). Knob-style controls keep their fixed cell size — the
-    // grid below repositions them instead (column count can change with width).
-    for (auto& c : controls)
-        if (! c->isKnobMode())
-            c->setSize (width, c->getHeight());
-
-    const int height = knobControls.empty() ? paramContainer.getHeight() : layoutKnobGrid (width);
-    paramContainer.setSize (width, height);
+    layoutSequential (juce::jmax (400, paramViewport.getWidth()));
 }
 
 //==============================================================================
@@ -560,9 +601,12 @@ void SoloSynthPanel::resized()
         instanceCombo.setBounds (navRow.removeFromLeft (160));
         navRow.removeFromLeft (kRowGap);
     }
-    groupLabel.setBounds (navRow.removeFromLeft (55));
-    groupCombo.setBounds (navRow.removeFromLeft (180));
-    navRow.removeFromLeft (kRowGap);
+    if (groupCombo.isVisible())
+    {
+        groupLabel.setBounds (navRow.removeFromLeft (55));
+        groupCombo.setBounds (navRow.removeFromLeft (180));
+        navRow.removeFromLeft (kRowGap);
+    }
     syncButton.setBounds (navRow.removeFromLeft (100));
 
     bounds.removeFromTop (kRowGap);

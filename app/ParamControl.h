@@ -31,6 +31,20 @@
 class ParamControl : public juce::Component
 {
 public:
+    /** Chunk 7e item 3: how a ControlKind::Slider should render. Purely a visual layout choice
+        made by the caller (SoloSynthPanel, from a PER-PARAM check — see
+        casioxw::envelopeStageIds()) — NOT part of casioxw::decideControlKind()'s decision (which
+        widget KIND a param needs at all) and has no effect on any ControlKind other than Slider;
+        ignored (stays Default/list-style) otherwise. Replaced the Chunk 7d `bool asKnob` flag now
+        that there are three mutually-exclusive render styles rather than two. */
+    enum class RenderMode
+    {
+        Default,       // full-width juce::Slider::LinearHorizontal row (list style, unchanged)
+        Knob,          // compact rotary knob (Chunk 7d item 2) — non-envelope-stage Slider params
+        VerticalFader  // compact juce::Slider::LinearVertical (Chunk 7e item 3) — the 9
+                       // envelope-stage params, laid out side-by-side in a fader-bank row
+    };
+
     /** @param model     used only during construction, to resolve the enum value list backing
                           a combo (ComboEnum/ComboEnumPerOsc); not retained afterwards.
         @param info      must outlive this ParamControl (SoloSynthPanel holds it via
@@ -38,25 +52,19 @@ public:
         @param instance  1-based instance number (oscillator/LFO/etc — fixed for this control's
                           lifetime; the owning panel rebuilds its ParamControls rather than
                           re-pointing one at a different instance).
-        @param asKnob    Chunk 7d item 2: render a ControlKind::Slider as a compact rotary knob
-                          (small fixed-size cell, label above, value text box below) instead of
-                          the default full-width linear bar. This is a purely visual layout
-                          choice made by the caller (SoloSynthPanel, based on whether the param's
-                          group is an envelope group — see casioxw::isEnvelopeGroup()) — it is
-                          NOT part of casioxw::decideControlKind()'s decision (which widget KIND a
-                          param needs at all) and has no effect on any ControlKind other than
-                          Slider; ignored (stays list-style) otherwise. */
+        @param mode      see RenderMode above. */
     ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& info, int instance,
-                  bool asKnob = false);
+                  RenderMode mode = RenderMode::Default);
 
     const juce::String& paramId() const noexcept { return info.id; }
     int instanceNumber() const noexcept { return instance; }
     casioxw::ControlKind controlKind() const noexcept { return kind; }
 
-    /** True if this control is rendering as a rotary knob (see `asKnob` above) rather than the
-        default one-row list style. Used by SoloSynthPanel to decide which controls participate
-        in the wrapping knob grid vs. a plain full-width relayout on viewport resize. */
-    bool isKnobMode() const noexcept { return knobMode; }
+    /** Which RenderMode this control actually ended up using (mode as requested, unless kind !=
+        Slider, in which case it's always Default — see the constructor). Used by SoloSynthPanel
+        to decide which controls participate in which wrapping grid (knob vs. vertical-fader) vs.
+        a plain full-width relayout on viewport resize. */
+    RenderMode renderMode() const noexcept { return mode; }
 
     /** Fired once per user-driven change (toggle click / combo selection / slider drag-release
         or value change) — never fired by setValueFromSync(). */
@@ -73,7 +81,7 @@ private:
     const casioxw::ParamInfo& info;
     int instance;
     casioxw::ControlKind kind;
-    bool knobMode = false;   // only ever true when kind == ControlKind::Slider
+    RenderMode mode = RenderMode::Default;   // only ever != Default when kind == ControlKind::Slider
 
     juce::Label nameLabel;
 
