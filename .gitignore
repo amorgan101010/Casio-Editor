@@ -67,3 +67,10 @@ __pycache__/
 
 # OpenWolf local working memory (not tracked)
 .wolf/
+
+# franky's extracted CTRLR panel Lua source (copyright status unclear -- his own
+# work, no explicit license grant found). Kept locally only for tools/gen_xwp1.py
+# and tools/gen_golden.lua to regenerate params/xwp1.json / tests/golden/ from;
+# never published. Scrubbed from git history 2026-07-17 (git-filter-repo) before
+# making this repo public -- see .wolf/cerebrum.md for the full rationale.
+reference/lua/
