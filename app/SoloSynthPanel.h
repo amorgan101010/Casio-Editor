@@ -2,10 +2,12 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "EnvelopeDisplay.h"
 #include "ParamControl.h"
 #include "casioxw/MidiIO.h"
 #include "casioxw/SysExCodec.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <vector>
@@ -62,12 +64,30 @@ private:
     void blockSelectionChanged();
     void instanceSelectionChanged();
 
+    /** Chunk 7c item 1: re-run the Sync flow automatically after a block/instance switch or a
+        successful Connect — but only when both ends are actually open (matches the manual
+        Sync button's own guard). No-op otherwise, so the user isn't nagged with a status message
+        on every tab switch while disconnected. */
+    void autoSyncIfConnected();
+
     // ---- Param list ----------------------------------------------------------------------------
     juce::Viewport paramViewport;
     juce::Component paramContainer;
     std::vector<std::unique_ptr<ParamControl>> controls;
 
+    // Chunk 7c item 4: group headers (bold label + separator), and item 5: EnvelopeDisplay
+    // widgets — both interleaved with `controls` inside paramContainer, but owned separately
+    // since they're not per-param. Generic juce::Component storage + a uniform width-relayout in
+    // resized() (see layoutParamContainerWidth()) avoids maintaining two divergent layout paths.
+    std::vector<std::unique_ptr<juce::Component>> groupRows;
+
+    // Feeds live envelope-stage values into their EnvelopeDisplay (both from user edits, via
+    // ParamControl::onValueChanged, and from sync replies, via timerCallback()) without ParamControl
+    // itself knowing envelopes exist. Key: "<paramId>#<instance>", same as outstandingSync.
+    std::map<juce::String, std::function<void (int)>> envelopeSinks;
+
     void rebuildParamControls();
+    void layoutParamContainerWidth();   // shared by rebuildParamControls() and resized()
 
     // ---- Sync (poll-on-demand, juce::Timer — never a busy loop) --------------------------------
     std::map<juce::String, ParamControl*> outstandingSync;   // key: "<paramId>#<instance>"

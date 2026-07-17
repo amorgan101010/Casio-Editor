@@ -85,6 +85,11 @@
         }
       }
     },
+    "groupOrder": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "Canonical display order for param.group values in the UI (Chunk 7c). A group present in a section but absent here is rendered after these, in first-seen order."
+    },
     "sections": {
       "type": "object",
       "required": ["soloSynth"],
@@ -115,6 +120,7 @@
         "id": {"type": "string"},
         "name": {"type": "string"},
         "block": {"type": "string"},
+        "group": {"type": "string", "description": "Visual sub-grouping within a block's param list (Chunk 7c), e.g. 'Pitch Envelope'. See top-level groupOrder for display order."},
         "address": {
           "type": "object",
           "required": ["ct", "id", "ai", "an"],

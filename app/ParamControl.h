@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "casioxw/NoteNames.h"
 #include "casioxw/ParamModel.h"
 
 #include <functional>

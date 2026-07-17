@@ -10072,8 +10072,175 @@
         "value": 7,
         "label": "Random"
       }
+    ],
+    "clockTrigger": [
+      {
+        "value": 0,
+        "label": "Off"
+      },
+      {
+        "value": 1,
+        "label": "1/4"
+      },
+      {
+        "value": 2,
+        "label": "1/3"
+      },
+      {
+        "value": 3,
+        "label": "1/2"
+      },
+      {
+        "value": 4,
+        "label": "2/3"
+      },
+      {
+        "value": 5,
+        "label": "1"
+      },
+      {
+        "value": 6,
+        "label": "3/2"
+      },
+      {
+        "value": 7,
+        "label": "2"
+      },
+      {
+        "value": 8,
+        "label": "3"
+      },
+      {
+        "value": 9,
+        "label": "4"
+      },
+      {
+        "value": 10,
+        "label": "1/4U"
+      },
+      {
+        "value": 11,
+        "label": "1/3U"
+      },
+      {
+        "value": 12,
+        "label": "1/2U"
+      },
+      {
+        "value": 13,
+        "label": "2/3U"
+      },
+      {
+        "value": 14,
+        "label": "1U"
+      },
+      {
+        "value": 15,
+        "label": "3/2U"
+      },
+      {
+        "value": 16,
+        "label": "2U"
+      },
+      {
+        "value": 17,
+        "label": "3U"
+      },
+      {
+        "value": 18,
+        "label": "4U"
+      }
+    ],
+    "lfoClockTrigger": [
+      {
+        "value": 0,
+        "label": "1/4"
+      },
+      {
+        "value": 1,
+        "label": "1/3"
+      },
+      {
+        "value": 2,
+        "label": "1/2"
+      },
+      {
+        "value": 3,
+        "label": "2/3"
+      },
+      {
+        "value": 4,
+        "label": "1"
+      },
+      {
+        "value": 5,
+        "label": "3/2"
+      },
+      {
+        "value": 6,
+        "label": "2"
+      },
+      {
+        "value": 7,
+        "label": "3"
+      },
+      {
+        "value": 8,
+        "label": "4"
+      },
+      {
+        "value": 9,
+        "label": "1/4U"
+      },
+      {
+        "value": 10,
+        "label": "1/3U"
+      },
+      {
+        "value": 11,
+        "label": "1/2U"
+      },
+      {
+        "value": 12,
+        "label": "2/3U"
+      },
+      {
+        "value": 13,
+        "label": "1U"
+      },
+      {
+        "value": 14,
+        "label": "3/2U"
+      },
+      {
+        "value": 15,
+        "label": "2U"
+      },
+      {
+        "value": 16,
+        "label": "3U"
+      },
+      {
+        "value": 17,
+        "label": "4U"
+      }
     ]
   },
+  "groupOrder": [
+    "General",
+    "Pitch",
+    "Pitch Envelope",
+    "Filter",
+    "Filter Envelope",
+    "Amp",
+    "Amp Envelope",
+    "Portamento / Legato",
+    "PWM",
+    "External Input",
+    "External Trigger",
+    "Pitch Shifter",
+    "LFO"
+  ],
   "sections": {
     "soloSynth": {
       "category": "0x09",
@@ -10085,6 +10252,7 @@
           "id": "tssOSCsw",
           "name": "OSC On/Off",
           "block": "OSC",
+          "group": "General",
           "address": {
             "ct": 9,
             "id": 0,
@@ -10120,6 +10288,7 @@
           "id": "tssOSCwf",
           "name": "OSC Waveform",
           "block": "OSC",
+          "group": "General",
           "address": {
             "ct": 9,
             "id": 3,
@@ -10183,6 +10352,7 @@
           "id": "tssOSCPortaSw",
           "name": "Portamento On/Off",
           "block": "OSC",
+          "group": "Portamento / Legato",
           "address": {
             "ct": 9,
             "id": 4,
@@ -10218,6 +10388,7 @@
           "id": "tssOSCPortaTm",
           "name": "Portamento Time",
           "block": "OSC",
+          "group": "Portamento / Legato",
           "address": {
             "ct": 9,
             "id": 5,
@@ -10253,6 +10424,7 @@
           "id": "tssOSCLegatoSw",
           "name": "Legato On/Off",
           "block": "OSC",
+          "group": "Portamento / Legato",
           "address": {
             "ct": 9,
             "id": 6,
@@ -10288,6 +10460,7 @@
           "id": "tssOSCPENViL",
           "name": "Pitch Env Init Level",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 11,
@@ -10323,6 +10496,7 @@
           "id": "tssOSCPlfo1D",
           "name": "Pitch LFO1 Depth",
           "block": "OSC",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 8,
@@ -10358,6 +10532,7 @@
           "id": "tssOSCPlfo2D",
           "name": "Pitch LFO2 Depth",
           "block": "OSC",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 8,
@@ -10393,6 +10568,7 @@
           "id": "tssOSCPoset",
           "name": "Pitch Offset",
           "block": "OSC",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 9,
@@ -10428,6 +10604,7 @@
           "id": "tssOSCPdtne",
           "name": "Detune",
           "block": "OSC",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 10,
@@ -10463,6 +10640,7 @@
           "id": "tssOSCPENVaT",
           "name": "Pitch Env Attack Time",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 12,
@@ -10498,6 +10676,7 @@
           "id": "tssOSCPENVaL",
           "name": "Pitch Env Attack Level",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 13,
@@ -10533,6 +10712,7 @@
           "id": "tssOSCPENVdT",
           "name": "Pitch Env Decay Time",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 14,
@@ -10568,6 +10748,7 @@
           "id": "tssOSCPENVsL",
           "name": "Pitch Env Sustain Level",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 15,
@@ -10603,6 +10784,7 @@
           "id": "tssOSCPENVr1T",
           "name": "Pitch Env Rel1 Time",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 16,
@@ -10638,6 +10820,7 @@
           "id": "tssOSCPENVr1L",
           "name": "Pitch Env Rel1 Level",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 17,
@@ -10673,6 +10856,7 @@
           "id": "tssOSCPENVr2T",
           "name": "Pitch Env Rel2 Time",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 18,
@@ -10708,6 +10892,7 @@
           "id": "tssOSCPENVr2L",
           "name": "Pitch Env Rel2 Level",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 19,
@@ -10743,6 +10928,7 @@
           "id": "tssOSCPEclk",
           "name": "Pitch Env Clock Trigger",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 20,
@@ -10757,7 +10943,8 @@
           "default": null,
           "unit": "",
           "ui": {
-            "control": "slider"
+            "control": "combo",
+            "enum": "clockTrigger"
           },
           "instances": {
             "count": 6,
@@ -10773,12 +10960,13 @@
               "Noise"
             ]
           },
-          "note": "midi-spec p74: Clock Trigger 0-18; Lua vt='nf'."
+          "note": "midi-spec p74: Clock Trigger 0-18; Lua vt='nf'. Manual E-24: Off,1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (19 values)."
         },
         {
           "id": "tssOSCPEdep",
           "name": "Pitch Env Depth",
           "block": "OSC",
+          "group": "Pitch Envelope",
           "address": {
             "ct": 9,
             "id": 21,
@@ -10814,6 +11002,7 @@
           "id": "tssOSCPkeyf",
           "name": "Pitch Key Follow",
           "block": "OSC",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 23,
@@ -10849,6 +11038,7 @@
           "id": "tssOSCPkeyfB",
           "name": "Pitch Key Follow Base",
           "block": "OSC",
+          "group": "Pitch",
           "address": {
             "ct": 9,
             "id": 24,
@@ -10861,7 +11051,7 @@
             "max": 127
           },
           "default": null,
-          "unit": "",
+          "unit": "note",
           "ui": {
             "control": "slider"
           },
@@ -10884,6 +11074,7 @@
           "id": "tssOSCFcoff",
           "name": "Filter Cutoff",
           "block": "OSC",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 25,
@@ -10920,6 +11111,7 @@
           "id": "tssOSCFgain",
           "name": "Filter Gain",
           "block": "OSC",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 26,
@@ -10957,6 +11149,7 @@
           "id": "tssOSCFtch",
           "name": "Filter Touch Sense",
           "block": "OSC",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 27,
@@ -10992,6 +11185,7 @@
           "id": "tssOSCFkeyf",
           "name": "Filter Key Follow",
           "block": "OSC",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 28,
@@ -11027,6 +11221,7 @@
           "id": "tssOSCFkeyfB",
           "name": "Filter Key Follow Base",
           "block": "OSC",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 29,
@@ -11039,7 +11234,7 @@
             "max": 127
           },
           "default": null,
-          "unit": "",
+          "unit": "note",
           "ui": {
             "control": "slider"
           },
@@ -11062,6 +11257,7 @@
           "id": "tssOSCFlfo1D",
           "name": "Filter LFO1 Depth",
           "block": "OSC",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 30,
@@ -11097,6 +11293,7 @@
           "id": "tssOSCFlfo2D",
           "name": "Filter LFO2 Depth",
           "block": "OSC",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 30,
@@ -11132,6 +11329,7 @@
           "id": "tssOSCFENViL",
           "name": "Filter Env Init Level",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 31,
@@ -11167,6 +11365,7 @@
           "id": "tssOSCFENVaT",
           "name": "Filter Env Attack Time",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 32,
@@ -11202,6 +11401,7 @@
           "id": "tssOSCFENVaL",
           "name": "Filter Env Attack Level",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 33,
@@ -11237,6 +11437,7 @@
           "id": "tssOSCFENVdT",
           "name": "Filter Env Decay Time",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 34,
@@ -11272,6 +11473,7 @@
           "id": "tssOSCFENVsL",
           "name": "Filter Env Sustain Level",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 35,
@@ -11307,6 +11509,7 @@
           "id": "tssOSCFENVr1T",
           "name": "Filter Env Rel1 Time",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 36,
@@ -11342,6 +11545,7 @@
           "id": "tssOSCFENVr1L",
           "name": "Filter Env Rel1 Level",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 37,
@@ -11377,6 +11581,7 @@
           "id": "tssOSCFENVr2T",
           "name": "Filter Env Rel2 Time",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 38,
@@ -11412,6 +11617,7 @@
           "id": "tssOSCFENVr2L",
           "name": "Filter Env Rel2 Level",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 39,
@@ -11447,6 +11653,7 @@
           "id": "tssOSCFEclk",
           "name": "Filter Env Clock Trigger",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 40,
@@ -11461,7 +11668,8 @@
           "default": null,
           "unit": "",
           "ui": {
-            "control": "slider"
+            "control": "combo",
+            "enum": "clockTrigger"
           },
           "instances": {
             "count": 6,
@@ -11477,12 +11685,13 @@
               "Noise"
             ]
           },
-          "note": "midi-spec p74: Clock Trigger 0-18; Lua vt='nf'."
+          "note": "midi-spec p74: Clock Trigger 0-18; Lua vt='nf'. Manual E-24: Off,1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (19 values)."
         },
         {
           "id": "tssOSCFEdep",
           "name": "Filter Env Depth",
           "block": "OSC",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 41,
@@ -11518,6 +11727,7 @@
           "id": "tssOSCAlvl",
           "name": "Amp Level",
           "block": "OSC",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 42,
@@ -11553,6 +11763,7 @@
           "id": "tssOSCAtch",
           "name": "Amp Touch Sense",
           "block": "OSC",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 44,
@@ -11588,6 +11799,7 @@
           "id": "tssOSCAkeyf",
           "name": "Amp Key Follow",
           "block": "OSC",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 45,
@@ -11623,6 +11835,7 @@
           "id": "tssOSCAkeyfB",
           "name": "Amp Key Follow Base",
           "block": "OSC",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 46,
@@ -11635,7 +11848,7 @@
             "max": 127
           },
           "default": null,
-          "unit": "",
+          "unit": "note",
           "ui": {
             "control": "slider"
           },
@@ -11658,6 +11871,7 @@
           "id": "tssOSCAlfo1D",
           "name": "Amp LFO1 Depth",
           "block": "OSC",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 47,
@@ -11693,6 +11907,7 @@
           "id": "tssOSCAlfo2D",
           "name": "Amp LFO2 Depth",
           "block": "OSC",
+          "group": "Amp",
           "address": {
             "ct": 9,
             "id": 47,
@@ -11729,6 +11944,7 @@
           "id": "tssOSCAENViL",
           "name": "Amp Env Init Level",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 48,
@@ -11764,6 +11980,7 @@
           "id": "tssOSCAENVaT",
           "name": "Amp Env Attack Time",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 49,
@@ -11799,6 +12016,7 @@
           "id": "tssOSCAENVaL",
           "name": "Amp Env Attack Level",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 50,
@@ -11834,6 +12052,7 @@
           "id": "tssOSCAENVdT",
           "name": "Amp Env Decay Time",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 51,
@@ -11869,6 +12088,7 @@
           "id": "tssOSCAENVsL",
           "name": "Amp Env Sustain Level",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 52,
@@ -11904,6 +12124,7 @@
           "id": "tssOSCAENVr1T",
           "name": "Amp Env Rel1 Time",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 53,
@@ -11939,6 +12160,7 @@
           "id": "tssOSCAENVr1L",
           "name": "Amp Env Rel1 Level",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 54,
@@ -11974,6 +12196,7 @@
           "id": "tssOSCAENVr2T",
           "name": "Amp Env Rel2 Time",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 55,
@@ -12009,6 +12232,7 @@
           "id": "tssOSCAENVr2L",
           "name": "Amp Env Rel2 Level",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 56,
@@ -12044,6 +12268,7 @@
           "id": "tssOSCAEclk",
           "name": "Amp Env Clock Trigger",
           "block": "OSC",
+          "group": "Amp Envelope",
           "address": {
             "ct": 9,
             "id": 57,
@@ -12058,7 +12283,8 @@
           "default": null,
           "unit": "",
           "ui": {
-            "control": "slider"
+            "control": "combo",
+            "enum": "clockTrigger"
           },
           "instances": {
             "count": 6,
@@ -12074,12 +12300,13 @@
               "Noise"
             ]
           },
-          "note": "midi-spec p75: Clock Trigger 0-18; Lua vt='nf'."
+          "note": "midi-spec p75: Clock Trigger 0-18; Lua vt='nf'. Manual E-24: Off,1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (19 values)."
         },
         {
           "id": "tssOSCPWMpw",
           "name": "PWM Pulse Width",
           "block": "PWM",
+          "group": "PWM",
           "address": {
             "ct": 9,
             "id": 58,
@@ -12111,6 +12338,7 @@
           "id": "tssOSCPWMlfo1D",
           "name": "PWM LFO1 Depth",
           "block": "PWM",
+          "group": "PWM",
           "address": {
             "ct": 9,
             "id": 60,
@@ -12142,6 +12370,7 @@
           "id": "tssOSCPWMlfo2D",
           "name": "PWM LFO2 Depth",
           "block": "PWM",
+          "group": "PWM",
           "address": {
             "ct": 9,
             "id": 60,
@@ -12173,6 +12402,7 @@
           "id": "tssOSC2sync",
           "name": "Osc Sync (OSC2->OSC1)",
           "block": "Etc",
+          "group": "General",
           "address": {
             "ct": 9,
             "id": 61,
@@ -12203,6 +12433,7 @@
           "id": "tssOSCXokey",
           "name": "Ext Original Key",
           "block": "Etc",
+          "group": "External Input",
           "address": {
             "ct": 9,
             "id": 62,
@@ -12233,6 +12464,7 @@
           "id": "tssOSCXPxtrg",
           "name": "Ext Trigger Pitch Env",
           "block": "Etc",
+          "group": "External Trigger",
           "address": {
             "ct": 9,
             "id": 63,
@@ -12263,6 +12495,7 @@
           "id": "tssOSCXFxtrg",
           "name": "Ext Trigger Filter Env",
           "block": "Etc",
+          "group": "External Trigger",
           "address": {
             "ct": 9,
             "id": 64,
@@ -12293,6 +12526,7 @@
           "id": "tssOSCXAxtrg",
           "name": "Ext Trigger Amp Env",
           "block": "Etc",
+          "group": "External Trigger",
           "address": {
             "ct": 9,
             "id": 65,
@@ -12323,6 +12557,7 @@
           "id": "tssOSCXTFxtrg",
           "name": "Ext Trigger Total-Filter Env",
           "block": "Etc",
+          "group": "External Trigger",
           "address": {
             "ct": 9,
             "id": 66,
@@ -12353,6 +12588,7 @@
           "id": "tssOSCXinlvl",
           "name": "Mic/Inst Input Level",
           "block": "Etc",
+          "group": "External Input",
           "address": {
             "ct": 9,
             "id": 67,
@@ -12383,6 +12619,7 @@
           "id": "tssOSCXngth",
           "name": "Ext Trigger Threshold",
           "block": "Etc",
+          "group": "External Trigger",
           "address": {
             "ct": 9,
             "id": 68,
@@ -12413,6 +12650,7 @@
           "id": "tssOSCXngrel",
           "name": "Ext Trigger Release",
           "block": "Etc",
+          "group": "External Trigger",
           "address": {
             "ct": 9,
             "id": 69,
@@ -12443,6 +12681,7 @@
           "id": "tssOSCXPshmode",
           "name": "Pitch Shifter Mode",
           "block": "Etc",
+          "group": "Pitch Shifter",
           "address": {
             "ct": 9,
             "id": 70,
@@ -12474,6 +12713,7 @@
           "id": "tssOSCXPshmix",
           "name": "Pitch Shifter Mix",
           "block": "Etc",
+          "group": "Pitch Shifter",
           "address": {
             "ct": 9,
             "id": 71,
@@ -12505,6 +12745,7 @@
           "id": "tssFLTFtype",
           "name": "Filter Type",
           "block": "TotalFilter",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 72,
@@ -12537,6 +12778,7 @@
           "id": "tssFLTFcoff",
           "name": "Filter Cutoff",
           "block": "TotalFilter",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 73,
@@ -12567,6 +12809,7 @@
           "id": "tssFLTFreso",
           "name": "Filter Resonance",
           "block": "TotalFilter",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 74,
@@ -12597,6 +12840,7 @@
           "id": "tssFLTFtch",
           "name": "Filter Touch Sense",
           "block": "TotalFilter",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 75,
@@ -12627,6 +12871,7 @@
           "id": "tssFLTFkeyf",
           "name": "Filter Key Follow",
           "block": "TotalFilter",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 76,
@@ -12657,6 +12902,7 @@
           "id": "tssFLTFkeyfB",
           "name": "Filter Key Follow Base",
           "block": "TotalFilter",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 77,
@@ -12669,7 +12915,7 @@
             "max": 127
           },
           "default": null,
-          "unit": "",
+          "unit": "note",
           "ui": {
             "control": "slider"
           },
@@ -12687,6 +12933,7 @@
           "id": "tssFLTFlfo1D",
           "name": "Filter LFO1 Depth",
           "block": "TotalFilter",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 78,
@@ -12717,6 +12964,7 @@
           "id": "tssFLTFlfo2D",
           "name": "Filter LFO2 Depth",
           "block": "TotalFilter",
+          "group": "Filter",
           "address": {
             "ct": 9,
             "id": 78,
@@ -12748,6 +12996,7 @@
           "id": "tssFLTFENViL",
           "name": "Filter Env Init Level",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 79,
@@ -12778,6 +13027,7 @@
           "id": "tssFLTFENVaT",
           "name": "Filter Env Attack Time",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 80,
@@ -12808,6 +13058,7 @@
           "id": "tssFLTFENVaL",
           "name": "Filter Env Attack Level",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 81,
@@ -12838,6 +13089,7 @@
           "id": "tssFLTFENVdT",
           "name": "Filter Env Decay Time",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 82,
@@ -12868,6 +13120,7 @@
           "id": "tssFLTFENVsL",
           "name": "Filter Env Sustain Level",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 83,
@@ -12898,6 +13151,7 @@
           "id": "tssFLTFENVr1T",
           "name": "Filter Env Rel1 Time",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 84,
@@ -12928,6 +13182,7 @@
           "id": "tssFLTFENVr1L",
           "name": "Filter Env Rel1 Level",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 85,
@@ -12958,6 +13213,7 @@
           "id": "tssFLTFENVr2T",
           "name": "Filter Env Rel2 Time",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 86,
@@ -12988,6 +13244,7 @@
           "id": "tssFLTFENVr2L",
           "name": "Filter Env Rel2 Level",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 87,
@@ -13018,6 +13275,7 @@
           "id": "tssFLTFEclk",
           "name": "Filter Env Clock Trigger",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 88,
@@ -13032,7 +13290,8 @@
           "default": null,
           "unit": "",
           "ui": {
-            "control": "slider"
+            "control": "combo",
+            "enum": "clockTrigger"
           },
           "instances": {
             "count": 1,
@@ -13043,12 +13302,13 @@
               "TotalFilter"
             ]
           },
-          "note": "midi-spec p79: Clock Trigger 0-18; Lua vt='nf'."
+          "note": "midi-spec p79: Clock Trigger 0-18; Lua vt='nf'. Manual E-24: Off,1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (19 values)."
         },
         {
           "id": "tssFLTFEdep",
           "name": "Filter Env Depth",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 89,
@@ -13079,6 +13339,7 @@
           "id": "tssFLTFErtrg",
           "name": "Filter Env Retrigger",
           "block": "TotalFilter",
+          "group": "Filter Envelope",
           "address": {
             "ct": 9,
             "id": 90,
@@ -13109,6 +13370,7 @@
           "id": "tssLFOwf",
           "name": "LFO Waveform",
           "block": "LFO",
+          "group": "LFO",
           "address": {
             "ct": 9,
             "id": 91,
@@ -13142,6 +13404,7 @@
           "id": "tssLFOsync",
           "name": "LFO Clock Sync",
           "block": "LFO",
+          "group": "LFO",
           "address": {
             "ct": 9,
             "id": 92,
@@ -13174,6 +13437,7 @@
           "id": "tssLFOrate",
           "name": "LFO Rate",
           "block": "LFO",
+          "group": "LFO",
           "address": {
             "ct": 9,
             "id": 93,
@@ -13205,6 +13469,7 @@
           "id": "tssLFOdep",
           "name": "LFO Depth",
           "block": "LFO",
+          "group": "LFO",
           "address": {
             "ct": 9,
             "id": 94,
@@ -13236,6 +13501,7 @@
           "id": "tssLFOdelay",
           "name": "LFO Delay",
           "block": "LFO",
+          "group": "LFO",
           "address": {
             "ct": 9,
             "id": 95,
@@ -13267,6 +13533,7 @@
           "id": "tssLFOrise",
           "name": "LFO Rise",
           "block": "LFO",
+          "group": "LFO",
           "address": {
             "ct": 9,
             "id": 96,
@@ -13298,6 +13565,7 @@
           "id": "tssLFOclk",
           "name": "LFO Clock Trigger",
           "block": "LFO",
+          "group": "LFO",
           "address": {
             "ct": 9,
             "id": 97,
@@ -13312,7 +13580,8 @@
           "default": null,
           "unit": "",
           "ui": {
-            "control": "slider"
+            "control": "combo",
+            "enum": "lfoClockTrigger"
           },
           "instances": {
             "count": 2,
@@ -13324,12 +13593,13 @@
               "LFO2"
             ]
           },
-          "note": "midi-spec p78-79: Clock Trigger 0-17; Lua vt='nf'."
+          "note": "Manual E-27 'Clk.Sync': 1/4,1/3,1/2,2/3,1,3/2,2,3,4,1/4U..4U (18 values, 0-17) -- same list as the envelope Clock Trigger but WITHOUT the leading 'Off' entry (LFO's separate Sync param already carries Off/Tempo/LFO1). Confirmed against manual text, not guessed. midi-spec p78-79 corroborates the 0-17 wire range."
         },
         {
           "id": "tssLFOmdep",
           "name": "LFO Mod Depth",
           "block": "LFO",
+          "group": "LFO",
           "address": {
             "ct": 9,
             "id": 98,

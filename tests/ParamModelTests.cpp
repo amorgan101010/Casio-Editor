@@ -2,6 +2,8 @@
 
 #include "casioxw/ParamModel.h"
 
+#include <algorithm>
+
 // Chunk 7a — the additive UI-metadata fields on ParamInfo (name/block/range/default/unit/ui/
 // instances.labels/perOsc.enumPerOsc+maxPerOsc) and the top-level "enums" table, plus the pure
 // decideControlKind()/resolveEnumName() decision logic ParamControl (app/, GUI, untestable
@@ -132,4 +134,129 @@ TEST_CASE ("ParamModel::enumValues returns nullptr for an unknown enum name", "[
     const auto* lfoWave = model.enumValues ("lfoWave");
     REQUIRE (lfoWave != nullptr);
     CHECK (lfoWave->size() == 8);
+}
+
+// ---- Chunk 7c ------------------------------------------------------------------------------
+
+TEST_CASE ("ParamModel: Clock Trigger params are combos backed by the right enum", "[parammodel][ui][7c]")
+{
+    const auto model = loadModel();
+
+    for (const auto* id : { "tssOSCPEclk", "tssOSCFEclk", "tssOSCAEclk", "tssFLTFEclk" })
+    {
+        const auto* p = model.find (id);
+        REQUIRE (p != nullptr);
+        CHECK (p->ui.control == "combo");
+        CHECK (p->ui.enumName == "clockTrigger");
+        CHECK (p->range.min == 0);
+        CHECK (p->range.max == 18);
+    }
+
+    const auto* entries = model.enumValues ("clockTrigger");
+    REQUIRE (entries != nullptr);
+    REQUIRE (entries->size() == 19);
+    CHECK ((*entries)[0].label == "Off");
+    CHECK ((*entries)[9].label == "4");
+    CHECK ((*entries)[18].label == "4U");
+
+    const auto* lfo = model.find ("tssLFOclk");
+    REQUIRE (lfo != nullptr);
+    CHECK (lfo->ui.control == "combo");
+    CHECK (lfo->ui.enumName == "lfoClockTrigger");
+    CHECK (lfo->range.min == 0);
+    CHECK (lfo->range.max == 17);
+
+    const auto* lfoEntries = model.enumValues ("lfoClockTrigger");
+    REQUIRE (lfoEntries != nullptr);
+    REQUIRE (lfoEntries->size() == 18);
+    CHECK ((*lfoEntries)[0].label == "1/4");     // no leading "Off" — see gen_xwp1.py note
+    CHECK ((*lfoEntries)[17].label == "4U");
+}
+
+TEST_CASE ("ParamModel: Key Follow Base params carry unit=\"note\"", "[parammodel][ui][7c]")
+{
+    const auto model = loadModel();
+    for (const auto* id : { "tssOSCPkeyfB", "tssOSCFkeyfB", "tssOSCAkeyfB", "tssFLTFkeyfB" })
+    {
+        const auto* p = model.find (id);
+        REQUIRE (p != nullptr);
+        CHECK (p->unit == "note");
+        CHECK (p->range.min == 0);
+        CHECK (p->range.max == 127);
+    }
+}
+
+TEST_CASE ("ParamModel: params carry a group, and orderedGroupsForBlock covers every OSC param",
+          "[parammodel][ui][7c]")
+{
+    const auto model = loadModel();
+
+    const auto* pitchEnv = model.find ("tssOSCPENViL");
+    REQUIRE (pitchEnv != nullptr);
+    CHECK (pitchEnv->group == "Pitch Envelope");
+
+    const auto* pitch = model.find ("tssOSCPdtne");
+    REQUIRE (pitch != nullptr);
+    CHECK (pitch->group == "Pitch");
+
+    CHECK (model.groupOrder().size() > 0);
+
+    const auto groups = casioxw::orderedGroupsForBlock (model, "soloSynth", "OSC");
+    CHECK_FALSE (groups.empty());
+
+    // Every soloSynth/OSC param's group must appear somewhere in the ordered list — none
+    // silently dropped, and no duplicate groups.
+    juce::StringArray seenGroups;
+    for (const auto& g : groups)
+    {
+        CHECK_FALSE (seenGroups.contains (g));
+        seenGroups.add (g);
+    }
+    for (const auto& p : model.all())
+    {
+        if (p.section != "soloSynth" || p.block != "OSC")
+            continue;
+        REQUIRE (p.group.isNotEmpty());
+        CHECK (seenGroups.contains (p.group));
+    }
+
+    // Canonical order from groupOrder() is respected where both groups are present.
+    const auto pitchIt = std::find (groups.begin(), groups.end(), juce::String ("Pitch"));
+    const auto pitchEnvIt = std::find (groups.begin(), groups.end(), juce::String ("Pitch Envelope"));
+    REQUIRE (pitchIt != groups.end());
+    REQUIRE (pitchEnvIt != groups.end());
+    CHECK (std::distance (groups.begin(), pitchIt) < std::distance (groups.begin(), pitchEnvIt));
+}
+
+TEST_CASE ("ParamModel: envelopeStageIds derives all 9 siblings from any one stage id",
+          "[parammodel][ui][7c]")
+{
+    using casioxw::envelopeStageIds;
+
+    const auto ids = envelopeStageIds ("tssOSCPENVr1L");
+    CHECK (ids.isValid());
+    CHECK (ids.initLevel == "tssOSCPENViL");
+    CHECK (ids.attackTime == "tssOSCPENVaT");
+    CHECK (ids.attackLevel == "tssOSCPENVaL");
+    CHECK (ids.decayTime == "tssOSCPENVdT");
+    CHECK (ids.sustainLevel == "tssOSCPENVsL");
+    CHECK (ids.release1Time == "tssOSCPENVr1T");
+    CHECK (ids.release1Level == "tssOSCPENVr1L");
+    CHECK (ids.release2Time == "tssOSCPENVr2T");
+    CHECK (ids.release2Level == "tssOSCPENVr2L");
+
+    // Every derived id must actually exist in the model, for every one of the 4 envelope groups.
+    const auto model = loadModel();
+    for (const auto* anyId : { "tssOSCPENViL", "tssOSCFENVaL", "tssOSCAENVdT", "tssFLTFENVr2L" })
+    {
+        const auto stage = envelopeStageIds (anyId);
+        REQUIRE (stage.isValid());
+        for (const auto& sid : { stage.initLevel, stage.attackTime, stage.attackLevel,
+                                  stage.decayTime, stage.sustainLevel, stage.release1Time,
+                                  stage.release1Level, stage.release2Time, stage.release2Level })
+            CHECK (model.find (sid) != nullptr);
+    }
+
+    CHECK_FALSE (envelopeStageIds ("tssOSCsw").isValid());     // not an envelope param at all
+    CHECK_FALSE (envelopeStageIds ("").isValid());
 }
