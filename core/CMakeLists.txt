@@ -5,6 +5,7 @@
 
 add_library(casioxw_core STATIC
     src/SysExCodec.cpp
+    src/ParamModel.cpp
 )
 
 target_include_directories(casioxw_core
