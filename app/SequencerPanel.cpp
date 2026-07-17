@@ -8,6 +8,7 @@ namespace
 {
     constexpr int kStepWidth = 56;
     constexpr int kParamControlWidth = 390;
+    constexpr int kStepColumnHeight = 22 + 2 + 20 + 56;   // select + gap + gate toggle + note knob
 
     const juce::Colour kSelectedColour = juce::Colours::orange;
     const juce::Colour kHasLocksColour = juce::Colours::goldenrod.darker (0.4f);
@@ -68,6 +69,26 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     playStopButton.onClick = [this] { playing ? stop() : play(); };
     addAndMakeVisible (playStopButton);
 
+    randomizeButton.onClick = [this] { randomizeSequence(); };
+    addAndMakeVisible (randomizeButton);
+
+    // Rate / time-scale. Item id == steps-per-beat, so the combo maps straight onto the model.
+    rateCombo.addItem ("1/4", 1);
+    rateCombo.addItem ("1/8", 2);
+    rateCombo.addItem ("1/8T", 3);
+    rateCombo.addItem ("1/16", 4);
+    rateCombo.addItem ("1/16T", 6);
+    rateCombo.addItem ("1/32", 8);
+    rateCombo.setSelectedId (4, juce::dontSendNotification);   // 1/16 = current default
+    rateCombo.onChange = [this]
+    {
+        const int spb = rateCombo.getSelectedId();
+        if (spb > 0)
+            sequence.stepsPerBeat = spb;
+    };
+    addAndMakeVisible (rateCombo);
+    addAndMakeVisible (rateLabel);
+
     tempoSlider.setRange (40.0, 240.0, 1.0);
     tempoSlider.setValue (120.0, juce::dontSendNotification);
     tempoSlider.onValueChange = [this] { sequence.tempoBpm = (int) tempoSlider.getValue(); };
@@ -122,6 +143,11 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         if (info == nullptr)
             continue;
 
+        // Bound randomized locks by the parameter's real range (both 0-127 today, but read it from
+        // metadata so a differently-ranged lockable param added later randomizes correctly).
+        sequence.lockable[i].minValue = info->range.min;
+        sequence.lockable[i].maxValue = info->range.max;
+
         auto row = std::make_unique<LockRow>();
         row->control = std::make_unique<ParamControl> (model, *info, lp.instance);
         const int index = (int) i;
@@ -135,7 +161,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     }
 
     setSize (kStepWidth * 16 + 16,
-             8 + 28 + 8 + 28 + 8 + (int) lockRows.size() * 30 + 12 + 20 + 4 + (24 + 24 + 130) + 8);
+             8 + 28 + 6 + 28 + 8 + 28 + 8 + 20 + 4 + (int) lockRows.size() * 30 + 10 + kStepColumnHeight + 8);
 
     selectStep (-1);   // start in Base mode
     resized();
@@ -155,6 +181,27 @@ void SequencerPanel::applyParam (const juce::String& paramId, int instance, int 
 {
     midiIO.sendFrame (codec.encode (paramId, instance, value));
     lastApplied[syncKey (paramId, instance)] = value;
+}
+
+void SequencerPanel::randomizeSequence()
+{
+    casioxw::randomize (sequence, rng);
+    syncStepWidgetsFromSequence();
+    refreshParamControls();   // selected step's locks may have changed
+    refreshStepButtons();     // has-locks markers
+}
+
+void SequencerPanel::syncStepWidgetsFromSequence()
+{
+    for (int i = 0; i < 16; ++i)
+    {
+        auto& sc = *stepControls[(size_t) i];
+        // dontSendNotification: these are display updates, not user edits — don't fire the
+        // onClick/onValueChange handlers that would write straight back into `sequence`.
+        sc.enabled.setToggleState (sequence.steps[(size_t) i].enabled, juce::dontSendNotification);
+        sc.note.setValue ((double) sequence.steps[(size_t) i].note, juce::dontSendNotification);
+        sc.note.updateText();
+    }
 }
 
 void SequencerPanel::selectStep (int step)
@@ -321,14 +368,21 @@ void SequencerPanel::resized()
     auto transportRow = bounds.removeFromTop (28);
     playStopButton.setBounds (transportRow.removeFromLeft (80));
     transportRow.removeFromLeft (8);
+    randomizeButton.setBounds (transportRow.removeFromLeft (100));
+    transportRow.removeFromLeft (16);
     tempoLabel.setBounds (transportRow.removeFromLeft (80));
     tempoSlider.setBounds (transportRow.removeFromLeft (150));
     transportRow.removeFromLeft (16);
-    channelLabel.setBounds (transportRow.removeFromLeft (90));
-    channelSlider.setBounds (transportRow.removeFromLeft (130));
-    transportRow.removeFromLeft (16);
-    velocityLabel.setBounds (transportRow.removeFromLeft (60));
-    velocitySlider.setBounds (transportRow.removeFromLeft (130));
+    rateLabel.setBounds (transportRow.removeFromLeft (40));
+    rateCombo.setBounds (transportRow.removeFromLeft (80));
+
+    bounds.removeFromTop (6);
+    auto transportRow2 = bounds.removeFromTop (28);
+    channelLabel.setBounds (transportRow2.removeFromLeft (90));
+    channelSlider.setBounds (transportRow2.removeFromLeft (130));
+    transportRow2.removeFromLeft (16);
+    velocityLabel.setBounds (transportRow2.removeFromLeft (60));
+    velocitySlider.setBounds (transportRow2.removeFromLeft (130));
 
     bounds.removeFromTop (8);
     auto modeRow = bounds.removeFromTop (28);
@@ -352,12 +406,13 @@ void SequencerPanel::resized()
     }
 
     bounds.removeFromTop (10);
+    auto stepRow = bounds.removeFromTop (kStepColumnHeight);
     for (int i = 0; i < 16; ++i)
     {
-        auto col = bounds.removeFromLeft (kStepWidth).reduced (3);
-        stepControls[(size_t) i]->select.setBounds (col.removeFromTop (24));
+        auto col = stepRow.removeFromLeft (kStepWidth).reduced (3);
+        stepControls[(size_t) i]->select.setBounds (col.removeFromTop (22));
         col.removeFromTop (2);
-        stepControls[(size_t) i]->enabled.setBounds (col.removeFromTop (24));
-        stepControls[(size_t) i]->note.setBounds (col);
+        stepControls[(size_t) i]->enabled.setBounds (col.removeFromTop (20));
+        stepControls[(size_t) i]->note.setBounds (col.removeFromTop (56));   // compact rotary knob
     }
 }

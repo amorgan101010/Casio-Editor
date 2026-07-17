@@ -48,7 +48,7 @@ class CasioXWEditorApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override       { return "Casio XW-P1 Editor"; }
-    const juce::String getApplicationVersion() override    { return "0.2.0-sequencer"; }
+    const juce::String getApplicationVersion() override    { return "0.3.0-sequencer"; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 
     void initialise (const juce::String&) override

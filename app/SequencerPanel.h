@@ -46,7 +46,7 @@ private:
     {
         juce::TextButton select;              // shows step number; click selects it
         juce::ToggleButton enabled;
-        juce::Slider note { juce::Slider::LinearVertical, juce::Slider::TextBoxBelow };
+        juce::Slider note { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
     };
 
     struct LockRow
@@ -64,6 +64,8 @@ private:
     void refreshParamControls();               // value + enabled + lock markers from current context
     void refreshStepButtons();                 // selected highlight + has-locks marker
     void updateStatusLabel();
+    void randomizeSequence();                  // Randomize button -> casioxw::randomize + resync widgets
+    void syncStepWidgetsFromSequence();        // push sequence's note/enable back into the step widgets
 
     juce::String syncKey (const juce::String& paramId, int instance) const;
     void applyParam (const juce::String& paramId, int instance, int value);  // send + track lastApplied
@@ -77,12 +79,17 @@ private:
     std::vector<std::unique_ptr<LockRow>> lockRows;   // one per sequence.lockable entry
 
     juce::TextButton playStopButton { "Play" };
+    juce::TextButton randomizeButton { "Randomize" };
     juce::Slider tempoSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Slider channelSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Slider velocitySlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    juce::ComboBox rateCombo;
     juce::Label tempoLabel { {}, "Tempo (BPM)" };
     juce::Label channelLabel { {}, "MIDI Channel" };
     juce::Label velocityLabel { {}, "Velocity" };
+    juce::Label rateLabel { {}, "Rate" };
+
+    juce::Random rng;   // seeded from time; drives the Randomize button
 
     juce::TextButton baseButton { "Base" };
     juce::ToggleButton editButton { "Edit Locks" };
