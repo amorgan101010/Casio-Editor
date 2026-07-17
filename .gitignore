@@ -64,3 +64,6 @@ compile_commands.json
 # Python cache
 __pycache__/
 *.pyc
+
+# OpenWolf local working memory (not tracked)
+.wolf/
