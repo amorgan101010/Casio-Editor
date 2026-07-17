@@ -92,6 +92,14 @@ SoloSynthPanel::SoloSynthPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     paramViewport.setScrollBarsShown (true, false);
 
     buildBlockList();
+
+    // setSize() above ran at the top of this constructor, before instanceCombo (and everything
+    // else) had been added as a child or had its real visibility set by buildBlockList() ->
+    // blockSelectionChanged(). That premature resized() pass laid things out with stale state
+    // (e.g. instanceCombo positioned/sized before its true isVisible() was known), and nothing
+    // else re-triggers a layout until the window itself is resized. Force one final, correct
+    // pass now that every child is fully configured.
+    resized();
 }
 
 SoloSynthPanel::~SoloSynthPanel()

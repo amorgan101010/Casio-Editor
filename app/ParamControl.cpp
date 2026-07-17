@@ -87,7 +87,11 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
                     const auto n = casioxw::noteNameToMidi (t);
                     return n.has_value() ? (double) *n : 0.0;
                 };
-                slider->setValue (slider->getValue(), juce::dontSendNotification);   // refresh text box
+                // NOT slider->setValue(slider->getValue(), ...) -- Slider::setValue() no-ops when
+                // the new value equals the current one (no repaint), so that "refresh" silently
+                // did nothing whenever the default being displayed was already correct (e.g. 0).
+                // updateText() is JUCE's purpose-built call for "re-render the text box now".
+                slider->updateText();
             }
 
             addAndMakeVisible (*slider);
