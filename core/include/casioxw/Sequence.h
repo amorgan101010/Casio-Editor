@@ -26,6 +26,7 @@ namespace casioxw
         int note = 60;   // C4
         int velocity = 100;
         bool enabled = false;
+        int gatePercent = 90;   // note length as % of the step interval (1..100); <100 = gap before next
         std::vector<ParamLock> locks;
     };
 
@@ -83,6 +84,11 @@ namespace casioxw
         3 -> 8th-note triplets. */
     double stepIntervalMs (const Sequence& seq);
 
+    /** How long a step's note sounds, in ms: stepIntervalMs * gatePercent/100 (clamped 1..100%).
+        The playback engine note-offs at this point within the step; the remainder is silence
+        before the next step. */
+    double stepGateMs (const Sequence& seq, int stepIndex);
+
     /** The lock a step holds for a given parameter, or nullptr if that parameter is unlocked on
         that step (so it inherits the base value). */
     const ParamLock* findStepLock (const Step& step, const juce::String& paramId, int instance);
@@ -110,6 +116,11 @@ namespace casioxw
 
     /** Remove every lock on a step. */
     void clearStepLocks (Sequence& seq, int stepIndex);
+
+    /** Rotate all 16 steps (note/gate/velocity/enable/locks move together) by `delta` positions,
+        wrapping around: delta>0 shifts later/right (step i -> i+delta), delta<0 earlier/left. Lets
+        a pattern be re-anchored to a different starting step without re-authoring it. */
+    void shiftSteps (Sequence& seq, int delta);
 
     /** Randomize the musical content of a sequence in place: per-step gate (~60% on), note (snapped
         to a C-minor-pentatonic scale over two octaves so it stays musical), velocity, and p-locks

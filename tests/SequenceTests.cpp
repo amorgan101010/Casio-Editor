@@ -64,6 +64,18 @@ TEST_CASE ("stepIntervalMs: rate/time-scale scales with stepsPerBeat", "[sequenc
     seq.stepsPerBeat = 8;   CHECK (casioxw::stepIntervalMs (seq) == 62.5);    // 1/32
 }
 
+TEST_CASE ("stepGateMs: note length is gatePercent of the step interval", "[sequence]")
+{
+    casioxw::Sequence seq;
+    seq.tempoBpm = 120;     // 125 ms/step at 1/16
+
+    seq.steps[0].gatePercent = 100;  CHECK (casioxw::stepGateMs (seq, 0) == 125.0);
+    seq.steps[0].gatePercent = 50;   CHECK (casioxw::stepGateMs (seq, 0) == 62.5);
+    seq.steps[0].gatePercent = 20;   CHECK (casioxw::stepGateMs (seq, 0) == 25.0);
+
+    seq.steps[0].gatePercent = 0;    CHECK (casioxw::stepGateMs (seq, 0) == 1.25);  // clamped to 1%
+}
+
 // ---- p-locks -------------------------------------------------------------------------------
 
 namespace
@@ -146,6 +158,48 @@ TEST_CASE ("setBaseValue: changes what unlocked steps resolve to", "[sequence][p
     CHECK (*casioxw::effectiveParamValue (seq, 0, "tssFLTFcoff", 1) == 64);
 }
 
+// ---- shiftSteps ----------------------------------------------------------------------------
+
+TEST_CASE ("shiftSteps: right by 1 moves each step's content one later, wrapping", "[sequence][shift]")
+{
+    casioxw::Sequence seq;
+    for (int i = 0; i < 16; ++i)
+        seq.steps[(size_t) i].note = i;   // tag each step by index
+
+    casioxw::shiftSteps (seq, 1);
+    CHECK (seq.steps[1].note == 0);    // step 0's content is now at step 1
+    CHECK (seq.steps[0].note == 15);   // step 15 wrapped around to step 0
+    CHECK (seq.steps[5].note == 4);
+}
+
+TEST_CASE ("shiftSteps: left by 1 re-anchors the pattern one step earlier", "[sequence][shift]")
+{
+    casioxw::Sequence seq;
+    for (int i = 0; i < 16; ++i)
+        seq.steps[(size_t) i].note = i;
+
+    casioxw::shiftSteps (seq, -1);
+    CHECK (seq.steps[0].note == 1);    // what was on step 1 now starts the pattern
+    CHECK (seq.steps[15].note == 0);   // step 0 wrapped to the end
+}
+
+TEST_CASE ("shiftSteps: carries the whole step (gate + locks), and full rotation is identity", "[sequence][shift]")
+{
+    casioxw::Sequence seq;
+    seq.lockable.push_back (casioxw::LockableParam { "tssFLTFcoff", 1, 90 });
+    seq.steps[2].gatePercent = 42;
+    casioxw::setStepLock (seq, 2, "tssFLTFcoff", 1, 17);
+
+    casioxw::shiftSteps (seq, 3);
+    CHECK (seq.steps[5].gatePercent == 42);
+    REQUIRE (seq.steps[5].locks.size() == 1);
+    CHECK (seq.steps[5].locks[0].value == 17);
+
+    casioxw::shiftSteps (seq, 13);   // 3 + 13 == 16 == identity
+    CHECK (seq.steps[2].gatePercent == 42);
+    CHECK (seq.steps[2].locks[0].value == 17);
+}
+
 // ---- randomize -----------------------------------------------------------------------------
 
 TEST_CASE ("randomize: notes/velocities/lock values stay in range", "[sequence][random]")
@@ -163,6 +217,8 @@ TEST_CASE ("randomize: notes/velocities/lock values stay in range", "[sequence][
         CHECK (step.note <= 127);
         CHECK (step.velocity >= 1);
         CHECK (step.velocity <= 127);
+        CHECK (step.gatePercent >= 1);
+        CHECK (step.gatePercent <= 100);
         for (const auto& lock : step.locks)
         {
             CHECK (lock.value >= 0);
@@ -184,9 +240,10 @@ TEST_CASE ("randomize: deterministic for a given seed", "[sequence][random]")
 
     for (int i = 0; i < 16; ++i)
     {
-        CHECK (a.steps[(size_t) i].enabled  == b.steps[(size_t) i].enabled);
-        CHECK (a.steps[(size_t) i].note     == b.steps[(size_t) i].note);
-        CHECK (a.steps[(size_t) i].velocity == b.steps[(size_t) i].velocity);
+        CHECK (a.steps[(size_t) i].enabled     == b.steps[(size_t) i].enabled);
+        CHECK (a.steps[(size_t) i].note        == b.steps[(size_t) i].note);
+        CHECK (a.steps[(size_t) i].velocity    == b.steps[(size_t) i].velocity);
+        CHECK (a.steps[(size_t) i].gatePercent == b.steps[(size_t) i].gatePercent);
         REQUIRE (a.steps[(size_t) i].locks.size() == b.steps[(size_t) i].locks.size());
     }
 }

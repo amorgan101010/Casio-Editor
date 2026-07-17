@@ -17,6 +17,12 @@ namespace casioxw
         return msPerBeat / (double) spb;
     }
 
+    double stepGateMs (const Sequence& seq, int stepIndex)
+    {
+        const int pct = juce::jlimit (1, 100, seq.steps[(size_t) stepIndex].gatePercent);
+        return stepIntervalMs (seq) * (double) pct / 100.0;
+    }
+
     const ParamLock* findStepLock (const Step& step, const juce::String& paramId, int instance)
     {
         for (const auto& lock : step.locks)
@@ -94,6 +100,19 @@ namespace casioxw
         seq.steps[(size_t) stepIndex].locks.clear();
     }
 
+    void shiftSteps (Sequence& seq, int delta)
+    {
+        constexpr int n = 16;
+        const int d = ((delta % n) + n) % n;   // normalize to 0..15 (a left shift comes in negative)
+        if (d == 0)
+            return;
+
+        std::array<Step, n> rotated {};
+        for (int i = 0; i < n; ++i)
+            rotated[(size_t) ((i + d) % n)] = seq.steps[(size_t) i];
+        seq.steps = std::move (rotated);
+    }
+
     void randomize (Sequence& seq, juce::Random& rng)
     {
         static const int pentatonic[] = { 0, 3, 5, 7, 10 };   // C minor pentatonic degrees
@@ -108,6 +127,7 @@ namespace casioxw
             step.note = root + octave * 12 + degree;
 
             step.velocity = 70 + rng.nextInt (58);           // 70..127
+            step.gatePercent = 30 + rng.nextInt (71);        // 30..100 (avoid all-stab sequences)
 
             step.locks.clear();
             for (const auto& lp : seq.lockable)
