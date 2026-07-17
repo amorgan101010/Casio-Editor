@@ -9,6 +9,14 @@ juce_add_gui_app(CasioXWEditor
 
 target_sources(CasioXWEditor PRIVATE
     Main.cpp
+    ParamControl.cpp
+    SoloSynthPanel.cpp
+)
+
+# Absolute path to the params map so the app finds it regardless of the working directory it's
+# launched from (matches the CASIOXW_PARAMS_JSON convention already used by casioxw_tests).
+target_compile_definitions(CasioXWEditor PRIVATE
+    CASIOXW_PARAMS_JSON="${CMAKE_SOURCE_DIR}/params/xwp1.json"
 )
 
 # JUCE_WEB_BROWSER/JUCE_USE_CURL off: headless build, no webkit/curl in the link.

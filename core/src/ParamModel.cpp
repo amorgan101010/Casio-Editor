@@ -10,6 +10,11 @@ namespace casioxw
         {
             return v.isVoid() ? fallback : static_cast<int> (v);
         }
+
+        bool asBool (const juce::var& v, bool fallback = false)
+        {
+            return v.isVoid() ? fallback : static_cast<bool> (v);
+        }
     }
 
     ParamModel ParamModel::fromFile (const juce::File& jsonFile)
@@ -34,6 +39,27 @@ namespace casioxw
             throw std::runtime_error ("ParamModel: missing 'sections' object");
 
         ParamModel model;
+
+        // Top-level "enums" table (soloSynthWaves, soloPcmWaves, filterType, filterGain,
+        // lfoWave, ...) — UI metadata, ignored by SysExCodec.
+        if (auto* enumsObj = root.getProperty ("enums", juce::var()).getDynamicObject())
+        {
+            for (auto& e : enumsObj->getProperties())
+            {
+                std::vector<EnumEntry> list;
+                if (auto* arr = e.value.getArray())
+                {
+                    for (const auto& item : *arr)
+                    {
+                        EnumEntry entry;
+                        entry.value = asInt (item.getProperty ("value", juce::var()));
+                        entry.label = item.getProperty ("label", juce::var()).toString();
+                        list.push_back (std::move (entry));
+                    }
+                }
+                model.enums[e.name.toString()] = std::move (list);
+            }
+        }
 
         for (auto& sectionProp : sections->getProperties())
         {
@@ -61,11 +87,45 @@ namespace casioxw
                 info.instanceCount    = asInt (instances.getProperty ("count", juce::var()), 1);
                 info.addressByteIndex = asInt (instances.getProperty ("addressByteIndex", juce::var()), 10);
 
+                if (auto* labelsArr = instances.getProperty ("labels", juce::var()).getArray())
+                    for (const auto& l : *labelsArr)
+                        info.instanceLabels.add (l.toString());
+
                 const juce::var perOsc = pv.getProperty ("perOsc", juce::var());
                 const juce::var waveBase = perOsc.getProperty ("waveBaseOffset", juce::var());
                 if (auto* wbObj = waveBase.getDynamicObject())
                     for (auto& e : wbObj->getProperties())
                         info.waveBaseOffset[e.name.toString().getIntValue()] = static_cast<int> (e.value);
+
+                const juce::var enumPerOscVar = perOsc.getProperty ("enumPerOsc", juce::var());
+                if (auto* epObj = enumPerOscVar.getDynamicObject())
+                    for (auto& e : epObj->getProperties())
+                        if (! e.value.isVoid())   // JSON null -> no enum for this instance (disabled)
+                            info.enumPerOscByInstance[e.name.toString().getIntValue()] = e.value.toString();
+
+                const juce::var maxPerOscVar = perOsc.getProperty ("maxPerOsc", juce::var());
+                if (auto* mpObj = maxPerOscVar.getDynamicObject())
+                    for (auto& e : mpObj->getProperties())
+                        info.maxPerOsc[e.name.toString().getIntValue()] = asInt (e.value);
+
+                // ---- UI metadata (additive) --------------------------------------------------
+                info.name  = pv.getProperty ("name", juce::var()).toString();
+                info.block = pv.getProperty ("block", juce::var()).toString();
+                info.note  = pv.getProperty ("note", juce::var()).toString();
+                info.unit  = pv.getProperty ("unit", juce::var()).toString();
+
+                const juce::var rangeVar = pv.getProperty ("range", juce::var());
+                info.range.min = asInt (rangeVar.getProperty ("min", juce::var()));
+                info.range.max = asInt (rangeVar.getProperty ("max", juce::var()));
+
+                const juce::var defaultVar = pv.getProperty ("default", juce::var());
+                if (! defaultVar.isVoid())
+                    info.defaultValue = static_cast<int> (defaultVar);
+
+                const juce::var uiVar = pv.getProperty ("ui", juce::var());
+                info.ui.control    = uiVar.getProperty ("control", juce::var()).toString();
+                info.ui.enumName   = uiVar.getProperty ("enum", juce::var()).toString();
+                info.ui.enumPerOsc = asBool (uiVar.getProperty ("enumPerOsc", juce::var()));
 
                 model.params.push_back (std::move (info));
             }
@@ -121,5 +181,41 @@ namespace casioxw
     {
         const auto* hits = lookupAddress (key18);
         return hits != nullptr && hits->size() > 1;
+    }
+
+    const std::vector<EnumEntry>* ParamModel::enumValues (const juce::String& name) const
+    {
+        if (name.isEmpty())
+            return nullptr;
+        const auto it = enums.find (name);
+        return it == enums.end() ? nullptr : &it->second;
+    }
+
+    juce::String resolveEnumName (const ParamInfo& info, int instance)
+    {
+        if (info.ui.enumPerOsc)
+        {
+            const auto it = info.enumPerOscByInstance.find (instance);
+            return it == info.enumPerOscByInstance.end() ? juce::String() : it->second;
+        }
+        return info.ui.enumName;
+    }
+
+    ControlKind decideControlKind (const ParamInfo& info, int instance)
+    {
+        if (info.ui.control == "toggle")
+            return ControlKind::Toggle;
+
+        if (info.ui.control == "combo")
+        {
+            if (info.ui.enumPerOsc)
+                return resolveEnumName (info, instance).isEmpty() ? ControlKind::Disabled
+                                                                    : ControlKind::ComboEnumPerOsc;
+            return info.ui.enumName.isNotEmpty() ? ControlKind::ComboEnum : ControlKind::ComboRange;
+        }
+
+        // "slider", or any unrecognised control string — default to a numeric slider rather
+        // than silently rendering nothing.
+        return ControlKind::Slider;
     }
 }
