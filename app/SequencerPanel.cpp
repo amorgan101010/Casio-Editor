@@ -93,6 +93,11 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     randomizeButton.onClick = [this] { randomizeSequence(); };
     addAndMakeVisible (randomizeButton);
 
+    saveButton.onClick = [this] { saveSequenceToFile(); };
+    loadButton.onClick = [this] { loadSequenceFromFile(); };
+    addAndMakeVisible (saveButton);
+    addAndMakeVisible (loadButton);
+
     // Rate / time-scale. Item id == steps-per-beat, so the combo maps straight onto the model.
     rateCombo.addItem ("1/4", 1);
     rateCombo.addItem ("1/8", 2);
@@ -230,6 +235,86 @@ void SequencerPanel::syncStepWidgetsFromSequence()
         sc.gate.setValue ((double) sequence.steps[(size_t) i].gatePercent, juce::dontSendNotification);
         sc.gate.updateText();
     }
+}
+
+void SequencerPanel::syncTransportWidgetsFromSequence()
+{
+    tempoSlider.setValue ((double) sequence.tempoBpm, juce::dontSendNotification);
+    channelSlider.setValue ((double) sequence.channel, juce::dontSendNotification);
+    // Velocity is a single global "set all" control; there's no one value for a per-step-varied
+    // sequence, so show step 0's as representative (the per-step values still play correctly).
+    velocitySlider.setValue ((double) sequence.steps[0].velocity, juce::dontSendNotification);
+    rateCombo.setSelectedId (sequence.stepsPerBeat, juce::dontSendNotification);
+}
+
+void SequencerPanel::saveSequenceToFile()
+{
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Save sequence",
+        juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("sequence.xwseq"),
+        "*.xwseq");
+
+    fileChooser->launchAsync (
+        juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+            | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this] (const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+            if (file == juce::File())
+                return;   // cancelled
+            if (! file.hasFileExtension ("xwseq"))
+                file = file.withFileExtension ("xwseq");
+
+            if (file.replaceWithText (casioxw::sequenceToJson (sequence)))
+                statusLabel.setText ("Saved " + file.getFileName(), juce::dontSendNotification);
+            else
+                statusLabel.setText ("Save failed: " + file.getFullPathName(), juce::dontSendNotification);
+        });
+}
+
+void SequencerPanel::loadSequenceFromFile()
+{
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Load sequence",
+        juce::File::getSpecialLocation (juce::File::userHomeDirectory),
+        "*.xwseq");
+
+    fileChooser->launchAsync (
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto file = fc.getResult();
+            if (! file.existsAsFile())
+                return;   // cancelled
+            applyLoadedText (file.loadFileAsString(), file.getFileName());
+        });
+}
+
+void SequencerPanel::applyLoadedText (const juce::String& text, const juce::String& name)
+{
+    const auto loaded = casioxw::sequenceFromJson (text);
+    if (! loaded.has_value())
+    {
+        statusLabel.setText ("Load failed: " + name + " is not a sequence file", juce::dontSendNotification);
+        return;
+    }
+
+    // Adopt the loaded musical content, but keep THIS panel's lockable set + controls intact
+    // (they're fixed by kLockables and already have the metadata min/max seeded). Only import each
+    // known lockable param's base value, matched by id.
+    sequence.steps        = loaded->steps;
+    sequence.channel      = loaded->channel;
+    sequence.tempoBpm     = loaded->tempoBpm;
+    sequence.stepsPerBeat = loaded->stepsPerBeat;
+    for (auto& lp : sequence.lockable)
+        for (const auto& llp : loaded->lockable)
+            if (llp.paramId == lp.paramId && llp.instance == lp.instance)
+                lp.baseValue = llp.baseValue;
+
+    syncStepWidgetsFromSequence();
+    syncTransportWidgetsFromSequence();
+    selectStep (-1);   // back to Base; also refreshes param controls, step markers, status
+    statusLabel.setText ("Loaded " + name, juce::dontSendNotification);
 }
 
 void SequencerPanel::selectStep (int step)
@@ -441,6 +526,10 @@ void SequencerPanel::resized()
     transportRow2.removeFromLeft (16);
     velocityLabel.setBounds (transportRow2.removeFromLeft (60));
     velocitySlider.setBounds (transportRow2.removeFromLeft (130));
+    transportRow2.removeFromLeft (24);
+    saveButton.setBounds (transportRow2.removeFromLeft (70));
+    transportRow2.removeFromLeft (8);
+    loadButton.setBounds (transportRow2.removeFromLeft (70));
 
     bounds.removeFromTop (8);
     auto modeRow = bounds.removeFromTop (28);

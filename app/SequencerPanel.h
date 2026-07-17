@@ -67,6 +67,10 @@ private:
     void updateStatusLabel();
     void randomizeSequence();                  // Randomize button -> casioxw::randomize + resync widgets
     void syncStepWidgetsFromSequence();        // push sequence's note/enable back into the step widgets
+    void syncTransportWidgetsFromSequence();   // push channel/tempo/rate/velocity back into their widgets
+    void saveSequenceToFile();
+    void loadSequenceFromFile();
+    void applyLoadedText (const juce::String& text, const juce::String& name);  // parse + adopt + resync
 
     juce::String syncKey (const juce::String& paramId, int instance) const;
     void applyParam (const juce::String& paramId, int instance, int value);  // send + track lastApplied
@@ -81,6 +85,9 @@ private:
 
     juce::TextButton playStopButton { "Play" };
     juce::TextButton randomizeButton { "Randomize" };
+    juce::TextButton saveButton { "Save" };
+    juce::TextButton loadButton { "Load" };
+    std::unique_ptr<juce::FileChooser> fileChooser;   // kept alive across the async dialog
     juce::Slider tempoSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Slider channelSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Slider velocitySlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
