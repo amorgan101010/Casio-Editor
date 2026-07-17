@@ -1,11 +1,13 @@
-# casioxw_core — GUI-less parameter model + SysEx codec for the Casio XW-P1.
+# casioxw_core — GUI-less parameter model + SysEx codec + MIDI I/O for the Casio XW-P1.
 # NOT a generic reusable library: XW-P1-specific, separated only so it can be
 # unit-tested headless. It may use juce_core / juce_audio_basics (MidiMessage,
-# byte helpers) but must NEVER depend on a JUCE GUI module.
+# byte helpers) / juce_audio_devices (MidiInput/MidiOutput, ALSA backend on Linux)
+# but must NEVER depend on a JUCE GUI module.
 
 add_library(casioxw_core STATIC
     src/SysExCodec.cpp
     src/ParamModel.cpp
+    src/MidiIO.cpp
 )
 
 target_include_directories(casioxw_core
@@ -26,6 +28,7 @@ target_link_libraries(casioxw_core
     PUBLIC
         juce::juce_core
         juce::juce_audio_basics
+        juce::juce_audio_devices   # MidiInput/MidiOutput (ALSA backend on Linux); still GUI-less
     PRIVATE
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
