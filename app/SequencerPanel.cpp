@@ -6,9 +6,11 @@
 
 namespace
 {
-    constexpr int kStepWidth = 56;
+    constexpr int kStepWidth = 58;
+    constexpr int kLeftGutter = 46;                       // row labels (On / Pitch / Gate)
     constexpr int kParamControlWidth = 390;
-    constexpr int kStepColumnHeight = 22 + 2 + 20 + 56;   // select + gap + gate toggle + note knob
+    constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
+    constexpr int kStepColumnHeight = 20 + 2 + 20 + kKnobCell + kKnobCell;   // select + on + note + gate
 
     const juce::Colour kSelectedColour = juce::Colours::orange;
     const juce::Colour kHasLocksColour = juce::Colours::goldenrod.darker (0.4f);
@@ -60,9 +62,28 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         {
             sequence.steps[(size_t) i].note = (int) stepControls[(size_t) i]->note.getValue();
         };
+        sc->note.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
         addAndMakeVisible (sc->note);
 
+        sc->gate.setRange (1.0, 100.0, 1.0);
+        sc->gate.setValue (90.0, juce::dontSendNotification);
+        sc->gate.textFromValueFunction = [] (double v) { return juce::String ((int) v) + "%"; };
+        sc->gate.onValueChange = [this, i]
+        {
+            sequence.steps[(size_t) i].gatePercent = (int) stepControls[(size_t) i]->gate.getValue();
+        };
+        sc->gate.updateText();
+        sc->gate.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
+        addAndMakeVisible (sc->gate);
+
         stepControls[(size_t) i] = std::move (sc);
+    }
+
+    for (auto* l : { &onRowLabel, &pitchRowLabel, &gateRowLabel })
+    {
+        l->setJustificationType (juce::Justification::centredRight);
+        l->setColour (juce::Label::textColourId, juce::Colours::grey);
+        addAndMakeVisible (*l);
     }
 
     // ---- transport -------------------------------------------------------------------------
@@ -130,6 +151,11 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     };
     addAndMakeVisible (clearLocksButton);
 
+    shiftLeftButton.onClick  = [this] { casioxw::shiftSteps (sequence, -1); syncStepWidgetsFromSequence(); refreshParamControls(); refreshStepButtons(); };
+    shiftRightButton.onClick = [this] { casioxw::shiftSteps (sequence,  1); syncStepWidgetsFromSequence(); refreshParamControls(); refreshStepButtons(); };
+    addAndMakeVisible (shiftLeftButton);
+    addAndMakeVisible (shiftRightButton);
+
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible (statusLabel);
 
@@ -160,7 +186,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         lockRows.push_back (std::move (row));
     }
 
-    setSize (kStepWidth * 16 + 16,
+    setSize (kLeftGutter + kStepWidth * 16 + 16,
              8 + 28 + 6 + 28 + 8 + 28 + 8 + 20 + 4 + (int) lockRows.size() * 30 + 10 + kStepColumnHeight + 8);
 
     selectStep (-1);   // start in Base mode
@@ -201,6 +227,8 @@ void SequencerPanel::syncStepWidgetsFromSequence()
         sc.enabled.setToggleState (sequence.steps[(size_t) i].enabled, juce::dontSendNotification);
         sc.note.setValue ((double) sequence.steps[(size_t) i].note, juce::dontSendNotification);
         sc.note.updateText();
+        sc.gate.setValue ((double) sequence.steps[(size_t) i].gatePercent, juce::dontSendNotification);
+        sc.gate.updateText();
     }
 }
 
@@ -302,6 +330,7 @@ void SequencerPanel::play()
 
     playing = true;
     currentStep = 0;
+    phase = Phase::stepStart;
     lastApplied.clear();   // force step 0 to establish every parameter's value fresh
     playStopButton.setButtonText ("Stop");
     timerCallback();       // fire step 0 immediately rather than waiting one full interval
@@ -314,6 +343,7 @@ void SequencerPanel::stop()
 
     stopTimer();
     playing = false;
+    phase = Phase::stepStart;
     playStopButton.setButtonText ("Play");
 
     if (soundingNote.has_value())
@@ -332,6 +362,21 @@ void SequencerPanel::stop()
 
 void SequencerPanel::timerCallback()
 {
+    if (phase == Phase::gateEnd)
+    {
+        // Sub-step gate elapsed: release the note, then run out the rest of the step as silence.
+        if (soundingNote.has_value())
+        {
+            midiIO.sendNoteOff (soundingChannel, *soundingNote);
+            soundingNote.reset();
+        }
+        currentStep = (currentStep + 1) % 16;
+        phase = Phase::stepStart;
+        startTimer ((int) std::lround (juce::jmax (1.0, pendingRemainderMs)));
+        return;
+    }
+
+    // ---- Phase::stepStart --------------------------------------------------------------------
     // Parameters first, so the note sounds with the step's locked filter already in place. Only
     // re-send a parameter whose effective value actually changed since it was last applied.
     for (const auto& pv : casioxw::effectiveParamValues (sequence, currentStep))
@@ -350,15 +395,28 @@ void SequencerPanel::timerCallback()
         soundingNote.reset();
     }
 
+    const double stepMs = casioxw::stepIntervalMs (sequence);
+
     if (const auto event = casioxw::stepEvent (sequence, currentStep))
     {
         midiIO.sendNoteOn (event->channel, event->note, event->velocity);
         soundingNote = event->note;
         soundingChannel = event->channel;
+
+        const double gateMs = casioxw::stepGateMs (sequence, currentStep);
+        if (gateMs < stepMs - 0.5)   // sub-full gate: schedule a note-off partway through the step
+        {
+            pendingRemainderMs = stepMs - gateMs;
+            phase = Phase::gateEnd;
+            startTimer ((int) std::lround (juce::jmax (1.0, gateMs)));
+            return;
+        }
+        // full-length gate: fall through, note-off handled at the next step boundary
     }
 
+    // Rest, or a full-length note: advance a whole step.
     currentStep = (currentStep + 1) % 16;
-    startTimer ((int) std::lround (casioxw::stepIntervalMs (sequence)));
+    startTimer ((int) std::lround (juce::jmax (1.0, stepMs)));
 }
 
 void SequencerPanel::resized()
@@ -391,6 +449,10 @@ void SequencerPanel::resized()
     editButton.setBounds (modeRow.removeFromLeft (110));
     modeRow.removeFromLeft (8);
     clearLocksButton.setBounds (modeRow.removeFromLeft (140));
+    modeRow.removeFromLeft (24);
+    shiftLeftButton.setBounds (modeRow.removeFromLeft (70));
+    modeRow.removeFromLeft (8);
+    shiftRightButton.setBounds (modeRow.removeFromLeft (70));
 
     bounds.removeFromTop (8);
     statusLabel.setBounds (bounds.removeFromTop (20));
@@ -407,12 +469,25 @@ void SequencerPanel::resized()
 
     bounds.removeFromTop (10);
     auto stepRow = bounds.removeFromTop (kStepColumnHeight);
+
+    // Left gutter: row labels aligned to the On / Pitch / Gate rows of every column.
+    {
+        auto gutter = stepRow.removeFromLeft (kLeftGutter);
+        gutter.removeFromLeft (2);
+        gutter.removeFromRight (4);
+        gutter.removeFromTop (20 + 2);                        // skip the select-button row
+        onRowLabel.setBounds (gutter.removeFromTop (20));
+        pitchRowLabel.setBounds (gutter.removeFromTop (kKnobCell));
+        gateRowLabel.setBounds (gutter.removeFromTop (kKnobCell));
+    }
+
     for (int i = 0; i < 16; ++i)
     {
         auto col = stepRow.removeFromLeft (kStepWidth).reduced (3);
-        stepControls[(size_t) i]->select.setBounds (col.removeFromTop (22));
+        stepControls[(size_t) i]->select.setBounds (col.removeFromTop (20));
         col.removeFromTop (2);
         stepControls[(size_t) i]->enabled.setBounds (col.removeFromTop (20));
-        stepControls[(size_t) i]->note.setBounds (col.removeFromTop (56));   // compact rotary knob
+        stepControls[(size_t) i]->note.setBounds (col.removeFromTop (kKnobCell));   // bigger rotary knob
+        stepControls[(size_t) i]->gate.setBounds (col.removeFromTop (kKnobCell));   // gate-length knob
     }
 }

@@ -47,6 +47,7 @@ private:
         juce::TextButton select;              // shows step number; click selects it
         juce::ToggleButton enabled;
         juce::Slider note { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
+        juce::Slider gate { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
     };
 
     struct LockRow
@@ -94,7 +95,21 @@ private:
     juce::TextButton baseButton { "Base" };
     juce::ToggleButton editButton { "Edit Locks" };
     juce::TextButton clearLocksButton { "Clear Step Locks" };
+    juce::TextButton shiftLeftButton  { "Shift <" };
+    juce::TextButton shiftRightButton { "Shift >" };
     juce::Label statusLabel;
+
+    juce::Label onRowLabel    { {}, "On" };    // left-gutter row labels for the step grid
+    juce::Label pitchRowLabel { {}, "Pitch" };
+    juce::Label gateRowLabel  { {}, "Gate" };
+
+    // Playback runs a two-phase state machine on the single Timer so a sub-step gate length can
+    // note-off partway through a step without a second timer: stepStart fires params + note-on and
+    // (if gate<100%) arms the timer for the gate-off; gateEnd fires the note-off and arms the timer
+    // for the rest of the step. gate==100% skips the gateEnd phase (full-length note).
+    enum class Phase { stepStart, gateEnd };
+    Phase phase = Phase::stepStart;
+    double pendingRemainderMs = 0.0;           // stepStart -> gateEnd: silence left after the gate
 
     int currentStep = 0;
     bool playing = false;
