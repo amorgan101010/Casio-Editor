@@ -200,6 +200,8 @@ private:
     bool hasAnyPcmStepSelected() const;
     void clearDrumSelections();
     void clearPcmSelections();
+    void clearAllSteps();   // reset every lane's pattern (trigs + per-step notes/gate/vel + locks);
+                            // keeps sound setup: channels, tempo/rate, mutes, and lockable base values
     void updateClearLocksEnabled();
 
     // scheduler tick: fill the look-ahead horizon with timestamped events. lookaheadMs defaults to
@@ -253,6 +255,7 @@ private:
     juce::TextButton editButton { "P-LOCK" };         // toggle ON == p-lock edit mode
     juce::TextButton muteSynthButton { "Mute" };
     juce::TextButton clearLocksButton { "Clear Locks" };
+    juce::TextButton clearAllButton { "Clear All" };  // wipe every lane's pattern (testing aid)
     juce::TextButton shiftLeftButton  { "<" };
     juce::TextButton shiftRightButton { ">" };
     juce::TextButton drumControlsButton;

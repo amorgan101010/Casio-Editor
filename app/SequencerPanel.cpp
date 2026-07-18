@@ -548,6 +548,9 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     };
     addAndMakeVisible (clearLocksButton);
 
+    clearAllButton.onClick = [this] { clearAllSteps(); };
+    addAndMakeVisible (clearAllButton);
+
     shiftLeftButton.onClick  = [this] { casioxw::shiftSteps (sequence, -1); syncStepWidgetsFromSequence(); refreshParamControls(); refreshStepButtons(); };
     shiftRightButton.onClick = [this] { casioxw::shiftSteps (sequence,  1); syncStepWidgetsFromSequence(); refreshParamControls(); refreshStepButtons(); };
     addAndMakeVisible (shiftLeftButton);
@@ -1459,6 +1462,46 @@ void SequencerPanel::updateClearLocksEnabled()
     clearLocksButton.setEnabled (editButton.getToggleState() && (selectedStep >= 0 || hasAnyDrumStepSelected()));
 }
 
+void SequencerPanel::clearAllSteps()
+{
+    // Wipe the PATTERN on every lane back to empty rests, but leave the sound/setup alone:
+    // channels, tempo/rate, per-lane mutes, and the lockable base values all stay. Safe while
+    // playing -- the feeder reads the model live, so cleared steps simply stop triggering (any
+    // already-queued note this loop still gets its paired note-off).
+
+    // Solo Synth lane: default-construct each step (enabled=false, note=C4, gate=90, vel=100, no
+    // locks). Base values in sequence.lockable are untouched.
+    for (auto& step : sequence.steps)
+        step = casioxw::Step {};
+
+    // Drum lanes: trigs off + per-step velocity locks cleared (base velocity/channel/mute kept).
+    for (auto& row : drumTrackControls)
+    {
+        if (row == nullptr)
+            continue;
+        for (auto& b : row->steps)
+            b.setToggleState (false, juce::dontSendNotification);
+        for (auto& lock : row->velocityLocks)
+            lock.reset();
+    }
+
+    // PCM lanes: default-construct each step of the lane's own sequence.
+    for (auto& row : pcmTrackControls)
+        if (row != nullptr)
+            for (auto& step : row->track.steps)
+                step = casioxw::Step {};
+
+    // Drop every edit target so nothing points at now-empty data, then refresh. selectStep(-1)
+    // handles param controls / step buttons / status / clear-locks enablement; only the synth
+    // step knobs (note/gate/vel) need the extra push.
+    clearDrumSelections();
+    clearPcmSelections();
+    selectStep (-1);
+    syncStepWidgetsFromSequence();
+
+    statusLabel.setText ("Cleared all steps", juce::dontSendNotification);
+}
+
 void SequencerPanel::selectStep (int step)
 {
     selectedStep = step;
@@ -2024,7 +2067,7 @@ void SequencerPanel::resized()
             { &rateLabel, 38, 2 }, { &rateCombo, 74, 12 },
             { &channelLabel, 26, 2 }, { &channelSlider, 118, 20 },
             { &stepModeButton, 60, 2 }, { &editButton, 74, 12 },
-            { &clearLocksButton, 96, 20 },
+            { &clearLocksButton, 96, 6 }, { &clearAllButton, 84, 20 },
             { &saveButton, 58, 4 }, { &loadButton, 58, 4 }, { &sequenceDirButton, 70, 0 },
         };
         int x = bounds.getX();
