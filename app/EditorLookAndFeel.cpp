@@ -40,6 +40,11 @@ EditorLookAndFeel::EditorLookAndFeel()
     setColour (juce::Slider::backgroundColourId, panelBg);
     setColour (juce::Slider::trackColourId, blue);
     setColour (juce::Slider::thumbColourId, orange);
+    // Rotary defaults match the historical hardcoded look (orange arc on a panelBg track); a
+    // component may override these per-slider (the sequencer's LCD param display retints its cell
+    // knobs phosphor-cyan) and drawRotarySlider() below honours them.
+    setColour (juce::Slider::rotarySliderFillColourId, orange);
+    setColour (juce::Slider::rotarySliderOutlineColourId, panelBg);
     setColour (juce::Slider::textBoxTextColourId, textPrimary);
     setColour (juce::Slider::textBoxBackgroundColourId, chassisBg);
     setColour (juce::Slider::textBoxOutlineColourId, border);
@@ -86,6 +91,8 @@ void EditorLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
     const auto lineW = juce::jmin (5.0f, radius * 0.26f);
     const auto arcRadius = radius - lineW * 0.5f;
     const bool enabled = slider.isEnabled();
+    const auto fillColour  = slider.findColour (juce::Slider::rotarySliderFillColourId);
+    const auto trackColour = slider.findColour (juce::Slider::rotarySliderOutlineColourId);
 
     // Glass body
     const auto bodyRadius = radius - lineW;
@@ -97,7 +104,7 @@ void EditorLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
     // Track arc (full sweep)
     juce::Path track;
     track.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour (panelBg);
+    g.setColour (trackColour);
     g.strokePath (track, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     // Value arc (start -> current position)
@@ -105,7 +112,7 @@ void EditorLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
     {
         juce::Path value;
         value.addCentredArc (centre.x, centre.y, arcRadius, arcRadius, 0.0f, rotaryStartAngle, toAngle, true);
-        g.setColour (enabled ? orange : textMuted);
+        g.setColour (enabled ? fillColour : textMuted);
         g.strokePath (value, juce::PathStrokeType (lineW, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
     }
 
@@ -120,7 +127,7 @@ void EditorLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
 
     // LED tip
     const auto tip = centre.getPointOnCircumference (bodyRadius - 3.0f, toAngle);
-    g.setColour ((enabled ? orange : textMuted).withAlpha (0.9f));
+    g.setColour ((enabled ? fillColour : textMuted).withAlpha (0.9f));
     g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre (tip));
 }
 

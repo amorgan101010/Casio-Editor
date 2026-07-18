@@ -24,6 +24,7 @@ namespace EditorColours
     const juce::Colour red     (0xffdc322f);   // destructive/error (sparing use)
     const juce::Colour blue    (0xff268bd2);   // active/filled/"on" state
     const juce::Colour cyan    (0xff2aa198);   // playhead / connected / positive state
+    const juce::Colour green   (0xff859900);   // transport "go" (Play) — reserved for that alone
 
     // ---- Semantic aliases used across panels -------------------------------------------------
     const juce::Colour chassisBg   = base03;
@@ -37,6 +38,37 @@ namespace EditorColours
     const juce::Colour filledStep  = blue;
     const juce::Colour idleStep    = base02;
     const juce::Colour playhead    = cyan;
+
+    // ---- The "screen" (parameter display) palette island -------------------------------------
+    // The sequencer's pageable parameter sub-window is drawn as a hardware LCD: darker than the
+    // chassis so it reads as backlit glass, with phosphor-cyan content. Locked parameters render
+    // INVERTED (amber fill, dark text) — the Digitakt manual's own convention for a locked value.
+    const juce::Colour screenBg     (0xff001419);            // near-black teal glass
+    const juce::Colour screenLine   = cyan.withAlpha (0.22f); // bezel inner line / dividers
+    const juce::Colour screenText   (0xff9fc7c3);            // phosphor primary
+    const juce::Colour screenDim    (0xff4a6a6e);            // phosphor secondary / idle labels
+    const juce::Colour screenAccent = cyan;                  // value arcs / live emphasis
+    const juce::Colour screenInvert = yellow;                // locked-cell fill (inverted graphics)
+}
+
+//==============================================================================
+/** Shared font recipes, so the panels don't each hand-roll their own sizes/weights. The screen
+    and every step numeral use the monospaced face (tabular digits read like a hardware display);
+    section headers use the same bold-caps + tracking treatment as the tab bar. */
+namespace EditorFonts
+{
+    inline juce::Font mono (float size, bool bold = false)
+    {
+        return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), size,
+                                              bold ? juce::Font::bold : juce::Font::plain));
+    }
+
+    inline juce::Font header (float size = 12.0f)
+    {
+        juce::Font f (juce::FontOptions (size, juce::Font::bold));
+        f.setExtraKerningFactor (0.08f);
+        return f;
+    }
 }
 
 //==============================================================================
