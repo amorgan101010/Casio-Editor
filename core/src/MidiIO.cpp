@@ -104,6 +104,32 @@ namespace casioxw
         return true;
     }
 
+    bool MidiIO::sendMessageNow (const juce::MidiMessage& message)
+    {
+        if (output == nullptr)
+            return false;
+        output->sendMessageNow (message);
+        return true;
+    }
+
+    void MidiIO::startPlaybackThread()
+    {
+        if (output != nullptr)
+            output->startBackgroundThread();
+    }
+
+    void MidiIO::stopPlaybackThread()
+    {
+        if (output != nullptr)
+            output->stopBackgroundThread();   // also clears any pending scheduled messages
+    }
+
+    void MidiIO::scheduleBlock (const juce::MidiBuffer& buffer, double startMs, double samplesPerSec)
+    {
+        if (output != nullptr)
+            output->sendBlockOfMessages (buffer, startMs, samplesPerSec);
+    }
+
     bool MidiIO::openInput (const juce::String& deviceIdentifier)
     {
         input = juce::MidiInput::openDevice (deviceIdentifier, this);

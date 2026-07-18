@@ -10,6 +10,7 @@ add_library(casioxw_core STATIC
     src/MidiIO.cpp
     src/NoteNames.cpp
     src/Sequence.cpp
+    src/Scheduler.cpp
 )
 
 target_include_directories(casioxw_core

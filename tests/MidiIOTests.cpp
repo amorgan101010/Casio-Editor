@@ -179,3 +179,20 @@ TEST_CASE ("MidiIO: channel-voice sends with no output open return false rather 
     REQUIRE_FALSE (io.sendNoteOff (1, 60));
     REQUIRE_FALSE (io.sendAllNotesOff (1));
 }
+
+TEST_CASE ("MidiIO: timestamped-playback API is safe to call with no output open", "[midiio][send]")
+{
+    casioxw::MidiIO io;
+    REQUIRE_FALSE (io.isOutputOpen());
+
+    // sendMessageNow returns false (like the other sends); the playback-thread + scheduleBlock
+    // calls are no-ops that must not crash when there's nothing to send to.
+    REQUIRE_FALSE (io.sendMessageNow (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100)));
+
+    juce::MidiBuffer buffer;
+    buffer.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 100), 0);
+    io.startPlaybackThread();
+    io.scheduleBlock (buffer, 1000.0, 1000.0);
+    io.stopPlaybackThread();
+    SUCCEED ("no crash with no output open");
+}

@@ -29,10 +29,14 @@
       - a step selected + Edit OFF: the param controls show that step's locks read-only, with a
         marker on each parameter that is locked (vs inheriting the base).
 
-    Timer-driven, not the roadmap's look-ahead scheduler — accepted MVP shortcut. Playback resolves
-    each step's effective parameter values (casioxw::effectiveParamValues) and only re-sends the
-    ones that changed since last applied (the parameter analogue of the note-off dedup). Stop
-    resets every parameter to its base so a p-lock can't leave the filter stuck. */
+    Playback uses the roadmap's look-ahead + timestamped-output design (SEQUENCER_HANDOFF.md S3/S4):
+    a loose message-thread feeder timer fills a short horizon by calling the pure
+    casioxw::scheduleStep() per step and handing the timestamped events to the MIDI output thread
+    (casioxw::MidiIO::scheduleBlock), so note timing stays steady even when the feeder is jittery
+    under background load. Param changes (p-locks + base) go through a single paramMessages() seam —
+    SysEx via the codec today, NRPN/CC later — used by both the scheduled path and the immediate
+    audition path. Stop flushes pending output + resets every parameter to base so a p-lock can't
+    leave the filter stuck. */
 class SequencerPanel : public juce::Component, private juce::Timer
 {
 public:
@@ -72,8 +76,13 @@ private:
     void loadSequenceFromFile();
     void applyLoadedText (const juce::String& text, const juce::String& name);  // parse + adopt + resync
 
-    juce::String syncKey (const juce::String& paramId, int instance) const;
-    void applyParam (const juce::String& paramId, int instance, int value);  // send + track lastApplied
+    void feedLookahead();   // scheduler tick: fill the look-ahead horizon with timestamped events
+
+    // The p-lock transport seam. Builds the MIDI message(s) for one parameter change — SysEx via
+    // the proven codec today; the NRPN/CC map (prefer NRPN, CC where verified absolute) is the next
+    // chunk and edits ONLY this function. Returns >1 message once NRPN lands (LSB/MSB/data).
+    std::vector<juce::MidiMessage> paramMessages (const juce::String& paramId, int instance, int value) const;
+    void sendParamNow (const juce::String& paramId, int instance, int value);   // immediate (audition/reset)
 
     casioxw::SysExCodec& codec;
     casioxw::MidiIO& midiIO;
@@ -110,21 +119,19 @@ private:
     juce::Label pitchRowLabel { {}, "Pitch" };
     juce::Label gateRowLabel  { {}, "Gate" };
 
-    // Playback runs a two-phase state machine on the single Timer so a sub-step gate length can
-    // note-off partway through a step without a second timer: stepStart fires params + note-on and
-    // (if gate<100%) arms the timer for the gate-off; gateEnd fires the note-off and arms the timer
-    // for the rest of the step. gate==100% skips the gateEnd phase (full-length note).
-    enum class Phase { stepStart, gateEnd };
-    Phase phase = Phase::stepStart;
-    double pendingRemainderMs = 0.0;           // stepStart -> gateEnd: silence left after the gate
+    // Look-ahead transport state (message thread only — the feeder timer runs there, so no locking
+    // against `sequence` is needed; precise dispatch happens on JUCE's output thread instead).
+    // transportStartMs is the juce::Time::getMillisecondCounter() wall-clock at which step 0 begins
+    // (a few ms in the future, so the first events are validly "in the future"); nextStepStartMs is
+    // the next unfed step's start, measured relative to it. prevStepIndex feeds scheduleStep()'s
+    // param dedup (-1 only for the very first fed step, to establish the whole sound).
+    double transportStartMs = 0.0;
+    double nextStepStartMs  = 0.0;
+    int    nextStepIndex    = 0;
+    int    prevStepIndex    = -1;
 
-    int currentStep = 0;
     bool playing = false;
     int selectedStep = -1;                     // -1 == Base
-
-    std::optional<int> soundingNote;
-    int soundingChannel = 1;
-    std::map<juce::String, int> lastApplied;   // keyed by syncKey(); parameter dedup for playback
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SequencerPanel)
 };
