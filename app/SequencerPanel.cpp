@@ -35,6 +35,51 @@ namespace
         { "tssFLTFcoff", 1, 127 },   // Total Filter Cutoff — fully open
         { "tssFLTFreso", 1, 0   },   // Total Filter Resonance — none
     };
+
+    struct NrpnAddress
+    {
+        int msb = 0;
+        int lsb = 0;
+    };
+
+    std::optional<NrpnAddress> nrpnAddressForSoloSynthParam (const casioxw::ParamInfo& info, int instance)
+    {
+        if (info.section != "soloSynth")
+            return std::nullopt;
+
+        if (info.block == "TotalFilter")
+        {
+            const int lsb = info.addr - 72;   // p79 IDs 0x48..0x5A -> NRPN LSB 0x00..0x12 on MSB 0x38
+            if (lsb >= 0 && lsb <= 0x12)
+                return NrpnAddress { 0x38, lsb };
+        }
+
+        if (info.block == "LFO")
+        {
+            const int lsb = info.addr - 91;   // p79 IDs 0x5B..0x62 -> NRPN LSB 0x00..0x07
+            if (instance >= 1 && instance <= 2 && lsb >= 0 && lsb <= 0x07)
+                return NrpnAddress { 0x35 + instance, lsb };   // LFO1=0x36, LFO2=0x37
+        }
+
+        if (info.block == "OSC" || info.block == "PWM" || info.block == "Etc")
+        {
+            if (instance >= 1 && instance <= 6 && info.addr >= 0 && info.addr <= 0x48)
+                return NrpnAddress { 0x2F + instance, info.addr };   // OSC1..Noise = 0x30..0x35
+        }
+
+        return std::nullopt;
+    }
+
+    std::vector<juce::MidiMessage> buildNrpnMessages (int channel, int nrpnMsb, int nrpnLsb, int value)
+    {
+        const int ch = juce::jlimit (1, 16, channel);
+        const int v  = juce::jlimit (0, 127, value);
+        return {
+            juce::MidiMessage::controllerEvent (ch, 62, nrpnLsb),   // NRPN LSB
+            juce::MidiMessage::controllerEvent (ch, 63, nrpnMsb),   // NRPN MSB
+            juce::MidiMessage::controllerEvent (ch, 6, v),          // Data Entry MSB
+        };
+    }
 }
 
 SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& midiIOIn)
@@ -215,11 +260,15 @@ SequencerPanel::~SequencerPanel()
 }
 
 std::vector<juce::MidiMessage> SequencerPanel::paramMessages (const juce::String& paramId,
-                                                             int instance, int value) const
+                                                             int instance, int value, int channel) const
 {
-    // The single p-lock transport seam. TODAY: one SysEx frame via the proven codec. The NRPN/CC
-    // map (prefer NRPN — covers the whole Solo Synth param set at ~1/3 the bytes; CC where
-    // hardware-verified absolute; SysEx fallback) is the next chunk and replaces only this body.
+    // Prefer NRPN on the realtime path to cut wire traffic and synth-side parse overhead.
+    if (const auto* info = codec.model().find (paramId))
+        if (const auto nrpn = nrpnAddressForSoloSynthParam (*info, instance))
+            if (value >= 0 && value <= 127)   // this path currently handles plain 7-bit ranges
+                return buildNrpnMessages (channel, nrpn->msb, nrpn->lsb, value);
+
+    // Fallback for anything unmapped/non-7-bit: keep the proven SysEx path.
     const auto frame = codec.encode (paramId, instance, value);
     if (frame.size() < 3)
         return {};
@@ -229,7 +278,7 @@ std::vector<juce::MidiMessage> SequencerPanel::paramMessages (const juce::String
 
 void SequencerPanel::sendParamNow (const juce::String& paramId, int instance, int value)
 {
-    for (const auto& m : paramMessages (paramId, instance, value))
+    for (const auto& m : paramMessages (paramId, instance, value, sequence.channel))
         midiIO.sendMessageNow (m);
 }
 
@@ -494,7 +543,7 @@ void SequencerPanel::feedLookahead()
                     buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note), samplePos);
                     break;
                 case casioxw::ScheduledEvent::Type::paramChange:
-                    for (const auto& m : paramMessages (e.paramId, e.instance, e.value))
+                    for (const auto& m : paramMessages (e.paramId, e.instance, e.value, sequence.channel))
                         buffer.addEvent (m, samplePos);
                     break;
             }
