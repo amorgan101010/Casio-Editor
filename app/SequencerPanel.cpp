@@ -130,59 +130,6 @@ namespace
         { "Chords", 16 },
     };
 
-    struct NrpnAddress
-    {
-        int msb = 0;
-        int lsb = 0;
-    };
-
-    std::optional<NrpnAddress> nrpnAddressForSoloSynthParam (const casioxw::ParamInfo& info, int instance)
-    {
-        if (info.section != "soloSynth")
-            return std::nullopt;
-
-        if (info.block == "TotalFilter")
-        {
-            const int lsb = info.addr - 72;   // p79 IDs 0x48..0x5A -> NRPN LSB 0x00..0x12 on MSB 0x38
-            if (lsb >= 0 && lsb <= 0x12)
-                return NrpnAddress { 0x38, lsb };
-        }
-
-        if (info.block == "LFO")
-        {
-            const int lsb = info.addr - 91;   // p79 IDs 0x5B..0x62 -> NRPN LSB 0x00..0x07
-            if (instance >= 1 && instance <= 2 && lsb >= 0 && lsb <= 0x07)
-                return NrpnAddress { 0x35 + instance, lsb };   // LFO1=0x36, LFO2=0x37
-        }
-
-        if (info.block == "OSC" || info.block == "PWM" || info.block == "Etc")
-        {
-            if (instance >= 1 && instance <= 6 && info.addr >= 0 && info.addr <= 0x48)
-                return NrpnAddress { 0x2F + instance, info.addr };   // OSC1..Noise = 0x30..0x35
-        }
-
-        return std::nullopt;
-    }
-
-    // Controller numbers per reference/midi-spec.md §1.4 — the spec's tables are HEX, so NRPN
-    // select is CC 0x62/0x63 (98/99 decimal), LSB first on this device, value via Data Entry CC
-    // 0x06. bug-109: these were passed as DECIMAL 62/63, so every "NRPN" went to two unrelated
-    // controllers and the bare Data Entry then landed on whatever RPN/NRPN pointer was active —
-    // randomly rewriting params like pitch-bend range. The trailing RPN Null (0x7F/0x7F, spec:
-    // "Null (deselect)") parks the pointer after each write so no stray Data Entry, ours or
-    // anyone's, can ever re-hit the last-selected parameter.
-    std::vector<juce::MidiMessage> buildNrpnMessages (int channel, int nrpnMsb, int nrpnLsb, int value)
-    {
-        const int ch = juce::jlimit (1, 16, channel);
-        const int v  = juce::jlimit (0, 127, value);
-        return {
-            juce::MidiMessage::controllerEvent (ch, 0x62, nrpnLsb),   // NRPN LSB
-            juce::MidiMessage::controllerEvent (ch, 0x63, nrpnMsb),   // NRPN MSB
-            juce::MidiMessage::controllerEvent (ch, 0x06, v),         // Data Entry MSB
-            juce::MidiMessage::controllerEvent (ch, 0x64, 0x7F),      // RPN LSB \ Null — deselect
-            juce::MidiMessage::controllerEvent (ch, 0x65, 0x7F),      // RPN MSB /
-        };
-    }
 }
 
 //==============================================================================
@@ -878,13 +825,18 @@ void SequencerPanel::paint (juce::Graphics& g)
 std::vector<juce::MidiMessage> SequencerPanel::paramMessages (const juce::String& paramId,
                                                              int instance, int value, int channel) const
 {
-    // Prefer NRPN on the realtime path to cut wire traffic and synth-side parse overhead.
-    if (const auto* info = codec.model().find (paramId))
-        if (const auto nrpn = nrpnAddressForSoloSynthParam (*info, instance))
-            if (value >= 0 && value <= 127)   // this path currently handles plain 7-bit ranges
-                return buildNrpnMessages (channel, nrpn->msb, nrpn->lsb, value);
-
-    // Fallback for anything unmapped/non-7-bit: keep the proven SysEx path.
+    // Always encode via the codec's SysEx path. It runs the value through the param's per-vt
+    // encoder (nf/cf/wf/tn/pk/cF) and addresses by the param's real 18-byte address, so signed/
+    // scaled values are correct and every write lands on the right parameter -- both golden-tested
+    // (decode(encode(x))==x for every vt) and hardware-verified by the tone editor.
+    //
+    // A prior "prefer NRPN to trim wire traffic" optimization was removed here: it sent the raw UI
+    // value as a plain 7-bit Data Entry (wrong for every cf/wf/tn param -- e.g. touch-sense 8
+    // landed as 8-64 = -56 on the synth) and used hand-derived addr-72 / addr-91 NRPN LSBs that
+    // were off for the filter-envelope block (writes shifted onto neighbouring params). Over
+    // USB-MIDI the SysEx byte count was never the real constraint. A correct NRPN transport could
+    // return later, but only with per-vt value encoding and hardware-verified addresses.
+    (void) channel;   // solo-synth params are addressed in the SysEx frame, not by channel-voice prefix
     const auto frame = codec.encode (paramId, instance, value);
     if (frame.size() < 3)
         return {};
