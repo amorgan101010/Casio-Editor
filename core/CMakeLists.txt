@@ -9,6 +9,7 @@ add_library(casioxw_core STATIC
     src/ParamModel.cpp
     src/MidiIO.cpp
     src/NoteNames.cpp
+    src/Sequence.cpp
 )
 
 target_include_directories(casioxw_core

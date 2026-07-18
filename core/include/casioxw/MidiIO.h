@@ -70,6 +70,20 @@ namespace casioxw
             have at least one byte between them). */
         bool sendFrame (const SysExFrame& frame);
 
+        // ---- Channel voice (sequencer note playback) -----------------------------------------
+
+        /** Sends Note On (status 0x9n). channel is 1-16, note/velocity 0-127 — the caller's
+            responsibility to keep in range (UI-facing values are already clamped at the widget).
+            Returns false if no output is open. */
+        bool sendNoteOn (int channel, int note, int velocity);
+
+        /** Sends Note Off (status 0x8n). Same range contract as sendNoteOn(). */
+        bool sendNoteOff (int channel, int note);
+
+        /** Sends CC 123 (All Notes Off) on the given channel — a safety net for sequencer
+            stop/teardown so a dropped note-off can never leave a note hanging. */
+        bool sendAllNotesOff (int channel);
+
         // ---- Input ------------------------------------------------------------------------
 
         /** Opens a MIDI input port by identifier (from MidiDevices::availableInputs()), registers

@@ -168,3 +168,14 @@ TEST_CASE ("MidiIO: sendFrame with no output open returns false rather than cras
         "f0 44 16 03 7f 00 09 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 f7");
     REQUIRE_FALSE (io.sendFrame (frame));
 }
+
+TEST_CASE ("MidiIO: channel-voice sends with no output open return false rather than crashing",
+          "[midiio][send]")
+{
+    casioxw::MidiIO io;
+    REQUIRE_FALSE (io.isOutputOpen());
+
+    REQUIRE_FALSE (io.sendNoteOn (1, 60, 100));
+    REQUIRE_FALSE (io.sendNoteOff (1, 60));
+    REQUIRE_FALSE (io.sendAllNotesOff (1));
+}
