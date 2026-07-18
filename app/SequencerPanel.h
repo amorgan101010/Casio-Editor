@@ -80,6 +80,12 @@ public:
         state-dependent rendering a fresh panel never shows. Never called by the app itself. */
     void applyPreviewDemoState();
 
+    /** tools/gui-preview only: focus a PCM track (Bass) with a few seeded steps, so an offscreen
+        snapshot can verify the shared step column actually retargets (synthLabel/note values/
+        disabled P-LOCK controls) rather than always showing the Solo Synth. Never called by the
+        app itself. */
+    void applyPcmFocusPreviewState();
+
 private:
     enum class SaveKind
     {
@@ -123,6 +129,7 @@ private:
         juce::Label trackLabel;
         juce::TextButton mute { "Mute" };
         juce::ComboBox channel;
+        juce::TextButton focusButton { "Focus" };   // radio-grouped with synthFocusButton
         casioxw::Sequence track;
     };
 
@@ -137,6 +144,13 @@ private:
         drained by one panel at a time); only available while stopped, since the playback
         feeder owns this panel's timer while playing. */
     void syncBaseValuesFromSynth();
+
+    /** Repoint the shared step column (stepControls: select/note/gate/velocity) at a different
+        melodic track: -1 == Solo Synth (`sequence`), 0-3 == pcmTrackControls[idx]->track. P-lock
+        editing (editButton) is Solo-Synth-only so far (PCM tracks carry no lockable params yet) —
+        disabled and forced to STEP mode whenever a PCM track has focus, along with the other
+        Solo-Synth-only tools (Base/Sync/Rnd/Shift) that only ever mutate `sequence`. */
+    void setMelodicFocus (int trackIndex);
 
     void selectStep (int step);                // -1 == Base
     void setPLockMode (bool pLockMode);        // STEP / P-LOCK mode keys both land here
@@ -177,7 +191,13 @@ private:
     casioxw::SysExCodec& codec;
     casioxw::MidiIO& midiIO;
 
-    casioxw::Sequence sequence;                // source of truth
+    casioxw::Sequence sequence;                // source of truth (Solo Synth track)
+
+    // Which melodic track the shared step column (stepControls) currently shows/edits.
+    // -1 == sequence (Solo Synth); 0-3 == pcmTrackControls[focusedTrackIndex]->track.
+    casioxw::Sequence* activeMelodicTrack = &sequence;
+    int focusedTrackIndex = -1;
+    juce::TextButton synthFocusButton { "S" };   // radio-grouped with each PcmTrackControl::focusButton; tooltip explains
 
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
     std::unique_ptr<ParamPageDisplay> paramDisplay;   // the pageable p-lock parameter sub-window

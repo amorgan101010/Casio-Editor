@@ -357,7 +357,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                 selectStep (selectedStep == i ? -1 : i);
             else
             {
-                auto& step = sequence.steps[(size_t) i];
+                auto& step = activeMelodicTrack->steps[(size_t) i];
                 step.enabled = ! step.enabled;
                 refreshStepButtons();
                 updateStatusLabel();
@@ -376,7 +376,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         sc->note.updateText();
         sc->note.onValueChange = [this, i]
         {
-            sequence.steps[(size_t) i].note = (int) stepControls[(size_t) i]->note.getValue();
+            activeMelodicTrack->steps[(size_t) i].note = (int) stepControls[(size_t) i]->note.getValue();
         };
         sc->note.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
         addAndMakeVisible (sc->note);
@@ -386,7 +386,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         sc->gate.textFromValueFunction = [] (double v) { return juce::String ((int) v) + "%"; };
         sc->gate.onValueChange = [this, i]
         {
-            sequence.steps[(size_t) i].gatePercent = (int) stepControls[(size_t) i]->gate.getValue();
+            activeMelodicTrack->steps[(size_t) i].gatePercent = (int) stepControls[(size_t) i]->gate.getValue();
         };
         sc->gate.updateText();
         sc->gate.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
@@ -397,7 +397,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         sc->velocity.textFromValueFunction = [] (double v) { return juce::String ((int) v); };
         sc->velocity.onValueChange = [this, i]
         {
-            sequence.steps[(size_t) i].velocity = (int) stepControls[(size_t) i]->velocity.getValue();
+            activeMelodicTrack->steps[(size_t) i].velocity = (int) stepControls[(size_t) i]->velocity.getValue();
         };
         sc->velocity.updateText();
         sc->velocity.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
@@ -549,6 +549,16 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         addAndMakeVisible (*l);
     }
 
+    // Focus selector: which melodic track (Solo Synth or a PCM track) the shared step column
+    // below shows/edits. synthFocusButton lives beside synthLabel; each PCM row's own focusButton
+    // (wired below) shares this radio group.
+    synthFocusButton.setClickingTogglesState (true);
+    synthFocusButton.setRadioGroupId (0x5EC8);
+    synthFocusButton.setToggleState (true, juce::dontSendNotification);
+    synthFocusButton.setTooltip ("Show the Solo Synth's steps in the grid above");
+    synthFocusButton.onClick = [this] { setMelodicFocus (-1); };
+    addAndMakeVisible (synthFocusButton);
+
     const int noteMin = 0;
     const int noteMax = 127;
 
@@ -663,6 +673,12 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         };
         addAndMakeVisible (row->channel);
 
+        row->focusButton.setClickingTogglesState (true);
+        row->focusButton.setRadioGroupId (0x5EC8);
+        row->focusButton.setTooltip (juce::String ("Show ") + def.label + "'s steps in the grid above");
+        row->focusButton.onClick = [this, idx = (int) i] { setMelodicFocus (idx); };
+        addAndMakeVisible (row->focusButton);
+
         pcmTrackControls[i] = std::move (row);
     }
 
@@ -751,6 +767,23 @@ void SequencerPanel::applyPreviewDemoState()
     updateClearLocksEnabled();
 }
 
+void SequencerPanel::applyPcmFocusPreviewState()
+{
+    if (auto& row = pcmTrackControls[0])   // Bass
+    {
+        for (int i : { 0, 3, 6, 10 })
+        {
+            row->track.steps[(size_t) i].enabled = true;
+            row->track.steps[(size_t) i].note = 36 + i;
+        }
+        row->mute.setToggleState (false, juce::dontSendNotification);
+    }
+    if (auto& row = pcmTrackControls[2])   // Solo 2 -- muted, to check the mute button renders distinctly
+        row->mute.setToggleState (true, juce::dontSendNotification);
+
+    setMelodicFocus (0);   // shows the shared step column now reads Bass's steps, not the Solo Synth's
+}
+
 void SequencerPanel::paint (juce::Graphics& g)
 {
     g.fillAll (EditorColours::chassisBg);
@@ -826,16 +859,19 @@ void SequencerPanel::showRandomizeOptions()
 
 void SequencerPanel::syncStepWidgetsFromSequence()
 {
+    // Reads from `*activeMelodicTrack`, not always `sequence` — the shared step column shows
+    // whichever melodic track (Solo Synth or a focused PCM track) currently has focus.
     for (int i = 0; i < 16; ++i)
     {
         auto& sc = *stepControls[(size_t) i];
+        const auto& step = activeMelodicTrack->steps[(size_t) i];
         // dontSendNotification: these are display updates, not user edits — don't fire the
-        // onClick/onValueChange handlers that would write straight back into `sequence`.
-        sc.note.setValue ((double) sequence.steps[(size_t) i].note, juce::dontSendNotification);
+        // onClick/onValueChange handlers that would write straight back into the track.
+        sc.note.setValue ((double) step.note, juce::dontSendNotification);
         sc.note.updateText();
-        sc.gate.setValue ((double) sequence.steps[(size_t) i].gatePercent, juce::dontSendNotification);
+        sc.gate.setValue ((double) step.gatePercent, juce::dontSendNotification);
         sc.gate.updateText();
-        sc.velocity.setValue ((double) sequence.steps[(size_t) i].velocity, juce::dontSendNotification);
+        sc.velocity.setValue ((double) step.velocity, juce::dontSendNotification);
         sc.velocity.updateText();
     }
 }
@@ -1270,6 +1306,37 @@ void SequencerPanel::updateClearLocksEnabled()
     clearLocksButton.setEnabled (editButton.getToggleState() && (selectedStep >= 0 || hasAnyDrumStepSelected()));
 }
 
+void SequencerPanel::setMelodicFocus (int trackIndex)
+{
+    focusedTrackIndex = trackIndex;
+    activeMelodicTrack = (trackIndex < 0) ? &sequence : &pcmTrackControls[(size_t) trackIndex]->track;
+
+    const bool isSynth = (trackIndex < 0);
+    static const char* const kNames[] = { "SOLO SYNTH", "BASS", "SOLO 1", "SOLO 2", "CHORDS" };
+    synthLabel.setText (kNames[(size_t) (trackIndex + 1)], juce::dontSendNotification);
+
+    // P-locks and the Base/Sync/Rnd/Shift tools only ever operate on `sequence` today (a PCM
+    // track's `lockable` is empty) — disable them while a PCM track has focus so they can't fire
+    // against the wrong data. Plain per-step enable/note/gate/velocity editing (STEP mode) already
+    // works for whichever track is focused.
+    editButton.setEnabled (isSynth);
+    baseButton.setEnabled (isSynth);
+    syncBaseButton.setEnabled (isSynth);
+    randomizeButton.setEnabled (isSynth);
+    rndOptionsButton.setEnabled (isSynth);
+    shiftLeftButton.setEnabled (isSynth);
+    shiftRightButton.setEnabled (isSynth);
+    if (! isSynth)
+    {
+        stepModeButton.setToggleState (true, juce::dontSendNotification);   // clears editButton (radio group)
+        setPLockMode (false);
+    }
+
+    syncStepWidgetsFromSequence();
+    refreshStepButtons();
+    updateStatusLabel();
+}
+
 void SequencerPanel::selectStep (int step)
 {
     selectedStep = step;
@@ -1345,9 +1412,11 @@ void SequencerPanel::refreshStepButtons()
     for (int i = 0; i < 16; ++i)
     {
         auto& btn = stepControls[(size_t) i]->select;
-        btn.setToggleState (sequence.steps[(size_t) i].enabled, juce::dontSendNotification);
-        btn.setLockState (! sequence.steps[(size_t) i].locks.empty(),
-                          pLockMode && i == selectedStep);
+        const auto& step = activeMelodicTrack->steps[(size_t) i];
+        btn.setToggleState (step.enabled, juce::dontSendNotification);
+        // PCM-focused steps never carry locks yet (each track's `lockable` is empty), so the LED
+        // and P-LOCK highlight naturally stay dark there — editButton is disabled while focused.
+        btn.setLockState (! step.locks.empty(), pLockMode && i == selectedStep);
     }
     baseButton.setColour (juce::TextButton::buttonColourId,
                           selectedStep < 0 ? kSelectedColour : kIdleColour);
@@ -1779,11 +1848,14 @@ void SequencerPanel::resized()
             row->mute.setBounds (controls.removeFromLeft (46).withSizeKeepingCentre (46, 24));
             controls.removeFromLeft (6);
             row->channel.setBounds (controls.removeFromLeft (58).withSizeKeepingCentre (58, 24));
+            controls.removeFromLeft (6);
+            row->focusButton.setBounds (controls.removeFromLeft (56).withSizeKeepingCentre (56, 24));
         }
         else
         {
             row->mute.setBounds (0, 0, 0, 0);
             row->channel.setBounds (0, 0, 0, 0);
+            row->focusButton.setBounds (0, 0, 0, 0);
         }
 
         bounds.removeFromTop (2);
@@ -1815,6 +1887,8 @@ void SequencerPanel::resized()
     auto cardInner = card.reduced (8);
     auto headerRow = cardInner.removeFromTop (24);
     synthControlsButton.setBounds (headerRow.removeFromLeft (22));
+    headerRow.removeFromLeft (2);
+    synthFocusButton.setBounds (headerRow.removeFromLeft (34));
     headerRow.removeFromLeft (4);
     synthLabel.setBounds (headerRow.removeFromLeft (92));
 
