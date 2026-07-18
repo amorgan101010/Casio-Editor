@@ -74,3 +74,4 @@ __pycache__/
 # never published. Scrubbed from git history 2026-07-17 (git-filter-repo) before
 # making this repo public -- see .wolf/cerebrum.md for the full rationale.
 reference/lua/
+PRD.md
