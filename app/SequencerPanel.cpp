@@ -784,6 +784,51 @@ void SequencerPanel::applyPcmFocusPreviewState()
     setMelodicFocus (0);   // shows the shared step column now reads Bass's steps, not the Solo Synth's
 }
 
+bool SequencerPanel::verifyPcmRoundTripForPreview()
+{
+    if (pcmTrackControls[0] == nullptr || pcmTrackControls[1] == nullptr)
+        return false;
+
+    auto& bass = pcmTrackControls[0]->track;
+    auto& solo1 = pcmTrackControls[1]->track;
+
+    bass.channel = 13;
+    for (int i = 0; i < 16; ++i)
+    {
+        bass.steps[(size_t) i] = { 30 + i, 90 + i, i % 3 == 0, 40 + i, {} };
+        solo1.steps[(size_t) i] = { 60 - i, 20 + i, i % 2 == 0, 10 + i, {} };
+    }
+    solo1.channel = 14;
+
+    const auto expectedBass  = bass;
+    const auto expectedSolo1 = solo1;
+
+    const auto json = serializePcmTracksToJson();
+
+    // Clobber the live tracks so a false pass (comparing against unchanged data) is impossible.
+    bass  = casioxw::Sequence {};
+    solo1 = casioxw::Sequence {};
+
+    if (! applyPcmTracksText (json))
+        return false;
+
+    auto stepsMatch = [] (const casioxw::Step& a, const casioxw::Step& b)
+    {
+        return a.note == b.note && a.velocity == b.velocity
+            && a.enabled == b.enabled && a.gatePercent == b.gatePercent;
+    };
+
+    if (bass.channel != expectedBass.channel || solo1.channel != expectedSolo1.channel)
+        return false;
+
+    for (int i = 0; i < 16; ++i)
+        if (! stepsMatch (bass.steps[(size_t) i], expectedBass.steps[(size_t) i])
+            || ! stepsMatch (solo1.steps[(size_t) i], expectedSolo1.steps[(size_t) i]))
+            return false;
+
+    return true;
+}
+
 void SequencerPanel::paint (juce::Graphics& g)
 {
     g.fillAll (EditorColours::chassisBg);

@@ -136,6 +136,19 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|sequencer|sequencer-demo|sequencer-pcm-demo)\n", mode.toRawUTF8());
+    if (mode == "sequencer-pcm-roundtrip")
+    {
+        // Headless correctness check for PCM track save/load -- no snapshot, no display needed.
+        auto model = casioxw::ParamModel::fromFile (jsonPath);
+        casioxw::SysExCodec codec (std::move (model));
+        casioxw::MidiIO midiIO;
+        SequencerPanel panel (codec, midiIO);
+        const bool ok = panel.verifyPcmRoundTripForPreview();
+        std::printf (ok ? "PASS: PCM tracks round-trip through serialize/apply intact\n"
+                         : "FAIL: PCM tracks round-trip lost data\n");
+        return ok ? 0 : 1;
+    }
+
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-pcm-roundtrip)\n", mode.toRawUTF8());
     return 1;
 }

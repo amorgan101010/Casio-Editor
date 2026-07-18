@@ -86,6 +86,13 @@ public:
         app itself. */
     void applyPcmFocusPreviewState();
 
+    /** tools/gui-preview only: headless correctness check for the PCM tracks save/load path (the
+        one genuinely new bit of logic in that feature -- everything else reuses already-tested
+        casioxw_core functions). Seeds two PCM tracks with distinct data, serializes, clobbers the
+        live tracks, reloads, and compares. Returns true iff every seeded field round-trips.
+        Never called by the app itself; no display/JUCE peer required. */
+    bool verifyPcmRoundTripForPreview();
+
 private:
     enum class SaveKind
     {
