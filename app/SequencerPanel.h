@@ -9,9 +9,11 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 //==============================================================================
@@ -200,7 +202,9 @@ private:
     void clearPcmSelections();
     void updateClearLocksEnabled();
 
-    void feedLookahead();   // scheduler tick: fill the look-ahead horizon with timestamped events
+    // scheduler tick: fill the look-ahead horizon with timestamped events. lookaheadMs defaults to
+    // the small steady-state horizon; play() passes a deeper one-time value to prime the start.
+    void feedLookahead (double lookaheadMs);
     void updatePlayheadStep(); // shared step-column playhead for synth + drum lanes
 
     // The p-lock transport seam. Builds the MIDI message(s) for one parameter change: NRPN where
@@ -278,6 +282,14 @@ private:
     double nextStepStartMs  = 0.0;
     int    nextStepIndex    = 0;
     int    prevStepIndex    = -1;
+
+    // The exact schedule the audio uses, so the visual playhead can track note-ons instead of
+    // re-deriving position by dividing elapsed time by the *current* stepMs (which is only valid
+    // if the tempo never changed since play began — dragging BPM/RATE mid-playback made that
+    // formula drift the highlight ~8 steps away from the note that actually sounds). Each entry is
+    // {absolute start ms (getMillisecondCounter base), stepIndex}, pushed by feedLookahead() as it
+    // schedules each step and consumed by updatePlayheadStep() as `now` crosses each boundary.
+    std::deque<std::pair<double, int>> scheduledPlayheadMarks;
 
     // Base-value sync state (message thread only). Keyed "paramId#instance" -> lockable index;
     // non-empty while a base sync is awaiting replies (the shared timer polls the receive queue).

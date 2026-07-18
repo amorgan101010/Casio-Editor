@@ -15,8 +15,16 @@ namespace
     // window also delays how soon a live edit / tempo change takes effect. These are conservative
     // starting points — the owner can tune them on the actual game-loaded machine.
     constexpr int    kSchedulerTickMs = 12;      // feeder fires ~every 12 ms
-    constexpr double kLookaheadMs     = 60.0;    // schedule this far ahead of now
-    constexpr double kStartLeadMs     = 15.0;    // put step 0 slightly in the future (valid timestamp)
+    constexpr double kLookaheadMs     = 60.0;    // steady-state: schedule this far ahead of now
+                                                 // (kept small so live p-lock/base edits apply within ~1 step)
+    constexpr double kStartLeadMs     = 50.0;    // put step 0 comfortably in the future so output-thread
+                                                 // spin-up can't leave it already past on the first dispatch
+    constexpr double kStartPrimeFloorMs = 1500.0;  // ONE-TIME deep prime at play(): floor for the startup horizon.
+                                                   // play() primes max(this, one full loop) so the ENTIRE first
+                                                   // loop is queued up front with correct timestamps -- the
+                                                   // message-thread feeder then does nothing until loop 2, by
+                                                   // which point the startup layout/paint spike (which was
+                                                   // delaying feeds into a rushed catch-up burst) is long over.
     constexpr double kScheduleSampleRate = 1000.0;   // 1 "sample" == 1 ms, so sample pos == timeMs
 
     constexpr int kStepWidth = 58;
@@ -1761,11 +1769,15 @@ void SequencerPanel::play()
     nextStepStartMs  = 0.0;
     nextStepIndex    = 0;
     prevStepIndex    = -1;          // first fed step establishes every parameter's value fresh
+    scheduledPlayheadMarks.clear(); // playhead follows this fresh schedule (see updatePlayheadStep)
+    playheadStep = -1;              // hidden until step 0's boundary is actually reached
 
     playStopButton.setButtonText ("Stop");
     playStopButton.setColour (juce::TextButton::buttonColourId, EditorColours::green);
     playStopButton.setColour (juce::TextButton::textColourOffId, EditorColours::base03);
-    feedLookahead();                // prime the horizon before the first timer tick
+    // Prime the whole first loop up front (floored at kStartPrimeFloorMs for fast tempos) so the
+    // startup message-thread spike can't delay the feeder into a rushed catch-up burst.
+    feedLookahead (juce::jmax (kStartPrimeFloorMs, 16.0 * casioxw::stepIntervalMs (sequence)));
     updatePlayheadStep();
     startTimer (kSchedulerTickMs);
 }
@@ -1777,6 +1789,7 @@ void SequencerPanel::stop()
 
     stopTimer();
     playing = false;
+    scheduledPlayheadMarks.clear();   // drop the schedule the playhead was following
     playStopButton.setButtonText ("Play");
     playStopButton.removeColour (juce::TextButton::buttonColourId);
     playStopButton.removeColour (juce::TextButton::textColourOffId);
@@ -1800,13 +1813,13 @@ void SequencerPanel::stop()
     updateStatusLabel();
 }
 
-void SequencerPanel::feedLookahead()
+void SequencerPanel::feedLookahead (double lookaheadMs)
 {
     // Fill everything whose start time falls within [now, now + lookahead). The feeder only has to
     // stay ahead of the horizon; the output thread delivers each event at its exact timestamp, so
     // jitter in this (message-thread) callback doesn't move the notes.
     const double now     = (double) juce::Time::getMillisecondCounter();
-    const double horizon = now + kLookaheadMs;
+    const double horizon = now + lookaheadMs;
 
     while (transportStartMs + nextStepStartMs < horizon)
     {
@@ -1885,6 +1898,10 @@ void SequencerPanel::feedLookahead()
         if (! buffer.isEmpty())
             midiIO.scheduleBlock (buffer, transportStartMs, kScheduleSampleRate);
 
+        // Record this step's exact absolute start so the playhead can follow the real schedule
+        // (see scheduledPlayheadMarks) rather than a tempo-sensitive division.
+        scheduledPlayheadMarks.push_back ({ transportStartMs + nextStepStartMs, nextStepIndex });
+
         prevStepIndex   = nextStepIndex;
         nextStepIndex   = (nextStepIndex + 1) % 16;
         nextStepStartMs += casioxw::stepIntervalMs (sequence);   // per-step read = live tempo/rate changes
@@ -1895,7 +1912,7 @@ void SequencerPanel::timerCallback()
 {
     if (playing)
     {
-        feedLookahead();
+        feedLookahead (kLookaheadMs);   // steady-state horizon (keeps live edits responsive)
         updatePlayheadStep();
         return;
     }
@@ -1968,16 +1985,18 @@ void SequencerPanel::syncBaseValuesFromSynth()
 
 void SequencerPanel::updatePlayheadStep()
 {
-    int nextPlayhead = -1;
+    // Follow the audio's own schedule: advance through every step boundary whose start time has
+    // already passed, landing on the latest one. This stays locked to the note-ons the feeder
+    // queued even when the tempo was dragged mid-playback — unlike dividing elapsed time by the
+    // current stepMs, which mis-counts the pre-change span and drifts the highlight off the note.
+    int nextPlayhead = playing ? playheadStep : -1;
     if (playing)
     {
-        const double stepMs = casioxw::stepIntervalMs (sequence);
-        if (stepMs > 0.0)
+        const double now = (double) juce::Time::getMillisecondCounter();
+        while (! scheduledPlayheadMarks.empty() && scheduledPlayheadMarks.front().first <= now)
         {
-            const double now = (double) juce::Time::getMillisecondCounter();
-            const double elapsed = now - transportStartMs;
-            if (elapsed >= 0.0)
-                nextPlayhead = (int) std::floor (elapsed / stepMs) % 16;
+            nextPlayhead = scheduledPlayheadMarks.front().second;
+            scheduledPlayheadMarks.pop_front();
         }
     }
 
