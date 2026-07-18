@@ -20,35 +20,58 @@ namespace
 
     constexpr int kStepWidth = 58;
     constexpr int kStepGridWidth = kStepWidth * 16;       // 16-step columns are the anchor, always leftmost
-    constexpr int kRightPaneWidth = 560;                  // controls/info to the right of step columns
-    constexpr int kTrackControlWidth = 430;               // drum-row controls inside right pane
-    constexpr int kStepLabelWidth = 62;                   // matches drum lane label width
-    constexpr int kDrumTrackRowHeight = 50;
-    constexpr int kDrumLabelWidth = 70;
-    constexpr int kDrumChannelWidth = 70;
-    constexpr int kDrumControlGap = 6;
+    constexpr int kLaneLabelWidth = 64;                   // shared label gutter: drum names + Pitch/Gate/Vel
+    constexpr int kCardWidth = 470;                       // right-side control cards (drum / synth)
+    constexpr int kDrumTrackRowHeight = 52;
+    constexpr int kDrumKeyHeight = 34;                    // drum trig keys, tall enough to read as keys
+    constexpr int kSelectKeyHeight = 24;                  // synth select/trig row
     constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
-    constexpr int kStepColumnHeight = 20 + 2 + kKnobCell + kKnobCell + kKnobCell;   // select + note + gate + velocity
+    constexpr int kStepColumnHeight = kSelectKeyHeight + 2 + kKnobCell * 3;   // select + note + gate + velocity
+    constexpr int kSynthSectionHeight = 306;              // fits the card (header + LCD display + page keys)
+    constexpr int kToolbarRowHeight = 30;                 // transport toolbar rows (wrapping flow)
+    constexpr int kFooterHeight = 18;                     // file save/load message line
+    constexpr int kSectionGap = 6;
 
-    // Solarized Dark tokens (EditorColours) — same semantics as before (selected/has-locks/
-    // active/idle), just pulled from the app-wide palette instead of ad hoc juce::Colours values.
+    // Solarized Dark tokens (EditorColours). Step-key state colours now live in
+    // StepKeyButton::paintButton; these two remain for the Base button + lock markers.
     const juce::Colour kSelectedColour = EditorColours::selected;
-    const juce::Colour kHasLocksColour = EditorColours::hasLocks;
-    const juce::Colour kActiveStepColour = EditorColours::filledStep;
     const juce::Colour kIdleColour     = EditorColours::idleStep;
 
-    bool isQuarterStep (int stepIndex)
-    {
-        return (stepIndex % 4) == 0; // 1,5,9,13 (1-based)
-    }
-
-    // The p-lockable parameters this MVP exposes, with musical base defaults (an *open* filter, not
-    // a closed one at 0 — otherwise sending base cutoff on every unlocked step would mute the
-    // sound the moment playback starts). Add more here to scale the lock lane.
-    struct Lockable { const char* paramId; int instance; int base; };
+    // The p-lockable parameter set, organised into ParamPageDisplay pages (Digitakt-style: one
+    // page of 8 cells on screen at a time). Base defaults are musical/neutral — the sequencer
+    // sends every base value when playback starts, so anything that would audibly change the
+    // patch defaults to "no effect" (open filter, zero depths) rather than 0-means-silence.
+    // Adding a lockable param = one row here; pages, playback, and lock UI all derive from it.
+    struct Lockable { const char* paramId; int instance; int base; const char* shortName; int page; };
+    const char* const kLockPageNames[] = { "FLTR", "ENV", "LFO" };
     const Lockable kLockables[] = {
-        { "tssFLTFcoff", 1, 127 },   // Total Filter Cutoff — fully open
-        { "tssFLTFreso", 1, 0   },   // Total Filter Resonance — none
+        // FLTR — the live filter page.
+        { "tssFLTFcoff",  1, 127, "CUT",  0 },   // cutoff fully open
+        { "tssFLTFreso",  1, 0,   "RES",  0 },
+        { "tssFLTFtype",  1, 0,   "TYP",  0 },
+        { "tssFLTFEdep",  1, 0,   "EDEP", 0 },   // env depth 0 keeps the ENV page inert by default
+        { "tssFLTFtch",   1, 0,   "TCH",  0 },
+        { "tssFLTFkeyf",  1, 0,   "KEYF", 0 },
+        { "tssFLTFlfo1D", 1, 0,   "LFO1", 0 },
+        { "tssFLTFlfo2D", 1, 0,   "LFO2", 0 },
+        // ENV — filter envelope stages (flat-at-max shape until sculpted).
+        { "tssFLTFENVaT",  1, 0,   "ATK",  1 },
+        { "tssFLTFENVaL",  1, 127, "A.LV", 1 },
+        { "tssFLTFENVdT",  1, 0,   "DEC",  1 },
+        { "tssFLTFENVsL",  1, 127, "SUS",  1 },
+        { "tssFLTFENVr1T", 1, 0,   "R1.T", 1 },
+        { "tssFLTFENVr1L", 1, 127, "R1.L", 1 },
+        { "tssFLTFENVr2T", 1, 0,   "R2.T", 1 },
+        { "tssFLTFENVr2L", 1, 0,   "R2.L", 1 },
+        // LFO 1 — depth 0 keeps it silent until dialled in.
+        { "tssLFOwf",    1, 0,  "WAVE", 2 },
+        { "tssLFOrate",  1, 64, "RATE", 2 },
+        { "tssLFOdep",   1, 0,  "DEP",  2 },
+        { "tssLFOdelay", 1, 0,  "DLY",  2 },
+        { "tssLFOrise",  1, 0,  "RISE", 2 },
+        { "tssLFOmdep",  1, 0,  "MDEP", 2 },
+        { "tssLFOsync",  1, 0,  "SYNC", 2 },
+        { "tssLFOclk",   1, 0,  "CLK",  2 },
     };
 
     struct DrumTrackDef
@@ -112,6 +135,50 @@ namespace
     }
 }
 
+//==============================================================================
+void StepKeyButton::setLockState (bool hasLockIn, bool selectedIn)
+{
+    if (hasLock == hasLockIn && selected == selectedIn)
+        return;
+    hasLock = hasLockIn;
+    selected = selectedIn;
+    repaint();
+}
+
+void StepKeyButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isMouseDown)
+{
+    auto b = getLocalBounds().toFloat().reduced (1.5f);
+    const bool on = getToggleState();
+
+    auto fill = selected ? EditorColours::selected
+              : on       ? EditorColours::filledStep
+                         : EditorColours::idleStep;
+    if (isMouseOver) fill = fill.brighter (0.08f);
+    if (isMouseDown) fill = fill.brighter (0.16f);
+    g.setColour (fill);
+    g.fillRoundedRectangle (b, 4.0f);
+
+    // Quarter-note steps carry a structurally thicker/brighter outline — bar orientation must
+    // never depend on fill colour alone (it also encodes trig/lock/selection state).
+    const bool quarter = (stepIndex % 4) == 0;
+    g.setColour (quarter ? EditorColours::textHeader.withAlpha (0.6f)
+                         : EditorColours::border.withAlpha (0.45f));
+    g.drawRoundedRectangle (b, 4.0f, quarter ? 2.2f : 1.0f);
+
+    g.setColour ((selected || on) ? EditorColours::base03 : EditorColours::base00);
+    g.setFont (EditorFonts::mono (12.0f, true));
+    g.drawText (juce::String (stepIndex + 1), getLocalBounds().translated (0, -2),
+                juce::Justification::centred);
+    g.fillRect (juce::Rectangle<float> (b.getCentreX() - 5.0f, b.getCentreY() + 6.0f, 10.0f, 1.8f));
+
+    if (hasLock)
+    {
+        g.setColour (EditorColours::hasLocks);
+        g.fillEllipse (b.getRight() - 8.5f, b.getY() + 3.0f, 5.0f, 5.0f);
+    }
+}
+
+//==============================================================================
 SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& midiIOIn)
     : codec (codecIn), midiIO (midiIOIn)
 {
@@ -128,6 +195,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     {
         auto sc = std::make_unique<StepControl>();
 
+        sc->select.setStepIndex (i);
         sc->select.onClick = [this, i]
         {
             if (editButton.getToggleState())
@@ -187,6 +255,16 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     {
         l->setJustificationType (juce::Justification::centredLeft);
         l->setColour (juce::Label::textColourId, EditorColours::textMuted);
+        l->setFont (EditorFonts::header (11.0f));
+        l->setText (l->getText().toUpperCase(), juce::dontSendNotification);
+        addAndMakeVisible (*l);
+    }
+
+    for (auto* l : { &tempoLabel, &rateLabel, &channelLabel })
+    {
+        l->setJustificationType (juce::Justification::centredRight);
+        l->setColour (juce::Label::textColourId, EditorColours::textMuted);
+        l->setFont (EditorFonts::header (11.0f));
         addAndMakeVisible (*l);
     }
 
@@ -255,28 +333,21 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     baseButton.onClick = [this] { selectStep (-1); };
     addAndMakeVisible (baseButton);
 
+    syncBaseButton.setTooltip ("Adopt the synth's current values as the sequence's base sound");
+    syncBaseButton.onClick = [this] { syncBaseValuesFromSynth(); };
+    addAndMakeVisible (syncBaseButton);
+
+    // STEP / P-LOCK: a two-key segmented mode switch (radio pair) instead of one button whose
+    // caption flips — the active mode is always the lit key, never a caption to parse.
+    stepModeButton.setClickingTogglesState (true);
+    stepModeButton.setRadioGroupId (0x5EC7);
+    stepModeButton.setToggleState (true, juce::dontSendNotification);
+    stepModeButton.onClick = [this] { setPLockMode (false); };
+    addAndMakeVisible (stepModeButton);
+
     editButton.setClickingTogglesState (true);
-    editButton.setButtonText ("Step Activate");
-    editButton.onClick = [this]
-    {
-        const bool pLockMode = editButton.getToggleState();
-        editButton.setButtonText (pLockMode ? "P-Lock Edit" : "Step Activate");
-        if (! pLockMode)
-        {
-            selectStep (-1);
-            clearDrumSelections();
-            refreshStepButtons();
-            updateStatusLabel();
-            updateClearLocksEnabled();
-        }
-        else
-        {
-            refreshParamControls();
-            updateStatusLabel();
-            refreshStepButtons();
-            updateClearLocksEnabled();
-        }
-    };
+    editButton.setRadioGroupId (0x5EC7);
+    editButton.onClick = [this] { setPLockMode (true); };
     addAndMakeVisible (editButton);
 
     muteSynthButton.setClickingTogglesState (true);
@@ -304,13 +375,18 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     addAndMakeVisible (shiftLeftButton);
     addAndMakeVisible (shiftRightButton);
 
-    statusLabel.setColour (juce::Label::textColourId, EditorColours::textHeader);
+    statusLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
+    statusLabel.setFont (EditorFonts::mono (11.0f));
     addAndMakeVisible (statusLabel);
 
     // ---- drum-track controls (5 lanes, each with channel + note + 16 step on/off + velocity) ---
-    drumTracksLabel.setColour (juce::Label::textColourId, EditorColours::textHeader);
-    drumTracksLabel.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (drumTracksLabel);
+    for (auto* l : { &drumTracksLabel, &synthLabel })
+    {
+        l->setColour (juce::Label::textColourId, EditorColours::textHeader);
+        l->setJustificationType (juce::Justification::centredLeft);
+        l->setFont (EditorFonts::header (12.0f));
+        addAndMakeVisible (*l);
+    }
 
     const int noteMin = 0;
     const int noteMax = 127;
@@ -323,6 +399,8 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
 
         row->trackLabel.setText (def.label, juce::dontSendNotification);
         row->trackLabel.setJustificationType (juce::Justification::centredLeft);
+        row->trackLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
+        row->trackLabel.setFont (EditorFonts::header (11.0f));
         addAndMakeVisible (row->trackLabel);
 
         row->mute.setClickingTogglesState (true);
@@ -366,10 +444,9 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         for (size_t step = 0; step < row->steps.size(); ++step)
         {
             auto& b = row->steps[step];
+            b.setStepIndex ((int) step);
             b.setClickingTogglesState (false);
             b.setToggleState (false, juce::dontSendNotification);
-            b.setButtonText (juce::String ((int) step + 1));
-            b.setColour (juce::TextButton::buttonOnColourId, kSelectedColour);
             b.onClick = [this, rowPtr, step]
             {
                 if (editButton.getToggleState())
@@ -395,36 +472,40 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         drumTrackControls[i] = std::move (row);
     }
 
-    // ---- lockable-parameter controls (reuse the tone-editor ParamControl) ------------------
+    // ---- the pageable p-lock parameter display (the "screen") ------------------------------
     const auto& model = codec.model();
-    for (size_t i = 0; i < sequence.lockable.size(); ++i)
+    paramDisplay = std::make_unique<ParamPageDisplay> (model);
     {
-        const auto& lp = sequence.lockable[i];
-        const auto* info = model.find (lp.paramId);
-        jassert (info != nullptr);   // kLockables ids must exist in xwp1.json
-        if (info == nullptr)
-            continue;
+        std::vector<ParamPageDisplay::Page> pages;
+        for (const auto* name : kLockPageNames)
+            pages.push_back ({ name, {} });
 
-        // Bound randomized locks by the parameter's real range (both 0-127 today, but read it from
-        // metadata so a differently-ranged lockable param added later randomizes correctly).
-        sequence.lockable[i].minValue = info->range.min;
-        sequence.lockable[i].maxValue = info->range.max;
+        for (size_t i = 0; i < sequence.lockable.size(); ++i)
+        {
+            const auto& l = kLockables[i];
+            const auto* info = model.find (l.paramId);
+            jassert (info != nullptr);   // kLockables ids must exist in xwp1.json
+            if (info == nullptr)
+                continue;
 
-        auto row = std::make_unique<LockRow>();
-        row->control = std::make_unique<ParamControl> (model, *info, lp.instance);
-        const int index = (int) i;
-        row->control->onValueChanged = [this, index] (int value) { onParamEdited (index, value); };
-        addAndMakeVisible (*row->control);
+            // Bound randomized locks by the parameter's real range (read from metadata so a
+            // differently-ranged lockable randomizes correctly).
+            sequence.lockable[i].minValue = info->range.min;
+            sequence.lockable[i].maxValue = info->range.max;
 
-        row->lockMarker.setJustificationType (juce::Justification::centredLeft);
-        addAndMakeVisible (row->lockMarker);
+            pages[(size_t) l.page].cells.push_back ({ info, l.instance, l.shortName, (int) i });
+        }
 
-        lockRows.push_back (std::move (row));
+        paramDisplay->setPages (std::move (pages));
+        paramDisplay->onValueEdited = [this] (int index, int value) { onParamEdited (index, value); };
     }
+    addAndMakeVisible (*paramDisplay);
 
-    setSize (kStepGridWidth + 8 + kRightPaneWidth + 16,
-             8 + 6 + 28 + 6 + 28 + 8 + 20 + 6 + 28 + 6 + 20 + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
-                 + 10 + kStepColumnHeight + 8);
+    setSize (8 + kStepGridWidth + kSectionGap + kLaneLabelWidth + kSectionGap + kCardWidth + 8,
+             8 + kToolbarRowHeight + 8 + 20 + 4
+                 + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
+                 + 10 + juce::jmax (kStepColumnHeight, kSynthSectionHeight)
+                 + 6 + kFooterHeight + 8);
 
     selectStep (-1);   // start in Base mode
     clearDrumSelections();
@@ -436,22 +517,51 @@ SequencerPanel::~SequencerPanel()
     stop();
 }
 
+void SequencerPanel::applyPreviewDemoState()
+{
+    for (int i : { 0, 4, 6, 8, 12, 14 })
+        sequence.steps[(size_t) i].enabled = true;
+    casioxw::setStepLock (sequence, 4, "tssFLTFcoff", 1, 40);
+    casioxw::setStepLock (sequence, 4, "tssFLTFreso", 1, 90);
+    casioxw::setStepLock (sequence, 12, "tssLFOdep", 1, 64);
+
+    editButton.setToggleState (true, juce::dontSendNotification);
+    stepModeButton.setToggleState (false, juce::dontSendNotification);
+    selectedStep = 4;
+    playheadStep = 8;
+
+    if (auto& row = drumTrackControls[0])
+        for (int i : { 0, 4, 8, 12 })
+            row->steps[(size_t) i].setToggleState (true, juce::dontSendNotification);
+    if (auto& row = drumTrackControls[1])
+    {
+        row->steps[2].setToggleState (true, juce::dontSendNotification);
+        row->velocityLocks[10] = 45;
+    }
+
+    syncStepWidgetsFromSequence();
+    refreshParamControls();
+    refreshStepButtons();
+    updateStatusLabel();
+    updateClearLocksEnabled();
+}
+
 void SequencerPanel::paint (juce::Graphics& g)
 {
     g.fillAll (EditorColours::chassisBg);
 
-    if (! playheadLaneBounds.isEmpty())
+    // Right-side control cards: a surface between chassis and widget fill, so panel-coloured
+    // buttons/combos still read against them. (Quarter-step cues live on the trig keys
+    // themselves now — StepKeyButton paints those outlines.)
+    const auto cardColour = EditorColours::chassisBg.interpolatedWith (EditorColours::panelBg, 0.55f);
+    for (const auto& card : { drumCardBounds, synthCardBounds })
     {
-        g.setColour (EditorColours::textHeader.withAlpha (0.55f));
-        for (int step = 0; step < 16; ++step)
-        {
-            if (! isQuarterStep (step))
-                continue;
-            auto col = playheadLaneBounds.withX (playheadLaneBounds.getX() + step * kStepWidth)
-                                        .withWidth (kStepWidth)
-                                        .reduced (1, 0);
-            g.drawRoundedRectangle (col.toFloat(), 4.0f, 2.4f);
-        }
+        if (card.isEmpty())
+            continue;
+        g.setColour (cardColour);
+        g.fillRoundedRectangle (card.toFloat(), 8.0f);
+        g.setColour (EditorColours::border.withAlpha (0.3f));
+        g.drawRoundedRectangle (card.toFloat().reduced (0.5f), 8.0f, 1.0f);
     }
 
     if (playheadStep < 0 || playheadLaneBounds.isEmpty())
@@ -955,6 +1065,19 @@ void SequencerPanel::selectStep (int step)
     updateStatusLabel();
 }
 
+void SequencerPanel::setPLockMode (bool pLockMode)
+{
+    if (! pLockMode)
+    {
+        selectStep (-1);       // also refreshes controls/steps/status
+        clearDrumSelections();
+    }
+    refreshParamControls();
+    refreshStepButtons();
+    updateStatusLabel();
+    updateClearLocksEnabled();
+}
+
 void SequencerPanel::onParamEdited (int lockableIndex, int value)
 {
     const auto& lp = sequence.lockable[(size_t) lockableIndex];
@@ -981,31 +1104,21 @@ void SequencerPanel::refreshParamControls()
     const bool pLockMode = editButton.getToggleState();
     const bool synthStepMode = pLockMode && selectedStep >= 0;
     const bool baseMode = ! synthStepMode;
-    const bool editable = true;
 
-    for (size_t i = 0; i < lockRows.size(); ++i)
+    for (size_t i = 0; i < sequence.lockable.size(); ++i)
     {
         const auto& lp = sequence.lockable[i];
-        auto& row = *lockRows[i];
 
         const int value = baseMode
             ? lp.baseValue
             : casioxw::effectiveParamValue (sequence, selectedStep, lp.paramId, lp.instance)
                   .value_or (lp.baseValue);
 
-        row.control->setValueFromSync (value);
-        row.control->setEnabled (editable);
-
+        // Inverted (amber) cell == this parameter holds a lock on the selected step.
         const bool locked = synthStepMode
             && casioxw::findStepLock (sequence.steps[(size_t) selectedStep], lp.paramId, lp.instance) != nullptr;
 
-        if (baseMode)
-            row.lockMarker.setText ("base value", juce::dontSendNotification);
-        else
-            row.lockMarker.setText (locked ? "LOCKED" : "(inherits base)", juce::dontSendNotification);
-
-        row.lockMarker.setColour (juce::Label::textColourId,
-                                  locked ? kSelectedColour : EditorColours::textMuted);
+        paramDisplay->setCellState ((int) i, value, locked);
     }
 }
 
@@ -1015,23 +1128,10 @@ void SequencerPanel::refreshStepButtons()
 
     for (int i = 0; i < 16; ++i)
     {
-        const bool hasLocks = ! sequence.steps[(size_t) i].locks.empty();
-        const bool enabled = sequence.steps[(size_t) i].enabled;
         auto& btn = stepControls[(size_t) i]->select;
-        btn.setButtonText (juce::String (i + 1) + (hasLocks ? " *" : ""));
-
-        if (pLockMode)
-        {
-            btn.setColour (juce::TextButton::buttonColourId,
-                           i == selectedStep ? kSelectedColour
-                                             : (hasLocks ? kHasLocksColour
-                                                         : (enabled ? kActiveStepColour : kIdleColour)));
-        }
-        else
-        {
-            btn.setColour (juce::TextButton::buttonColourId,
-                           enabled ? kActiveStepColour : kIdleColour);
-        }
+        btn.setToggleState (sequence.steps[(size_t) i].enabled, juce::dontSendNotification);
+        btn.setLockState (! sequence.steps[(size_t) i].locks.empty(),
+                          pLockMode && i == selectedStep);
     }
     baseButton.setColour (juce::TextButton::buttonColourId,
                           selectedStep < 0 ? kSelectedColour : kIdleColour);
@@ -1054,39 +1154,27 @@ void SequencerPanel::refreshStepButtons()
 
         row.velocity.setValue ((double) velocity, juce::dontSendNotification);
         if (drumStepMode)
-            row.velocityMarker.setText (locked ? "LOCKED" : "(inherits base)", juce::dontSendNotification);
+            row.velocityMarker.setText (locked ? "LOCKED" : "inherit", juce::dontSendNotification);
         else
-            row.velocityMarker.setText ("base value", juce::dontSendNotification);
+            row.velocityMarker.setText ("base", juce::dontSendNotification);
         row.velocityMarker.setColour (juce::Label::textColourId, locked ? kSelectedColour : EditorColours::textMuted);
 
         for (int i = 0; i < 16; ++i)
         {
-            const bool enabled = row.steps[(size_t) i].getToggleState();
-            const bool hasLock = row.velocityLocks[(size_t) i].has_value();
             auto& btn = row.steps[(size_t) i];
-            btn.setButtonText (juce::String (i + 1) + (hasLock ? " *" : ""));
-
-            if (pLockMode)
-            {
-                btn.setColour (juce::TextButton::buttonColourId,
-                               i == row.selectedStep ? kSelectedColour
-                                                     : (hasLock ? kHasLocksColour
-                                                                : (enabled ? kActiveStepColour : kIdleColour)));
-            }
-            else
-            {
-                btn.setColour (juce::TextButton::buttonColourId,
-                               enabled ? kActiveStepColour : kIdleColour);
-            }
+            btn.setLockState (row.velocityLocks[(size_t) i].has_value(),
+                              pLockMode && i == row.selectedStep);
         }
     }
 }
 
 void SequencerPanel::updateStatusLabel()
 {
+    // The edit-target readout lives in the parameter display's header (the "screen"), like the
+    // mode/pattern line on a hardware unit. The footer statusLabel is file messages only.
     juce::String text;
     if (! editButton.getToggleState())
-        text = "Step Activate mode - click step buttons to toggle synth triggers on/off";
+        text = "GRID  BASE SOUND";
     else if (selectedStep < 0)
     {
         bool hasDrumTarget = false;
@@ -1095,19 +1183,19 @@ void SequencerPanel::updateStatusLabel()
             const auto& row = drumTrackControls[i];
             if (row != nullptr && row->selectedStep >= 0)
             {
-                text = "P-Lock Edit mode - editing Drum " + juce::String ((int) i + 1)
-                     + " step " + juce::String (row->selectedStep + 1) + " velocity";
+                text = "P-LOCK  DRUM " + juce::String ((int) i + 1)
+                     + "  STEP " + juce::String (row->selectedStep + 1).paddedLeft ('0', 2) + " VEL";
                 hasDrumTarget = true;
                 break;
             }
         }
         if (! hasDrumTarget)
-            text = "Editing BASE sound - applies to every unlocked step";
+            text = "P-LOCK  BASE SOUND";
     }
     else
-        text = "P-Lock Edit mode - editing step " + juce::String (selectedStep + 1) + " locks";
+        text = "P-LOCK  STEP " + juce::String (selectedStep + 1).paddedLeft ('0', 2);
 
-    statusLabel.setText (text, juce::dontSendNotification);
+    paramDisplay->setStatus (text);
 }
 
 void SequencerPanel::play()
@@ -1123,6 +1211,7 @@ void SequencerPanel::play()
     }
 
     playing = true;
+    outstandingBaseSync.clear();    // an in-flight base sync yields the timer to the feeder
     midiIO.startPlaybackThread();   // JUCE's high-res output thread dispatches the timestamps
 
     transportStartMs = (double) juce::Time::getMillisecondCounter() + kStartLeadMs;
@@ -1131,6 +1220,8 @@ void SequencerPanel::play()
     prevStepIndex    = -1;          // first fed step establishes every parameter's value fresh
 
     playStopButton.setButtonText ("Stop");
+    playStopButton.setColour (juce::TextButton::buttonColourId, EditorColours::green);
+    playStopButton.setColour (juce::TextButton::textColourOffId, EditorColours::base03);
     feedLookahead();                // prime the horizon before the first timer tick
     updatePlayheadStep();
     startTimer (kSchedulerTickMs);
@@ -1144,6 +1235,8 @@ void SequencerPanel::stop()
     stopTimer();
     playing = false;
     playStopButton.setButtonText ("Play");
+    playStopButton.removeColour (juce::TextButton::buttonColourId);
+    playStopButton.removeColour (juce::TextButton::textColourOffId);
 
     // Discard everything still queued for future dispatch (incl. not-yet-fired note-offs), then
     // release + reset explicitly since those dropped note-offs won't arrive on their own.
@@ -1223,8 +1316,77 @@ void SequencerPanel::feedLookahead()
 
 void SequencerPanel::timerCallback()
 {
-    feedLookahead();
-    updatePlayheadStep();
+    if (playing)
+    {
+        feedLookahead();
+        updatePlayheadStep();
+        return;
+    }
+
+    // Stopped + timer running == a base-value sync is in flight; poll the receive queue.
+    for (auto& frame : midiIO.drainReceived())
+    {
+        const auto d = codec.decode (frame);
+        if (! d.ok || d.ambiguous)
+            continue;
+
+        const auto it = outstandingBaseSync.find (d.paramId + "#" + juce::String (d.instance));
+        if (it == outstandingBaseSync.end())
+            continue;
+
+        const auto& lp = sequence.lockable[(size_t) it->second];
+        casioxw::setBaseValue (sequence, lp.paramId, lp.instance, d.value);
+        outstandingBaseSync.erase (it);
+    }
+
+    constexpr juce::uint32 kBaseSyncTimeoutMs = 2000;
+    if (outstandingBaseSync.empty())
+    {
+        stopTimer();
+        refreshParamControls();
+        statusLabel.setText ("Base sound synced from synth", juce::dontSendNotification);
+    }
+    else if (juce::Time::getMillisecondCounter() - baseSyncStartedMs > kBaseSyncTimeoutMs)
+    {
+        stopTimer();
+        refreshParamControls();   // adopt whatever did arrive
+        statusLabel.setText (juce::String ((int) outstandingBaseSync.size())
+                                 + " base param(s) did not reply (timeout)",
+                             juce::dontSendNotification);
+        outstandingBaseSync.clear();
+    }
+}
+
+void SequencerPanel::syncBaseValuesFromSynth()
+{
+    if (playing)
+    {
+        statusLabel.setText ("Stop playback before syncing base values", juce::dontSendNotification);
+        return;
+    }
+    if (! midiIO.isOutputOpen() || ! midiIO.isInputOpen())
+    {
+        statusLabel.setText ("Not connected - open MIDI devices on the Solo Synth tab first",
+                             juce::dontSendNotification);
+        return;
+    }
+
+    outstandingBaseSync.clear();
+    for (size_t i = 0; i < sequence.lockable.size(); ++i)
+    {
+        const auto& lp = sequence.lockable[i];
+        midiIO.sendFrame (casioxw::MidiIO::syncRequest (codec, lp.paramId, lp.instance));
+        outstandingBaseSync[lp.paramId + "#" + juce::String (lp.instance)] = (int) i;
+    }
+
+    if (outstandingBaseSync.empty())
+        return;
+
+    statusLabel.setText ("Syncing " + juce::String ((int) outstandingBaseSync.size())
+                             + " base value(s) from synth...",
+                         juce::dontSendNotification);
+    baseSyncStartedMs = juce::Time::getMillisecondCounter();
+    startTimerHz (20);
 }
 
 void SequencerPanel::updatePlayheadStep()
@@ -1253,73 +1415,75 @@ void SequencerPanel::resized()
 {
     auto bounds = getLocalBounds().reduced (8);
 
-    bounds.removeFromTop (6);
-    auto transportRow = bounds.removeFromTop (28);
-    playStopButton.setBounds (transportRow.removeFromLeft (80));
-    transportRow.removeFromLeft (8);
-    randomizeButton.setBounds (transportRow.removeFromLeft (100));
-    transportRow.removeFromLeft (16);
-    tempoLabel.setBounds (transportRow.removeFromLeft (80));
-    tempoSlider.setBounds (transportRow.removeFromLeft (150));
-    transportRow.removeFromLeft (16);
-    rateLabel.setBounds (transportRow.removeFromLeft (40));
-    rateCombo.setBounds (transportRow.removeFromLeft (80));
+    // ---- footer: file save/load messages, pinned to the bottom -----------------------------
+    statusLabel.setBounds (bounds.removeFromBottom (kFooterHeight));
+    bounds.removeFromBottom (4);
 
-    bounds.removeFromTop (6);
-    auto transportRow2 = bounds.removeFromTop (28);
-    channelLabel.setBounds (transportRow2.removeFromLeft (90));
-    channelSlider.setBounds (transportRow2.removeFromLeft (130));
-    transportRow2.removeFromLeft (24);
-    saveButton.setBounds (transportRow2.removeFromLeft (80));
-    transportRow2.removeFromLeft (8);
-    loadButton.setBounds (transportRow2.removeFromLeft (80));
-    transportRow2.removeFromLeft (8);
-    sequenceDirButton.setBounds (transportRow2.removeFromLeft (84));
-
-    bounds.removeFromTop (8);
-    statusLabel.setBounds (bounds.removeFromTop (20));
-
-    bounds.removeFromTop (6);
-    auto globalModeRow = bounds.removeFromTop (28);
-    editButton.setBounds (globalModeRow.removeFromLeft (110));
-    globalModeRow.removeFromLeft (8);
-    clearLocksButton.setBounds (globalModeRow.removeFromLeft (140));
+    // ---- transport toolbar: global controls only, in a wrapping flow -----------------------
+    {
+        struct Item { juce::Component* c; int w; int gapAfter; };
+        const Item items[] = {
+            { &playStopButton, 72, 12 },
+            { &tempoLabel, 34, 2 }, { &tempoSlider, 150, 12 },
+            { &rateLabel, 38, 2 }, { &rateCombo, 74, 12 },
+            { &channelLabel, 26, 2 }, { &channelSlider, 118, 20 },
+            { &stepModeButton, 60, 2 }, { &editButton, 74, 12 },
+            { &clearLocksButton, 96, 20 },
+            { &saveButton, 58, 4 }, { &loadButton, 58, 4 }, { &sequenceDirButton, 70, 0 },
+        };
+        int x = bounds.getX();
+        int y = bounds.getY();
+        for (const auto& item : items)
+        {
+            if (x + item.w > bounds.getRight())
+            {
+                x = bounds.getX();
+                y += kToolbarRowHeight;
+            }
+            item.c->setBounds (x, y, item.w, kToolbarRowHeight - 4);
+            x += item.w + item.gapAfter;
+        }
+        bounds.removeFromTop ((y + kToolbarRowHeight) - bounds.getY() + 6);
+    }
 
     const bool showDrumControls = drumControlsButton.getToggleState();
     const bool showSynthControls = synthControlsButton.getToggleState();
+    const int cardX = bounds.getX() + kStepGridWidth + kSectionGap + kLaneLabelWidth + kSectionGap;
 
-    bounds.removeFromTop (6);
+    // ---- drum section ----------------------------------------------------------------------
     auto drumHeader = bounds.removeFromTop (20);
-    drumTracksLabel.setBounds (drumHeader.removeFromLeft (kStepGridWidth));
-    drumHeader.removeFromLeft (8);
+    drumTracksLabel.setBounds (drumHeader.removeFromLeft (140));
     drumControlsButton.setBounds (drumHeader.removeFromLeft (22));
+    bounds.removeFromTop (4);
+
     const int playheadTop = bounds.getY();
+    const int drumTop = bounds.getY();
     for (const auto& row : drumTrackControls)
     {
         if (row == nullptr)
             continue;
         auto r = bounds.removeFromTop (kDrumTrackRowHeight);
         auto stepCells = r.removeFromLeft (kStepGridWidth);
+        r.removeFromLeft (kSectionGap);
+        row->trackLabel.setBounds (r.removeFromLeft (kLaneLabelWidth));
+        r.removeFromLeft (kSectionGap);
+
         if (showDrumControls)
         {
-            r.removeFromLeft (8);
-            auto controls = r.removeFromLeft (kTrackControlWidth);
-            row->trackLabel.setBounds (controls.removeFromLeft (62));
-            controls.removeFromLeft (4);
-            row->mute.setBounds (controls.removeFromLeft (56));
-            controls.removeFromLeft (kDrumControlGap);
-            row->channel.setBounds (controls.removeFromLeft (kDrumChannelWidth));
-            controls.removeFromLeft (kDrumControlGap);
+            auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
+            row->mute.setBounds (controls.removeFromLeft (46).withSizeKeepingCentre (46, 24));
+            controls.removeFromLeft (6);
+            row->channel.setBounds (controls.removeFromLeft (58).withSizeKeepingCentre (58, 24));
+            controls.removeFromLeft (8);
             auto noteVel = controls;
-            row->note.setBounds (noteVel.removeFromTop (22));
-            noteVel.removeFromTop (4);
-            auto velRow = noteVel.removeFromTop (22);
-            row->velocityMarker.setBounds (velRow.removeFromRight (92));
+            row->note.setBounds (noteVel.removeFromTop (23));
+            noteVel.removeFromTop (2);
+            auto velRow = noteVel.removeFromTop (23);
+            row->velocityMarker.setBounds (velRow.removeFromRight (58));
             row->velocity.setBounds (velRow);
         }
         else
         {
-            row->trackLabel.setBounds (0, 0, 0, 0);
             row->mute.setBounds (0, 0, 0, 0);
             row->channel.setBounds (0, 0, 0, 0);
             row->note.setBounds (0, 0, 0, 0);
@@ -1330,82 +1494,78 @@ void SequencerPanel::resized()
         for (auto& b : row->steps)
         {
             auto cell = stepCells.removeFromLeft (kStepWidth);
-            b.setBounds (cell.removeFromTop (20).reduced (3, 0));
+            b.setBounds (cell.withSizeKeepingCentre (kStepWidth - 6, kDrumKeyHeight));
         }
 
         bounds.removeFromTop (2);
     }
+    drumCardBounds = showDrumControls
+        ? juce::Rectangle<int> (cardX, drumTop - 2, kCardWidth, bounds.getY() - drumTop + 2)
+        : juce::Rectangle<int>();
 
     bounds.removeFromTop (10);
-    auto stepRow = bounds.removeFromTop (kStepColumnHeight);
-    const int playheadColumnsX = stepRow.getX();
-    const int playheadBottom = stepRow.getBottom();
 
-    auto stepCols = stepRow.removeFromLeft (kStepGridWidth);
-    stepRow.removeFromLeft (8);
-    auto rightPane = stepRow;
+    // ---- synth section ---------------------------------------------------------------------
+    auto synthSection = bounds.removeFromTop (juce::jmax (kStepColumnHeight, kSynthSectionHeight));
+    const int playheadBottom = synthSection.getY() + kStepColumnHeight;
 
-    // Right pane labels aligned to the Pitch / Gate / Velocity rows of every column.
+    auto stepCols = synthSection.removeFromLeft (kStepGridWidth);
+    const int gridX = stepCols.getX();
+    synthSection.removeFromLeft (kSectionGap);
+
+    // Lane label gutter: row labels aligned to the Pitch / Gate / Velocity knob rows, same
+    // column as the drum track names.
+    auto labelCol = synthSection.removeFromLeft (kLaneLabelWidth);
+    labelCol.removeFromTop (kSelectKeyHeight + 2);
+    pitchRowLabel.setBounds (labelCol.removeFromTop (kKnobCell));
+    gateRowLabel.setBounds (labelCol.removeFromTop (kKnobCell));
+    velocityRowLabel.setBounds (labelCol.removeFromTop (kKnobCell));
+    synthSection.removeFromLeft (kSectionGap);
+
+    auto card = synthSection.removeFromLeft (kCardWidth);
+    auto cardInner = card.reduced (8);
+    auto headerRow = cardInner.removeFromTop (24);
+    synthControlsButton.setBounds (headerRow.removeFromLeft (22));
+    headerRow.removeFromLeft (4);
+    synthLabel.setBounds (headerRow.removeFromLeft (92));
+
     if (showSynthControls)
     {
-        auto labels = rightPane.removeFromLeft (kStepLabelWidth);
-        labels.removeFromTop (20 + 2);                        // skip the select-button row
-        pitchRowLabel.setBounds (labels.removeFromTop (kKnobCell));
-        gateRowLabel.setBounds (labels.removeFromTop (kKnobCell));
-        velocityRowLabel.setBounds (labels.removeFromTop (kKnobCell));
+        shiftRightButton.setBounds (headerRow.removeFromRight (28));
+        headerRow.removeFromRight (2);
+        shiftLeftButton.setBounds (headerRow.removeFromRight (28));
+        headerRow.removeFromRight (6);
+        randomizeButton.setBounds (headerRow.removeFromRight (44));
+        headerRow.removeFromRight (6);
+        muteSynthButton.setBounds (headerRow.removeFromRight (50));
+        headerRow.removeFromRight (6);
+        syncBaseButton.setBounds (headerRow.removeFromRight (50));
+        headerRow.removeFromRight (6);
+        baseButton.setBounds (headerRow.removeFromRight (50));
 
-        auto synthControls = rightPane;
-        auto modeRow1 = synthControls.removeFromTop (28);
-        synthControlsButton.setBounds (modeRow1.removeFromLeft (22));
-        modeRow1.removeFromLeft (6);
-        baseButton.setBounds (modeRow1.removeFromLeft (70));
-        modeRow1.removeFromLeft (8);
-        muteSynthButton.setBounds (modeRow1.removeFromLeft (100));
-
-        synthControls.removeFromTop (4);
-        auto modeRow2 = synthControls.removeFromTop (28);
-        shiftLeftButton.setBounds (modeRow2.removeFromLeft (70));
-        modeRow2.removeFromLeft (8);
-        shiftRightButton.setBounds (modeRow2.removeFromLeft (70));
-
-        synthControls.removeFromTop (6);
-        for (auto& row : lockRows)
-        {
-            auto r = synthControls.removeFromTop (28);
-            const int markerWidth = 140;
-            const int controlWidth = juce::jmax (180, r.getWidth() - 10 - markerWidth);
-            row->control->setBounds (r.removeFromLeft (controlWidth));
-            r.removeFromLeft (10);
-            row->lockMarker.setBounds (r.removeFromLeft (markerWidth));
-            synthControls.removeFromTop (2);
-        }
+        cardInner.removeFromTop (6);
+        paramDisplay->setBounds (cardInner);
+        paramDisplay->setVisible (true);
+        synthCardBounds = card;
     }
     else
     {
-        synthControlsButton.setBounds (rightPane.removeFromLeft (22));
-        baseButton.setBounds (0, 0, 0, 0);
-        muteSynthButton.setBounds (0, 0, 0, 0);
-        shiftLeftButton.setBounds (0, 0, 0, 0);
-        shiftRightButton.setBounds (0, 0, 0, 0);
-        for (auto& row : lockRows)
-        {
-            row->control->setBounds (0, 0, 0, 0);
-            row->lockMarker.setBounds (0, 0, 0, 0);
-        }
-        pitchRowLabel.setBounds (0, 0, 0, 0);
-        gateRowLabel.setBounds (0, 0, 0, 0);
-        velocityRowLabel.setBounds (0, 0, 0, 0);
+        for (auto* b : { &baseButton, &syncBaseButton, &muteSynthButton, &randomizeButton,
+                         &shiftLeftButton, &shiftRightButton })
+            b->setBounds (0, 0, 0, 0);
+        paramDisplay->setVisible (false);
+        synthCardBounds = card.withHeight (24 + 16);
     }
 
     for (int i = 0; i < 16; ++i)
     {
-        auto col = stepCols.removeFromLeft (kStepWidth).reduced (3);
-        stepControls[(size_t) i]->select.setBounds (col.removeFromTop (20));
+        auto col = stepCols.removeFromLeft (kStepWidth).reduced (3, 0);
+        stepControls[(size_t) i]->select.setBounds (col.removeFromTop (kSelectKeyHeight));
         col.removeFromTop (2);
-        stepControls[(size_t) i]->note.setBounds (col.removeFromTop (kKnobCell));   // bigger rotary knob
-        stepControls[(size_t) i]->gate.setBounds (col.removeFromTop (kKnobCell));   // gate-length knob
+        stepControls[(size_t) i]->note.setBounds (col.removeFromTop (kKnobCell));
+        stepControls[(size_t) i]->gate.setBounds (col.removeFromTop (kKnobCell));
         stepControls[(size_t) i]->velocity.setBounds (col.removeFromTop (kKnobCell));
     }
 
-    playheadLaneBounds = { playheadColumnsX, playheadTop, kStepGridWidth, playheadBottom - playheadTop };
+    playheadLaneBounds = { gridX, playheadTop, kStepGridWidth, playheadBottom - playheadTop };
 }

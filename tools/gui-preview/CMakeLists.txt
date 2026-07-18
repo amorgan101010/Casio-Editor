@@ -9,6 +9,7 @@ target_sources(gui-preview PRIVATE
     Main.cpp
     ../../app/EditorLookAndFeel.cpp
     ../../app/ParamControl.cpp
+    ../../app/ParamPageDisplay.cpp
     ../../app/SoloSynthPanel.cpp
     ../../app/SequencerPanel.cpp
     ../../app/EnvelopeDisplay.cpp

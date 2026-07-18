@@ -97,7 +97,7 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    if (mode == "sequencer")
+    if (mode == "sequencer" || mode == "sequencer-demo")
     {
         if (argc < 3)
         {
@@ -108,6 +108,8 @@ int main (int argc, char* argv[])
         casioxw::SysExCodec codec (std::move (model));
         casioxw::MidiIO midiIO;
         SequencerPanel panel (codec, midiIO);
+        if (mode == "sequencer-demo")   // representative trigs/locks/selection/playhead state
+            panel.applyPreviewDemoState();
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());
