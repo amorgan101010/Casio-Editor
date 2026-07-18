@@ -43,7 +43,7 @@ namespace
     // patch defaults to "no effect" (open filter, zero depths) rather than 0-means-silence.
     // Adding a lockable param = one row here; pages, playback, and lock UI all derive from it.
     struct Lockable { const char* paramId; int instance; int base; const char* shortName; int page; };
-    const char* const kLockPageNames[] = { "FLTR", "ENV", "LFO" };
+    const char* const kLockPageNames[] = { "FLTR", "FLT2", "ENV", "LFO" };
     const Lockable kLockables[] = {
         // FLTR — the live filter page.
         { "tssFLTFcoff",  1, 127, "CUT",  0 },   // cutoff fully open
@@ -54,24 +54,31 @@ namespace
         { "tssFLTFkeyf",  1, 0,   "KEYF", 0 },
         { "tssFLTFlfo1D", 1, 0,   "LFO1", 0 },
         { "tssFLTFlfo2D", 1, 0,   "LFO2", 0 },
+        // FLT2 — remaining TotalFilter params (rounds out the block: key-follow base note,
+        // envelope init level/clock-trigger/retrigger), neutral bases matching the FLTR/ENV pages.
+        // Kept next to FLTR (owner's call) rather than tacked on at the end.
+        { "tssFLTFkeyfB", 1, 60,  "KF.B", 1 },   // note ref; moot while KEYF (amount) is 0
+        { "tssFLTFENViL", 1, 127, "I.LV", 1 },   // matches the flat-at-max envelope shape below
+        { "tssFLTFEclk",  1, 0,   "ECLK", 1 },   // Off
+        { "tssFLTFErtrg", 1, 0,   "RTRG", 1 },   // off
         // ENV — filter envelope stages (flat-at-max shape until sculpted).
-        { "tssFLTFENVaT",  1, 0,   "ATK",  1 },
-        { "tssFLTFENVaL",  1, 127, "A.LV", 1 },
-        { "tssFLTFENVdT",  1, 0,   "DEC",  1 },
-        { "tssFLTFENVsL",  1, 127, "SUS",  1 },
-        { "tssFLTFENVr1T", 1, 0,   "R1.T", 1 },
-        { "tssFLTFENVr1L", 1, 127, "R1.L", 1 },
-        { "tssFLTFENVr2T", 1, 0,   "R2.T", 1 },
-        { "tssFLTFENVr2L", 1, 0,   "R2.L", 1 },
+        { "tssFLTFENVaT",  1, 0,   "ATK",  2 },
+        { "tssFLTFENVaL",  1, 127, "A.LV", 2 },
+        { "tssFLTFENVdT",  1, 0,   "DEC",  2 },
+        { "tssFLTFENVsL",  1, 127, "SUS",  2 },
+        { "tssFLTFENVr1T", 1, 0,   "R1.T", 2 },
+        { "tssFLTFENVr1L", 1, 127, "R1.L", 2 },
+        { "tssFLTFENVr2T", 1, 0,   "R2.T", 2 },
+        { "tssFLTFENVr2L", 1, 0,   "R2.L", 2 },
         // LFO 1 — depth 0 keeps it silent until dialled in.
-        { "tssLFOwf",    1, 0,  "WAVE", 2 },
-        { "tssLFOrate",  1, 64, "RATE", 2 },
-        { "tssLFOdep",   1, 0,  "DEP",  2 },
-        { "tssLFOdelay", 1, 0,  "DLY",  2 },
-        { "tssLFOrise",  1, 0,  "RISE", 2 },
-        { "tssLFOmdep",  1, 0,  "MDEP", 2 },
-        { "tssLFOsync",  1, 0,  "SYNC", 2 },
-        { "tssLFOclk",   1, 0,  "CLK",  2 },
+        { "tssLFOwf",    1, 0,  "WAVE", 3 },
+        { "tssLFOrate",  1, 64, "RATE", 3 },
+        { "tssLFOdep",   1, 0,  "DEP",  3 },
+        { "tssLFOdelay", 1, 0,  "DLY",  3 },
+        { "tssLFOrise",  1, 0,  "RISE", 3 },
+        { "tssLFOmdep",  1, 0,  "MDEP", 3 },
+        { "tssLFOsync",  1, 0,  "SYNC", 3 },
+        { "tssLFOclk",   1, 0,  "CLK",  3 },
     };
 
     struct DrumTrackDef
