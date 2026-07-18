@@ -149,6 +149,34 @@ TEST_CASE ("scheduleStep: only the changed param is emitted when a step locks on
         }
 }
 
+TEST_CASE ("scheduleStep: prev=baseline emits no params when the step only inherits base", "[scheduler]")
+{
+    auto seq = makeSeq();
+    seq.steps[0].enabled = true;   // step 0 has no locks -> every param inherits base
+
+    // Device is already at base at play-start, so the first step must send only the note, never
+    // the redundant baseline dump (contrast the prev=-1 case, which forces all params out).
+    const auto evs = casioxw::scheduleStep (seq, 0, casioxw::kPrevStepBaseline, 0.0);
+    CHECK (countType (evs, ScheduledEvent::Type::paramChange) == 0);
+    CHECK (countType (evs, ScheduledEvent::Type::noteOn) == 1);
+}
+
+TEST_CASE ("scheduleStep: prev=baseline emits only the params the first step locks away from base", "[scheduler]")
+{
+    auto seq = makeSeq();
+    seq.steps[0].enabled = true;
+    casioxw::setStepLock (seq, 0, "cutoff", 1, 40);   // cutoff locked 100 -> 40; reso stays at base 0
+
+    const auto evs = casioxw::scheduleStep (seq, 0, casioxw::kPrevStepBaseline, 0.0);
+    REQUIRE (countType (evs, ScheduledEvent::Type::paramChange) == 1);   // only the genuine lock
+    for (const auto& e : evs)
+        if (e.type == ScheduledEvent::Type::paramChange)
+        {
+            CHECK (e.paramId == "cutoff");
+            CHECK (e.value == 40);
+        }
+}
+
 TEST_CASE ("scheduleStep: leaving a lock reverts to base (emitted at the step after the lock)", "[scheduler]")
 {
     auto seq = makeSeq();

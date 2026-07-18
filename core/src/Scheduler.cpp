@@ -20,6 +20,19 @@ namespace casioxw
                 if (prev.has_value() && *prev == pv.value)
                     changed = false;
             }
+            else if (prevStepIndex == kPrevStepBaseline)
+            {
+                // Device is already at base (post-Sync / post-stop): emit only genuine locks, i.e.
+                // params whose effective value on this step differs from their base value.
+                for (const auto& lp : seq.lockable)
+                    if (lp.paramId == pv.paramId && lp.instance == pv.instance)
+                    {
+                        if (pv.value == lp.baseValue)
+                            changed = false;
+                        break;
+                    }
+            }
+            // prevStepIndex == kPrevStepFresh (-1): changed stays true -> full establish.
             if (! changed)
                 continue;
 
