@@ -21,14 +21,19 @@ public:
           soloSynthPanel (codec, midiIO),
           sequencerPanel (codec, midiIO)
     {
+        // Capture the panels' natural sizes BEFORE tabbing them. addTab() reparents each panel into
+        // the TabbedComponent's content area and resizes it to fit that area -- which is still 0x0
+        // here -- so reading getWidth()/getHeight() afterwards yields 0. Reading it after was the
+        // real cause of the window opening at 0x30 / tiny (bug-071, pinned by the launch diagnostic);
+        // the panels' own constructors have already set these to the real values.
+        const int contentW = juce::jmax (soloSynthPanel.getWidth(), sequencerPanel.getWidth());
+        const int contentH = juce::jmax (soloSynthPanel.getHeight(), sequencerPanel.getHeight());
+
         tabs.addTab ("Solo Synth", juce::Colours::darkgrey, &soloSynthPanel, false);
         tabs.addTab ("Sequencer", juce::Colours::darkgrey, &sequencerPanel, false);
         addAndMakeVisible (tabs);
-        // Size to fully contain the taller/wider of the two tabs plus the actual tab-bar depth
-        // (not a hardcoded 30), so whichever tab is shown on open gets its full height and neither
-        // is clipped as panels grow.
-        setSize (juce::jmax (soloSynthPanel.getWidth(), sequencerPanel.getWidth()),
-                 juce::jmax (soloSynthPanel.getHeight(), sequencerPanel.getHeight()) + tabs.getTabBarDepth());
+        // + actual tab-bar depth (not a hardcoded 30) so the shown tab gets its full height.
+        setSize (contentW, contentH + tabs.getTabBarDepth());
     }
 
     void resized() override
@@ -74,8 +79,6 @@ public:
         {
             setUsingNativeTitleBar (true);
 
-            // Capture the intended size from the content component (known-correct the moment its
-            // constructor returns) BEFORE setContentOwned, so no window-peer timing is involved.
             auto* content = new MainContentComponent();
             const int contentW = content->getWidth();
             const int contentH = content->getHeight();
@@ -83,18 +86,12 @@ public:
             setContentOwned (content, true);
             setResizable (true, true);
 
-            // Floor the size so no window manager can map the window at a near-zero default (jmin
-            // guards the degenerate case where the content is somehow smaller than the floor).
+            // Guard against near-zero launch sizes on WMs that ignore pre-map bounds.
             setResizeLimits (juce::jmin (760, contentW), juce::jmin (520, contentH), 10000, 10000);
 
-            // Size + centre BEFORE showing -- honoured by well-behaved WMs...
             centreWithSize (contentW, contentH);
             setVisible (true);
-            // ...then re-assert AFTER setVisible, once the native peer exists. Some Linux WMs drop
-            // bounds set before the window is mapped and open it genuinely tiny (bug-071: "stuff is
-            // visible but no room to display most of it, a manual resize brings it to life" -- the
-            // bug-009 launch-timing class). Re-centring on the live peer forces the intended size;
-            // it's a flicker-free no-op on WMs that already applied the pre-map bounds.
+            // Re-assert size on the mapped peer for Linux WMs that drop pre-map bounds.
             centreWithSize (contentW, contentH);
         }
 
