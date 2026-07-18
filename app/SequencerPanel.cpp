@@ -123,17 +123,148 @@ namespace
         return std::nullopt;
     }
 
+    // Controller numbers per reference/midi-spec.md §1.4 — the spec's tables are HEX, so NRPN
+    // select is CC 0x62/0x63 (98/99 decimal), LSB first on this device, value via Data Entry CC
+    // 0x06. bug-109: these were passed as DECIMAL 62/63, so every "NRPN" went to two unrelated
+    // controllers and the bare Data Entry then landed on whatever RPN/NRPN pointer was active —
+    // randomly rewriting params like pitch-bend range. The trailing RPN Null (0x7F/0x7F, spec:
+    // "Null (deselect)") parks the pointer after each write so no stray Data Entry, ours or
+    // anyone's, can ever re-hit the last-selected parameter.
     std::vector<juce::MidiMessage> buildNrpnMessages (int channel, int nrpnMsb, int nrpnLsb, int value)
     {
         const int ch = juce::jlimit (1, 16, channel);
         const int v  = juce::jlimit (0, 127, value);
         return {
-            juce::MidiMessage::controllerEvent (ch, 62, nrpnLsb),   // NRPN LSB
-            juce::MidiMessage::controllerEvent (ch, 63, nrpnMsb),   // NRPN MSB
-            juce::MidiMessage::controllerEvent (ch, 6, v),          // Data Entry MSB
+            juce::MidiMessage::controllerEvent (ch, 0x62, nrpnLsb),   // NRPN LSB
+            juce::MidiMessage::controllerEvent (ch, 0x63, nrpnMsb),   // NRPN MSB
+            juce::MidiMessage::controllerEvent (ch, 0x06, v),         // Data Entry MSB
+            juce::MidiMessage::controllerEvent (ch, 0x64, 0x7F),      // RPN LSB \ Null — deselect
+            juce::MidiMessage::controllerEvent (ch, 0x65, 0x7F),      // RPN MSB /
         };
     }
 }
+
+//==============================================================================
+/** The Rnd options call-out: edits the panel's RandomizeOptions (and the combo-params flag)
+    in place — no apply step, the next Rnd click uses whatever this shows. */
+class RandomizeOptionsComponent : public juce::Component
+{
+public:
+    RandomizeOptionsComponent (casioxw::RandomizeOptions& optionsIn, bool& randomizeCombosIn)
+        : options (optionsIn), randomizeCombos (randomizeCombosIn)
+    {
+        using Scale = casioxw::RandomizeOptions::Scale;
+
+        auto initLabel = [this] (juce::Label& l, const char* text)
+        {
+            l.setText (text, juce::dontSendNotification);
+            l.setFont (EditorFonts::header (11.0f));
+            l.setColour (juce::Label::textColourId, EditorColours::textMuted);
+            addAndMakeVisible (l);
+        };
+        initLabel (scaleLabel, "SCALE");
+        initLabel (rootLabel, "ROOT");
+        initLabel (rangeLabel, "NOTES");
+        initLabel (trigLabel, "TRIGS");
+        initLabel (lockLabel, "LOCKS");
+
+        scaleCombo.addItem ("Minor Pentatonic", 1 + (int) Scale::minorPentatonic);
+        scaleCombo.addItem ("Major Pentatonic", 1 + (int) Scale::majorPentatonic);
+        scaleCombo.addItem ("Natural Minor",    1 + (int) Scale::naturalMinor);
+        scaleCombo.addItem ("Major",            1 + (int) Scale::major);
+        scaleCombo.addItem ("Chromatic",        1 + (int) Scale::chromatic);
+        scaleCombo.setSelectedId (1 + (int) options.scale, juce::dontSendNotification);
+        scaleCombo.onChange = [this] { options.scale = (Scale) (scaleCombo.getSelectedId() - 1); };
+        addAndMakeVisible (scaleCombo);
+
+        static const char* const noteNames[] = { "C", "C#", "D", "D#", "E", "F",
+                                                 "F#", "G", "G#", "A", "A#", "B" };
+        for (int i = 0; i < 12; ++i)
+            rootCombo.addItem (noteNames[i], i + 1);
+        rootCombo.setSelectedId (options.rootNote + 1, juce::dontSendNotification);
+        rootCombo.onChange = [this] { options.rootNote = rootCombo.getSelectedId() - 1; };
+        addAndMakeVisible (rootCombo);
+
+        noteRange.setSliderStyle (juce::Slider::TwoValueHorizontal);
+        noteRange.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        noteRange.setRange (0.0, 127.0, 1.0);
+        noteRange.setMinAndMaxValues ((double) options.noteMin, (double) options.noteMax,
+                                      juce::dontSendNotification);
+        noteRange.onValueChange = [this]
+        {
+            options.noteMin = (int) noteRange.getMinValue();
+            options.noteMax = (int) noteRange.getMaxValue();
+            updateRangeReadout();
+        };
+        addAndMakeVisible (noteRange);
+        rangeReadout.setFont (EditorFonts::mono (11.0f));
+        rangeReadout.setJustificationType (juce::Justification::centredRight);
+        addAndMakeVisible (rangeReadout);
+        updateRangeReadout();
+
+        auto initPercent = [this] (juce::Slider& s, float& target)
+        {
+            s.setSliderStyle (juce::Slider::LinearHorizontal);
+            s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 46, 18);
+            s.setRange (0.0, 100.0, 1.0);
+            s.textFromValueFunction = [] (double v) { return juce::String ((int) v) + "%"; };
+            s.setValue ((double) (target * 100.0f), juce::dontSendNotification);
+            s.updateText();
+            float* boundTarget = &target;   // capture the object, not the (soon-dead) reference
+            s.onValueChange = [&s, boundTarget] { *boundTarget = (float) (s.getValue() / 100.0); };
+            addAndMakeVisible (s);
+        };
+        initPercent (trigDensity, options.trigDensity);
+        initPercent (lockDensity, options.lockDensity);
+
+        combosToggle.setButtonText ("Also lock combo/switch params");
+        combosToggle.setToggleState (randomizeCombos, juce::dontSendNotification);
+        combosToggle.onClick = [this] { randomizeCombos = combosToggle.getToggleState(); };
+        addAndMakeVisible (combosToggle);
+
+        setSize (300, 6 * kRow + 10);
+    }
+
+    void resized() override
+    {
+        auto b = getLocalBounds().reduced (8, 5);
+        auto layoutRow = [&b] (juce::Label& l, juce::Component& c)
+        {
+            auto r = b.removeFromTop (kRow).reduced (0, 3);
+            l.setBounds (r.removeFromLeft (52));
+            c.setBounds (r);
+        };
+        layoutRow (scaleLabel, scaleCombo);
+        layoutRow (rootLabel, rootCombo);
+        {
+            auto r = b.removeFromTop (kRow).reduced (0, 3);
+            rangeLabel.setBounds (r.removeFromLeft (52));
+            rangeReadout.setBounds (r.removeFromRight (72));
+            noteRange.setBounds (r);
+        }
+        layoutRow (trigLabel, trigDensity);
+        layoutRow (lockLabel, lockDensity);
+        combosToggle.setBounds (b.removeFromTop (kRow).reduced (0, 3));
+    }
+
+private:
+    static constexpr int kRow = 30;
+
+    void updateRangeReadout()
+    {
+        rangeReadout.setText (casioxw::midiNoteName (options.noteMin) + " - "
+                                  + casioxw::midiNoteName (options.noteMax),
+                              juce::dontSendNotification);
+    }
+
+    casioxw::RandomizeOptions& options;
+    bool& randomizeCombos;
+
+    juce::Label scaleLabel, rootLabel, rangeLabel, trigLabel, lockLabel, rangeReadout;
+    juce::ComboBox scaleCombo, rootCombo;
+    juce::Slider noteRange, trigDensity, lockDensity;
+    juce::ToggleButton combosToggle;
+};
 
 //==============================================================================
 void StepKeyButton::setLockState (bool hasLockIn, bool selectedIn)
@@ -292,6 +423,11 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
 
     randomizeButton.onClick = [this] { randomizeSequence(); };
     addAndMakeVisible (randomizeButton);
+
+    rndOptionsButton.setButtonText (juce::String::fromUTF8 ("\xe2\x96\xbe"));   // small down triangle
+    rndOptionsButton.setTooltip ("Randomize options (scale, note range, densities)");
+    rndOptionsButton.onClick = [this] { showRandomizeOptions(); };
+    addAndMakeVisible (rndOptionsButton);
 
     saveButton.onClick = [this] { saveSequenceToFile(); };
     loadButton.onClick = [this] { loadSequenceFromFile(); };
@@ -493,6 +629,11 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
             sequence.lockable[i].minValue = info->range.min;
             sequence.lockable[i].maxValue = info->range.max;
 
+            // Continuous params only for Rnd by default — a per-step random filter TYPE or LFO
+            // wave is the chaos the owner vetoed; combo/toggle params opt in via the call-out.
+            if (casioxw::decideControlKind (*info, l.instance) == casioxw::ControlKind::Slider)
+                continuousLockables.push_back ((int) i);
+
             pages[(size_t) l.page].cells.push_back ({ info, l.instance, l.shortName, (int) i });
         }
 
@@ -514,6 +655,10 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
 
 SequencerPanel::~SequencerPanel()
 {
+    // The call-out lives on the desktop, not in this component tree — it must not outlive the
+    // options/flag members its content component references.
+    if (activeCallout != nullptr)
+        activeCallout->dismiss();
     stop();
 }
 
@@ -602,10 +747,21 @@ void SequencerPanel::sendParamNow (const juce::String& paramId, int instance, in
 
 void SequencerPanel::randomizeSequence()
 {
-    casioxw::randomize (sequence, rng);
+    auto options = randomizeOptions;
+    options.lockableIndices = randomizeComboParams ? std::vector<int>{}   // empty == all eligible
+                                                   : continuousLockables;
+    casioxw::randomize (sequence, rng, options);
     syncStepWidgetsFromSequence();
     refreshParamControls();   // selected step's locks may have changed
     refreshStepButtons();     // has-locks markers
+}
+
+void SequencerPanel::showRandomizeOptions()
+{
+    auto content = std::make_unique<RandomizeOptionsComponent> (randomizeOptions, randomizeComboParams);
+    activeCallout = &juce::CallOutBox::launchAsynchronously (std::move (content),
+                                                             rndOptionsButton.getScreenBounds(),
+                                                             nullptr);
 }
 
 void SequencerPanel::syncStepWidgetsFromSequence()
@@ -1535,7 +1691,8 @@ void SequencerPanel::resized()
         headerRow.removeFromRight (2);
         shiftLeftButton.setBounds (headerRow.removeFromRight (28));
         headerRow.removeFromRight (6);
-        randomizeButton.setBounds (headerRow.removeFromRight (44));
+        rndOptionsButton.setBounds (headerRow.removeFromRight (22));   // reads as one "Rnd ▾" pair
+        randomizeButton.setBounds (headerRow.removeFromRight (42));
         headerRow.removeFromRight (6);
         muteSynthButton.setBounds (headerRow.removeFromRight (50));
         headerRow.removeFromRight (6);
@@ -1551,7 +1708,7 @@ void SequencerPanel::resized()
     else
     {
         for (auto* b : { &baseButton, &syncBaseButton, &muteSynthButton, &randomizeButton,
-                         &shiftLeftButton, &shiftRightButton })
+                         &rndOptionsButton, &shiftLeftButton, &shiftRightButton })
             b->setBounds (0, 0, 0, 0);
         paramDisplay->setVisible (false);
         synthCardBounds = card.withHeight (24 + 16);

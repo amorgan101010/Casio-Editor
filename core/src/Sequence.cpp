@@ -1,5 +1,7 @@
 #include "casioxw/Sequence.h"
 
+#include <algorithm>
+
 namespace casioxw
 {
     std::optional<NoteEvent> stepEvent (const Sequence& seq, int stepIndex)
@@ -210,30 +212,66 @@ namespace casioxw
         seq.steps = std::move (rotated);
     }
 
-    void randomize (Sequence& seq, juce::Random& rng)
+    void randomize (Sequence& seq, juce::Random& rng, const RandomizeOptions& options)
     {
-        static const int pentatonic[] = { 0, 3, 5, 7, 10 };   // C minor pentatonic degrees
-        constexpr int root = 48;                              // C3
+        using Scale = RandomizeOptions::Scale;
+        static const std::vector<int> minorPent { 0, 3, 5, 7, 10 };
+        static const std::vector<int> majorPent { 0, 2, 4, 7, 9 };
+        static const std::vector<int> naturalMinor { 0, 2, 3, 5, 7, 8, 10 };
+        static const std::vector<int> major { 0, 2, 4, 5, 7, 9, 11 };
+        static const std::vector<int> chromatic { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+        const auto& degrees = options.scale == Scale::majorPentatonic ? majorPent
+                            : options.scale == Scale::naturalMinor    ? naturalMinor
+                            : options.scale == Scale::major           ? major
+                            : options.scale == Scale::chromatic       ? chromatic
+                                                                      : minorPent;
+
+        // Every in-range note whose pitch class sits on the scale (transposed to the root).
+        std::vector<int> allowedNotes;
+        const int lo = juce::jlimit (0, 127, juce::jmin (options.noteMin, options.noteMax));
+        const int hi = juce::jlimit (0, 127, juce::jmax (options.noteMin, options.noteMax));
+        for (int n = lo; n <= hi; ++n)
+        {
+            const int pc = ((n - options.rootNote) % 12 + 12) % 12;
+            if (std::find (degrees.begin(), degrees.end(), pc) != degrees.end())
+                allowedNotes.push_back (n);
+        }
+        if (allowedNotes.empty())          // degenerate range (< one scale step wide)
+            allowedNotes.push_back (lo);
+
+        // Empty lockableIndices == every lockable is eligible.
+        std::vector<int> eligible = options.lockableIndices;
+        if (eligible.empty())
+            for (int i = 0; i < (int) seq.lockable.size(); ++i)
+                eligible.push_back (i);
+
+        const auto intIn = [&rng] (int minV, int maxV)
+        {
+            return minV + rng.nextInt (juce::jmax (1, maxV - minV + 1));
+        };
 
         for (auto& step : seq.steps)
         {
-            step.enabled = rng.nextFloat() < 0.6f;
-
-            const int octave = rng.nextInt (2);              // 0..1
-            const int degree = pentatonic[rng.nextInt (5)];
-            step.note = root + octave * 12 + degree;
-
-            step.velocity = 70 + rng.nextInt (58);           // 70..127
-            step.gatePercent = 30 + rng.nextInt (71);        // 30..100 (avoid all-stab sequences)
+            step.enabled = rng.nextFloat() < options.trigDensity;
+            step.note = allowedNotes[(size_t) rng.nextInt ((int) allowedNotes.size())];
+            step.velocity = juce::jlimit (1, 127, intIn (options.velocityMin, options.velocityMax));
+            step.gatePercent = juce::jlimit (1, 100, intIn (options.gateMin, options.gateMax));
 
             step.locks.clear();
-            for (const auto& lp : seq.lockable)
-                if (rng.nextFloat() < 0.3f)
-                {
-                    const int span = lp.maxValue - lp.minValue + 1;
-                    const int value = lp.minValue + rng.nextInt (juce::jmax (1, span));
-                    step.locks.push_back (ParamLock { lp.paramId, lp.instance, value });
-                }
+            for (const int idx : eligible)
+            {
+                if (idx < 0 || idx >= (int) seq.lockable.size())
+                    continue;
+                const auto& lp = seq.lockable[(size_t) idx];
+                if (rng.nextFloat() < options.lockDensity)
+                    step.locks.push_back (ParamLock { lp.paramId, lp.instance,
+                                                     intIn (lp.minValue, lp.maxValue) });
+            }
         }
+    }
+
+    void randomize (Sequence& seq, juce::Random& rng)
+    {
+        randomize (seq, rng, RandomizeOptions {});
     }
 }

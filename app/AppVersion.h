@@ -3,5 +3,5 @@
 namespace casioxw::app
 {
     inline constexpr const char* kApplicationName    = "Casio XW-P1 Editor";
-    inline constexpr const char* kApplicationVersion = "0.10.0-sequencer";
+    inline constexpr const char* kApplicationVersion = "0.11.0-sequencer";
 }
