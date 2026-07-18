@@ -18,17 +18,26 @@ namespace
     constexpr double kScheduleSampleRate = 1000.0;   // 1 "sample" == 1 ms, so sample pos == timeMs
 
     constexpr int kStepWidth = 58;
-    constexpr int kLeftGutter = 46;                       // row labels (On / Pitch / Gate)
-    constexpr int kParamControlWidth = 390;
-    constexpr int kDrumTrackRowHeight = 28;
-    constexpr int kDrumControlWidth = 318;
+    constexpr int kStepGridWidth = kStepWidth * 16;       // 16-step columns are the anchor, always leftmost
+    constexpr int kRightPaneWidth = 560;                  // controls/info to the right of step columns
+    constexpr int kTrackControlWidth = 430;               // drum-row controls inside right pane
+    constexpr int kStepLabelWidth = 62;                   // matches drum lane label width
+    constexpr int kDrumTrackRowHeight = 50;
+    constexpr int kDrumLabelWidth = 70;
     constexpr int kDrumChannelWidth = 70;
+    constexpr int kDrumControlGap = 6;
     constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
-    constexpr int kStepColumnHeight = 20 + 2 + 20 + kKnobCell + kKnobCell;   // select + on + note + gate
+    constexpr int kStepColumnHeight = 20 + 2 + kKnobCell + kKnobCell + kKnobCell;   // select + note + gate + velocity
 
     const juce::Colour kSelectedColour = juce::Colours::orange;
     const juce::Colour kHasLocksColour = juce::Colours::goldenrod.darker (0.4f);
+    const juce::Colour kActiveStepColour = juce::Colour::fromRGB (44, 96, 120);
     const juce::Colour kIdleColour     = juce::Colours::darkgrey;
+
+    bool isQuarterStep (int stepIndex)
+    {
+        return (stepIndex % 4) == 0; // 1,5,9,13 (1-based)
+    }
 
     // The p-lockable parameters this MVP exposes, with musical base defaults (an *open* filter, not
     // a closed one at 0 — otherwise sending base cutoff on every unlocked step would mute the
@@ -103,6 +112,8 @@ namespace
 SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& midiIOIn)
     : codec (codecIn), midiIO (midiIOIn)
 {
+    loadSequenceSettings();
+
     // ---- seed the source-of-truth sequence -------------------------------------------------
     for (auto& step : sequence.steps)
         step.velocity = 100;
@@ -114,14 +125,19 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     {
         auto sc = std::make_unique<StepControl>();
 
-        sc->select.onClick = [this, i] { selectStep (i); };
-        addAndMakeVisible (sc->select);
-
-        sc->enabled.onClick = [this, i]
+        sc->select.onClick = [this, i]
         {
-            sequence.steps[(size_t) i].enabled = stepControls[(size_t) i]->enabled.getToggleState();
+            if (editButton.getToggleState())
+                selectStep (selectedStep == i ? -1 : i);
+            else
+            {
+                auto& step = sequence.steps[(size_t) i];
+                step.enabled = ! step.enabled;
+                refreshStepButtons();
+                updateStatusLabel();
+            }
         };
-        addAndMakeVisible (sc->enabled);
+        addAndMakeVisible (sc->select);
 
         sc->note.setRange (0.0, 127.0, 1.0);
         sc->note.setValue (60.0, juce::dontSendNotification);
@@ -150,15 +166,44 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         sc->gate.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
         addAndMakeVisible (sc->gate);
 
+        sc->velocity.setRange (1.0, 127.0, 1.0);
+        sc->velocity.setValue (100.0, juce::dontSendNotification);
+        sc->velocity.textFromValueFunction = [] (double v) { return juce::String ((int) v); };
+        sc->velocity.onValueChange = [this, i]
+        {
+            sequence.steps[(size_t) i].velocity = (int) stepControls[(size_t) i]->velocity.getValue();
+        };
+        sc->velocity.updateText();
+        sc->velocity.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
+        addAndMakeVisible (sc->velocity);
+
         stepControls[(size_t) i] = std::move (sc);
     }
 
-    for (auto* l : { &onRowLabel, &pitchRowLabel, &gateRowLabel })
+    for (auto* l : { &pitchRowLabel, &gateRowLabel, &velocityRowLabel })
     {
-        l->setJustificationType (juce::Justification::centredRight);
+        l->setJustificationType (juce::Justification::centredLeft);
         l->setColour (juce::Label::textColourId, juce::Colours::grey);
         addAndMakeVisible (*l);
     }
+
+    auto initArrowToggle = [this] (juce::TextButton& button, const juce::String& tooltip)
+    {
+        button.setClickingTogglesState (true);
+        button.setToggleState (true, juce::dontSendNotification);
+        button.setButtonText (juce::String::fromUTF8 ("▼"));
+        button.setTooltip (tooltip);
+        button.onClick = [this, &button]
+        {
+            button.setButtonText (button.getToggleState() ? juce::String::fromUTF8 ("▼")
+                                                          : juce::String::fromUTF8 ("▶"));
+            resized();
+            repaint();
+        };
+        addAndMakeVisible (button);
+    };
+    initArrowToggle (drumControlsButton, "Toggle drum controls");
+    initArrowToggle (synthControlsButton, "Toggle synth controls");
 
     // ---- transport -------------------------------------------------------------------------
     playStopButton.onClick = [this] { playing ? stop() : play(); };
@@ -169,8 +214,10 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
 
     saveButton.onClick = [this] { saveSequenceToFile(); };
     loadButton.onClick = [this] { loadSequenceFromFile(); };
+    sequenceDirButton.onClick = [this] { chooseSequenceDirectory(); };
     addAndMakeVisible (saveButton);
     addAndMakeVisible (loadButton);
+    addAndMakeVisible (sequenceDirButton);
 
     // Rate / time-scale. Item id == steps-per-beat, so the combo maps straight onto the model.
     rateCombo.addItem ("1/4", 1);
@@ -201,31 +248,50 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     addAndMakeVisible (channelSlider);
     addAndMakeVisible (channelLabel);
 
-    velocitySlider.setRange (1.0, 127.0, 1.0);
-    velocitySlider.setValue (100.0, juce::dontSendNotification);
-    velocitySlider.onValueChange = [this]
-    {
-        const int v = (int) velocitySlider.getValue();
-        for (auto& step : sequence.steps)
-            step.velocity = v;
-    };
-    addAndMakeVisible (velocitySlider);
-    addAndMakeVisible (velocityLabel);
-
     // ---- mode row --------------------------------------------------------------------------
     baseButton.onClick = [this] { selectStep (-1); };
     addAndMakeVisible (baseButton);
 
-    editButton.onClick = [this] { refreshParamControls(); updateStatusLabel(); refreshStepButtons(); };
+    editButton.setClickingTogglesState (true);
+    editButton.setButtonText ("Step Activate");
+    editButton.onClick = [this]
+    {
+        const bool pLockMode = editButton.getToggleState();
+        editButton.setButtonText (pLockMode ? "P-Lock Edit" : "Step Activate");
+        if (! pLockMode)
+        {
+            selectStep (-1);
+            clearDrumSelections();
+            refreshStepButtons();
+            updateStatusLabel();
+            updateClearLocksEnabled();
+        }
+        else
+        {
+            refreshParamControls();
+            updateStatusLabel();
+            refreshStepButtons();
+            updateClearLocksEnabled();
+        }
+    };
     addAndMakeVisible (editButton);
+
+    muteSynthButton.setClickingTogglesState (true);
+    addAndMakeVisible (muteSynthButton);
 
     clearLocksButton.onClick = [this]
     {
-        if (selectedStep >= 0)
+        if (selectedStep >= 0 || hasAnyDrumStepSelected())
         {
-            casioxw::clearStepLocks (sequence, selectedStep);
+            if (selectedStep >= 0)
+                casioxw::clearStepLocks (sequence, selectedStep);
+            for (auto& row : drumTrackControls)
+                if (row != nullptr)
+                    if (row->selectedStep >= 0)
+                        row->velocityLocks[(size_t) row->selectedStep].reset();
             refreshParamControls();
             refreshStepButtons();
+            updateClearLocksEnabled();
         }
     };
     addAndMakeVisible (clearLocksButton);
@@ -238,7 +304,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible (statusLabel);
 
-    // ---- drum-track controls (5 lanes, each with channel + note + 16 step on/off buttons) ---
+    // ---- drum-track controls (5 lanes, each with channel + note + 16 step on/off + velocity) ---
     drumTracksLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     drumTracksLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (drumTracksLabel);
@@ -250,10 +316,14 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     {
         const auto& def = kDrumTracks[i];
         auto row = std::make_unique<DrumTrackControl>();
+        auto* rowPtr = row.get();
 
         row->trackLabel.setText (def.label, juce::dontSendNotification);
         row->trackLabel.setJustificationType (juce::Justification::centredLeft);
         addAndMakeVisible (row->trackLabel);
+
+        row->mute.setClickingTogglesState (true);
+        addAndMakeVisible (row->mute);
 
         for (int ch = 1; ch <= 16; ++ch)
             row->channel.addItem (juce::String (ch), ch);
@@ -271,13 +341,51 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         row->note.updateText();
         addAndMakeVisible (row->note);
 
+        row->velocity.setRange (1.0, 127.0, 1.0);
+        row->velocity.setValue (100.0, juce::dontSendNotification);
+        row->velocity.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 40, 20);
+        row->velocity.textFromValueFunction = [] (double v) { return juce::String ((int) v); };
+        row->velocity.onValueChange = [this, rowPtr]
+        {
+            const int v = juce::jlimit (1, 127, (int) rowPtr->velocity.getValue());
+            if (editButton.getToggleState() && rowPtr->selectedStep >= 0)
+                rowPtr->velocityLocks[(size_t) rowPtr->selectedStep] = v;
+            else
+                rowPtr->baseVelocity = v;
+
+            refreshStepButtons();
+        };
+        row->velocityMarker.setJustificationType (juce::Justification::centredLeft);
+        row->velocityMarker.setColour (juce::Label::textColourId, juce::Colours::grey);
+        addAndMakeVisible (row->velocity);
+        addAndMakeVisible (row->velocityMarker);
+
         for (size_t step = 0; step < row->steps.size(); ++step)
         {
             auto& b = row->steps[step];
-            b.setClickingTogglesState (true);
+            b.setClickingTogglesState (false);
             b.setToggleState (false, juce::dontSendNotification);
             b.setButtonText (juce::String ((int) step + 1));
             b.setColour (juce::TextButton::buttonOnColourId, kSelectedColour);
+            b.onClick = [this, rowPtr, step]
+            {
+                if (editButton.getToggleState())
+                {
+                    rowPtr->selectedStep = (rowPtr->selectedStep == (int) step ? -1 : (int) step);
+                    if (rowPtr->selectedStep >= 0)
+                        selectedStep = -1; // synth and drum step edit targets are mutually exclusive
+                    refreshStepButtons();
+                    updateStatusLabel();
+                    updateClearLocksEnabled();
+                }
+                else
+                {
+                    const bool next = ! rowPtr->steps[step].getToggleState();
+                    rowPtr->steps[step].setToggleState (next, juce::dontSendNotification);
+                    refreshStepButtons();
+                    updateStatusLabel();
+                }
+            };
             addAndMakeVisible (b);
         }
 
@@ -311,17 +419,45 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         lockRows.push_back (std::move (row));
     }
 
-    setSize (juce::jmax (kLeftGutter + kStepWidth * 16 + 16, kDrumControlWidth + kStepWidth * 16 + 16),
-             8 + 28 + 6 + 28 + 8 + 28 + 8 + 20 + 6 + 20 + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
-                 + 6 + 4 + (int) lockRows.size() * 30 + 10 + kStepColumnHeight + 8);
+    setSize (kStepGridWidth + 8 + kRightPaneWidth + 16,
+             8 + 6 + 28 + 6 + 28 + 8 + 20 + 6 + 28 + 6 + 20 + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
+                 + 10 + kStepColumnHeight + 8);
 
     selectStep (-1);   // start in Base mode
+    clearDrumSelections();
     resized();
 }
 
 SequencerPanel::~SequencerPanel()
 {
     stop();
+}
+
+void SequencerPanel::paint (juce::Graphics& g)
+{
+    if (! playheadLaneBounds.isEmpty())
+    {
+        g.setColour (juce::Colours::whitesmoke.withAlpha (0.60f));
+        for (int step = 0; step < 16; ++step)
+        {
+            if (! isQuarterStep (step))
+                continue;
+            auto col = playheadLaneBounds.withX (playheadLaneBounds.getX() + step * kStepWidth)
+                                        .withWidth (kStepWidth)
+                                        .reduced (1, 0);
+            g.drawRoundedRectangle (col.toFloat(), 4.0f, 2.4f);
+        }
+    }
+
+    if (playheadStep < 0 || playheadLaneBounds.isEmpty())
+        return;
+
+    const int clamped = juce::jlimit (0, 15, playheadStep);
+    auto column = playheadLaneBounds.withX (playheadLaneBounds.getX() + clamped * kStepWidth)
+                                    .withWidth (kStepWidth)
+                                    .reduced (2, 0);
+    g.setColour (kSelectedColour.withAlpha (0.20f));
+    g.fillRoundedRectangle (column.toFloat(), 4.0f);
 }
 
 std::vector<juce::MidiMessage> SequencerPanel::paramMessages (const juce::String& paramId,
@@ -362,11 +498,12 @@ void SequencerPanel::syncStepWidgetsFromSequence()
         auto& sc = *stepControls[(size_t) i];
         // dontSendNotification: these are display updates, not user edits — don't fire the
         // onClick/onValueChange handlers that would write straight back into `sequence`.
-        sc.enabled.setToggleState (sequence.steps[(size_t) i].enabled, juce::dontSendNotification);
         sc.note.setValue ((double) sequence.steps[(size_t) i].note, juce::dontSendNotification);
         sc.note.updateText();
         sc.gate.setValue ((double) sequence.steps[(size_t) i].gatePercent, juce::dontSendNotification);
         sc.gate.updateText();
+        sc.velocity.setValue ((double) sequence.steps[(size_t) i].velocity, juce::dontSendNotification);
+        sc.velocity.updateText();
     }
 }
 
@@ -374,43 +511,37 @@ void SequencerPanel::syncTransportWidgetsFromSequence()
 {
     tempoSlider.setValue ((double) sequence.tempoBpm, juce::dontSendNotification);
     channelSlider.setValue ((double) sequence.channel, juce::dontSendNotification);
-    // Velocity is a single global "set all" control; there's no one value for a per-step-varied
-    // sequence, so show step 0's as representative (the per-step values still play correctly).
-    velocitySlider.setValue ((double) sequence.steps[0].velocity, juce::dontSendNotification);
     rateCombo.setSelectedId (sequence.stepsPerBeat, juce::dontSendNotification);
 }
 
 void SequencerPanel::saveSequenceToFile()
 {
-    fileChooser = std::make_unique<juce::FileChooser> (
-        "Save sequence",
-        juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("sequence.xwseq"),
-        "*.xwseq");
-
-    fileChooser->launchAsync (
-        juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
-            | juce::FileBrowserComponent::warnAboutOverwriting,
-        [this] (const juce::FileChooser& fc)
-        {
-            auto file = fc.getResult();
-            if (file == juce::File())
-                return;   // cancelled
-            if (! file.hasFileExtension ("xwseq"))
-                file = file.withFileExtension ("xwseq");
-
-            if (file.replaceWithText (casioxw::sequenceToJson (sequence)))
-                statusLabel.setText ("Saved " + file.getFileName(), juce::dontSendNotification);
-            else
-                statusLabel.setText ("Save failed: " + file.getFullPathName(), juce::dontSendNotification);
-        });
+    juce::PopupMenu menu;
+    menu.addItem (1, "Save Solo Sequence (.xwseq)");
+    menu.addItem (2, "Save Drum Sequence (.xwdrm)");
+    menu.addItem (3, "Save Sequence Set (.xwset)");
+    menu.showMenuAsync (juce::PopupMenu::Options(),
+                        [this] (int result)
+                        {
+                            if (result == 1) saveByKind (SaveKind::solo);
+                            if (result == 2) saveByKind (SaveKind::drums);
+                            if (result == 3) saveByKind (SaveKind::sequenceSet);
+                        });
 }
 
 void SequencerPanel::loadSequenceFromFile()
 {
+    const auto fallbackDir = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    auto baseDir = sequenceDefaultDirectory;
+    if (baseDir.existsAsFile())
+        baseDir = baseDir.getParentDirectory();
+    if (! baseDir.isDirectory())
+        baseDir = fallbackDir;
     fileChooser = std::make_unique<juce::FileChooser> (
         "Load sequence",
-        juce::File::getSpecialLocation (juce::File::userHomeDirectory),
-        "*.xwseq");
+        baseDir,
+        "*.xwseq;*.xwdrm;*.xwset",
+        false);
 
     fileChooser->launchAsync (
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
@@ -419,18 +550,143 @@ void SequencerPanel::loadSequenceFromFile()
             const auto file = fc.getResult();
             if (! file.existsAsFile())
                 return;   // cancelled
-            applyLoadedText (file.loadFileAsString(), file.getFileName());
+            applyLoadedText (file.loadFileAsString(), file);
         });
 }
 
-void SequencerPanel::applyLoadedText (const juce::String& text, const juce::String& name)
+void SequencerPanel::saveByKind (SaveKind kind)
+{
+    const auto fallbackDir = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    auto baseDir = sequenceDefaultDirectory;
+    if (baseDir.existsAsFile())
+        baseDir = baseDir.getParentDirectory();
+    if (! baseDir.isDirectory())
+        baseDir = fallbackDir;
+
+    juce::String fileName;
+    juce::String wildcard;
+    juce::String payload;
+
+    if (kind == SaveKind::solo)
+    {
+        fileName = "solo-sequence.xwseq";
+        wildcard = "*.xwseq";
+        payload = casioxw::sequenceToJson (sequence);
+    }
+    else if (kind == SaveKind::drums)
+    {
+        fileName = "drum-sequence.xwdrm";
+        wildcard = "*.xwdrm";
+        payload = serializeDrumsToJson();
+    }
+    else
+    {
+        fileName = "sequence-set.xwset";
+        wildcard = "*.xwset";
+    }
+
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Save sequence",
+        baseDir.getChildFile (fileName),
+        wildcard,
+        false);
+
+    fileChooser->launchAsync (
+        juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+            | juce::FileBrowserComponent::warnAboutOverwriting,
+        [this, kind, payload] (const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+            if (file == juce::File())
+                return; // cancelled
+
+            const juce::String ext = kind == SaveKind::solo ? ".xwseq" : (kind == SaveKind::drums ? ".xwdrm" : ".xwset");
+            if (! file.hasFileExtension (ext.substring (1)))
+                file = file.withFileExtension (ext.substring (1));
+
+            if (kind == SaveKind::sequenceSet)
+            {
+                const auto baseName = file.getFileNameWithoutExtension();
+                const auto soloName = baseName + ".solo.xwseq";
+                const auto drumName = baseName + ".drums.xwdrm";
+                const auto soloFile = file.getSiblingFile (soloName);
+                const auto drumFile = file.getSiblingFile (drumName);
+                const auto setPayload = serializeSequenceSetToJson (soloName, drumName);
+
+                const bool okSolo = soloFile.replaceWithText (casioxw::sequenceToJson (sequence));
+                const bool okDrums = drumFile.replaceWithText (serializeDrumsToJson());
+                const bool okSet = file.replaceWithText (setPayload);
+
+                if (okSolo && okDrums && okSet)
+                    statusLabel.setText ("Saved set + refs: " + file.getFileName(), juce::dontSendNotification);
+                else
+                    statusLabel.setText ("Save failed: " + file.getFullPathName(), juce::dontSendNotification);
+            }
+            else
+            {
+                if (file.replaceWithText (payload))
+                    statusLabel.setText ("Saved " + file.getFileName(), juce::dontSendNotification);
+                else
+                    statusLabel.setText ("Save failed: " + file.getFullPathName(), juce::dontSendNotification);
+            }
+        });
+}
+
+juce::String SequencerPanel::serializeDrumsToJson() const
+{
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty ("format", "casioxw-drum-sequence");
+    root->setProperty ("version", 1);
+    root->setProperty ("tempoBpm", sequence.tempoBpm);
+    root->setProperty ("stepsPerBeat", sequence.stepsPerBeat);
+
+    juce::Array<juce::var> tracks;
+    for (const auto& row : drumTrackControls)
+    {
+        if (row == nullptr)
+            continue;
+
+        juce::DynamicObject::Ptr t = new juce::DynamicObject();
+        t->setProperty ("channel", row->channel.getSelectedId());
+        t->setProperty ("note", (int) row->note.getValue());
+        t->setProperty ("baseVelocity", row->baseVelocity);
+
+        juce::Array<juce::var> steps;
+        juce::Array<juce::var> locks;
+        for (int i = 0; i < 16; ++i)
+        {
+            steps.add (row->steps[(size_t) i].getToggleState());
+            if (const auto v = row->velocityLocks[(size_t) i])
+                locks.add (*v);
+            else
+                locks.add (juce::var());
+        }
+        t->setProperty ("steps", steps);
+        t->setProperty ("velocityLocks", locks);
+        tracks.add (juce::var (t.get()));
+    }
+    root->setProperty ("tracks", tracks);
+    return juce::JSON::toString (juce::var (root.get()));
+}
+
+juce::String SequencerPanel::serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile) const
+{
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty ("format", "casioxw-sequence-set-ref");
+    root->setProperty ("version", 1);
+    root->setProperty ("soloFile", soloFile);
+    root->setProperty ("drumsFile", drumsFile);
+    // Keep inline copies too so old/new loaders can still recover even if sidecars are moved.
+    root->setProperty ("solo", juce::JSON::parse (casioxw::sequenceToJson (sequence)));
+    root->setProperty ("drums", juce::JSON::parse (serializeDrumsToJson()));
+    return juce::JSON::toString (juce::var (root.get()));
+}
+
+bool SequencerPanel::applySoloSequenceText (const juce::String& text)
 {
     const auto loaded = casioxw::sequenceFromJson (text);
     if (! loaded.has_value())
-    {
-        statusLabel.setText ("Load failed: " + name + " is not a sequence file", juce::dontSendNotification);
-        return;
-    }
+        return false;
 
     // Adopt the loaded musical content, but keep THIS panel's lockable set + controls intact
     // (they're fixed by kLockables and already have the metadata min/max seeded). Only import each
@@ -444,16 +700,249 @@ void SequencerPanel::applyLoadedText (const juce::String& text, const juce::Stri
             if (llp.paramId == lp.paramId && llp.instance == lp.instance)
                 lp.baseValue = llp.baseValue;
 
+    return true;
+}
+
+bool SequencerPanel::applyDrumSequenceText (const juce::String& text)
+{
+    const auto parsed = juce::JSON::parse (text);
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr || obj->getProperty ("format").toString() != "casioxw-drum-sequence")
+        return false;
+
+    const auto tempoVar = obj->getProperty ("tempoBpm");
+    if (! tempoVar.isVoid())
+        sequence.tempoBpm = (int) tempoVar;
+    const auto rateVar = obj->getProperty ("stepsPerBeat");
+    if (! rateVar.isVoid())
+        sequence.stepsPerBeat = (int) rateVar;
+
+    const auto tracks = obj->getProperty ("tracks").getArray();
+    if (tracks == nullptr)
+        return false;
+
+    const int n = juce::jmin ((int) drumTrackControls.size(), tracks->size());
+    for (int i = 0; i < n; ++i)
+    {
+        auto* t = (*tracks)[i].getDynamicObject();
+        if (t == nullptr || drumTrackControls[(size_t) i] == nullptr)
+            continue;
+
+        auto& row = *drumTrackControls[(size_t) i];
+        const auto chVar = t->getProperty ("channel");
+        const auto noteVar = t->getProperty ("note");
+        const auto baseVar = t->getProperty ("baseVelocity");
+        row.channel.setSelectedId (chVar.isVoid() ? row.channel.getSelectedId() : (int) chVar, juce::dontSendNotification);
+        row.note.setValue ((double) (noteVar.isVoid() ? (int) row.note.getValue() : (int) noteVar), juce::dontSendNotification);
+        row.baseVelocity = juce::jlimit (1, 127, baseVar.isVoid() ? row.baseVelocity : (int) baseVar);
+        row.selectedStep = -1;
+        row.velocityLocks.fill (std::nullopt);
+        for (int s = 0; s < 16; ++s)
+            row.steps[(size_t) s].setToggleState (false, juce::dontSendNotification);
+
+        if (const auto* steps = t->getProperty ("steps").getArray())
+        {
+            const int stepCount = juce::jmin (16, steps->size());
+            for (int s = 0; s < stepCount; ++s)
+                row.steps[(size_t) s].setToggleState ((bool) steps->getReference (s), juce::dontSendNotification);
+        }
+
+        if (const auto* locks = t->getProperty ("velocityLocks").getArray())
+        {
+            const int lockCount = juce::jmin (16, locks->size());
+            for (int s = 0; s < lockCount; ++s)
+            {
+                const auto& v = locks->getReference (s);
+                row.velocityLocks[(size_t) s] = v.isVoid() ? std::optional<int>() : std::optional<int> ((int) v);
+            }
+        }
+    }
+    return true;
+}
+
+bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File& sourceFile)
+{
+    const auto parsed = juce::JSON::parse (text);
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr)
+    {
+        statusLabel.setText ("Load failed: " + sourceFile.getFileName() + " is not valid JSON",
+                             juce::dontSendNotification);
+        return false;
+    }
+
+    const auto format = obj->getProperty ("format").toString();
+
+    bool ok = false;
+    if (format == "casioxw-sequence")
+    {
+        ok = applySoloSequenceText (text);
+    }
+    else if (format == "casioxw-drum-sequence")
+    {
+        ok = applyDrumSequenceText (text);
+    }
+    else if (format == "casioxw-sequence-set-ref" || format == "casioxw-sequence-set")
+    {
+        ok = true;
+
+        const auto soloRef = obj->getProperty ("soloFile").toString();
+        const auto drumsRef = obj->getProperty ("drumsFile").toString();
+        if (soloRef.isNotEmpty() && drumsRef.isNotEmpty())
+        {
+            const auto dir = sourceFile.getParentDirectory();
+            const auto soloFile = dir.getChildFile (soloRef);
+            const auto drumsFile = dir.getChildFile (drumsRef);
+            if (soloFile.existsAsFile() && drumsFile.existsAsFile())
+            {
+                ok = applySoloSequenceText (soloFile.loadFileAsString()) && ok;
+                ok = applyDrumSequenceText (drumsFile.loadFileAsString()) && ok;
+            }
+            else
+            {
+                ok = false;
+            }
+        }
+        else
+        {
+            ok = false;
+        }
+
+        // Fallback to embedded content for older/moved set files.
+        if (! ok)
+        {
+            ok = true;
+            const auto solo = obj->getProperty ("solo");
+            if (solo.getDynamicObject() != nullptr)
+                ok = applySoloSequenceText (juce::JSON::toString (solo)) && ok;
+            else
+                ok = false;
+            const auto drums = obj->getProperty ("drums");
+            if (drums.getDynamicObject() != nullptr)
+                ok = applyDrumSequenceText (juce::JSON::toString (drums)) && ok;
+            else
+                ok = false;
+        }
+    }
+    else
+    {
+        // Backward compatibility for very early files that may have lacked `format`.
+        ok = applySoloSequenceText (text);
+    }
+
+    if (! ok)
+    {
+        statusLabel.setText ("Load failed: unsupported or invalid sequence file " + sourceFile.getFileName(),
+                             juce::dontSendNotification);
+        return false;
+    }
+
     syncStepWidgetsFromSequence();
     syncTransportWidgetsFromSequence();
     selectStep (-1);   // back to Base; also refreshes param controls, step markers, status
-    statusLabel.setText ("Loaded " + name, juce::dontSendNotification);
+    clearDrumSelections();
+    statusLabel.setText ("Loaded " + sourceFile.getFileName(), juce::dontSendNotification);
+    return true;
+}
+
+void SequencerPanel::chooseSequenceDirectory()
+{
+    const auto fallbackDir = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    auto baseDir = sequenceDefaultDirectory;
+    if (baseDir.existsAsFile())
+        baseDir = baseDir.getParentDirectory();
+    if (! baseDir.isDirectory())
+        baseDir = fallbackDir;
+
+    fileChooser = std::make_unique<juce::FileChooser> (
+        "Choose sequence folder",
+        baseDir,
+        "*",
+        false);
+
+    fileChooser->launchAsync (
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+        [this] (const juce::FileChooser& fc)
+        {
+            const auto picked = fc.getResult();
+            if (picked == juce::File())
+                return;
+
+            auto dir = picked.isDirectory() ? picked : picked.getParentDirectory();
+            if (! dir.isDirectory())
+            {
+                statusLabel.setText ("Sequence folder selection failed", juce::dontSendNotification);
+                return;
+            }
+
+            sequenceDefaultDirectory = dir.getFullPathName();
+            saveSequenceSettings();
+            statusLabel.setText ("Sequence folder: " + dir.getFullPathName(), juce::dontSendNotification);
+        });
+}
+
+juce::File SequencerPanel::settingsFilePath() const
+{
+    auto dir = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                    .getChildFile ("CasioXWEditor");
+    dir.createDirectory();
+    return dir.getChildFile ("sequencer-settings.json");
+}
+
+void SequencerPanel::loadSequenceSettings()
+{
+    sequenceDefaultDirectory = juce::File::getSpecialLocation (juce::File::userHomeDirectory);
+    const auto settingsFile = settingsFilePath();
+    if (! settingsFile.existsAsFile())
+        return;
+
+    const auto parsed = juce::JSON::parse (settingsFile.loadFileAsString());
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr)
+        return;
+
+    const auto path = obj->getProperty ("sequenceDefaultDirectory").toString();
+    if (path.isNotEmpty())
+    {
+        juce::File configured (path);
+        if (configured.isDirectory())
+            sequenceDefaultDirectory = configured;
+    }
+}
+
+void SequencerPanel::saveSequenceSettings() const
+{
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty ("sequenceDefaultDirectory", sequenceDefaultDirectory.getFullPathName());
+    settingsFilePath().replaceWithText (juce::JSON::toString (juce::var (root.get())));
+}
+
+bool SequencerPanel::hasAnyDrumStepSelected() const
+{
+    for (const auto& row : drumTrackControls)
+        if (row != nullptr && row->selectedStep >= 0)
+            return true;
+    return false;
+}
+
+void SequencerPanel::clearDrumSelections()
+{
+    for (auto& row : drumTrackControls)
+        if (row != nullptr)
+            row->selectedStep = -1;
+}
+
+void SequencerPanel::updateClearLocksEnabled()
+{
+    clearLocksButton.setEnabled (editButton.getToggleState() && (selectedStep >= 0 || hasAnyDrumStepSelected()));
 }
 
 void SequencerPanel::selectStep (int step)
 {
     selectedStep = step;
-    clearLocksButton.setEnabled (step >= 0);
+    if (step >= 0)
+        clearDrumSelections();
+    updateClearLocksEnabled();
     refreshParamControls();
     refreshStepButtons();
     updateStatusLabel();
@@ -482,8 +971,10 @@ void SequencerPanel::onParamEdited (int lockableIndex, int value)
 
 void SequencerPanel::refreshParamControls()
 {
-    const bool baseMode = selectedStep < 0;
-    const bool editable = baseMode || editButton.getToggleState();
+    const bool pLockMode = editButton.getToggleState();
+    const bool synthStepMode = pLockMode && selectedStep >= 0;
+    const bool baseMode = ! synthStepMode;
+    const bool editable = true;
 
     for (size_t i = 0; i < lockRows.size(); ++i)
     {
@@ -498,7 +989,7 @@ void SequencerPanel::refreshParamControls()
         row.control->setValueFromSync (value);
         row.control->setEnabled (editable);
 
-        const bool locked = ! baseMode
+        const bool locked = synthStepMode
             && casioxw::findStepLock (sequence.steps[(size_t) selectedStep], lp.paramId, lp.instance) != nullptr;
 
         if (baseMode)
@@ -513,28 +1004,101 @@ void SequencerPanel::refreshParamControls()
 
 void SequencerPanel::refreshStepButtons()
 {
+    const bool pLockMode = editButton.getToggleState();
+
     for (int i = 0; i < 16; ++i)
     {
         const bool hasLocks = ! sequence.steps[(size_t) i].locks.empty();
+        const bool enabled = sequence.steps[(size_t) i].enabled;
         auto& btn = stepControls[(size_t) i]->select;
         btn.setButtonText (juce::String (i + 1) + (hasLocks ? " *" : ""));
-        btn.setColour (juce::TextButton::buttonColourId,
-                       i == selectedStep ? kSelectedColour
-                                         : (hasLocks ? kHasLocksColour : kIdleColour));
+
+        if (pLockMode)
+        {
+            btn.setColour (juce::TextButton::buttonColourId,
+                           i == selectedStep ? kSelectedColour
+                                             : (hasLocks ? kHasLocksColour
+                                                         : (enabled ? kActiveStepColour : kIdleColour)));
+        }
+        else
+        {
+            btn.setColour (juce::TextButton::buttonColourId,
+                           enabled ? kActiveStepColour : kIdleColour);
+        }
     }
     baseButton.setColour (juce::TextButton::buttonColourId,
                           selectedStep < 0 ? kSelectedColour : kIdleColour);
+
+    for (auto& rowPtr : drumTrackControls)
+    {
+        if (rowPtr == nullptr)
+            continue;
+
+        auto& row = *rowPtr;
+        const bool drumStepMode = pLockMode && row.selectedStep >= 0;
+        int velocity = row.baseVelocity;
+        bool locked = false;
+        if (drumStepMode)
+            if (const auto v = row.velocityLocks[(size_t) row.selectedStep])
+            {
+                velocity = *v;
+                locked = true;
+            }
+
+        row.velocity.setValue ((double) velocity, juce::dontSendNotification);
+        if (drumStepMode)
+            row.velocityMarker.setText (locked ? "LOCKED" : "(inherits base)", juce::dontSendNotification);
+        else
+            row.velocityMarker.setText ("base value", juce::dontSendNotification);
+        row.velocityMarker.setColour (juce::Label::textColourId, locked ? kSelectedColour : juce::Colours::grey);
+
+        for (int i = 0; i < 16; ++i)
+        {
+            const bool enabled = row.steps[(size_t) i].getToggleState();
+            const bool hasLock = row.velocityLocks[(size_t) i].has_value();
+            auto& btn = row.steps[(size_t) i];
+            btn.setButtonText (juce::String (i + 1) + (hasLock ? " *" : ""));
+
+            if (pLockMode)
+            {
+                btn.setColour (juce::TextButton::buttonColourId,
+                               i == row.selectedStep ? kSelectedColour
+                                                     : (hasLock ? kHasLocksColour
+                                                                : (enabled ? kActiveStepColour : kIdleColour)));
+            }
+            else
+            {
+                btn.setColour (juce::TextButton::buttonColourId,
+                               enabled ? kActiveStepColour : kIdleColour);
+            }
+        }
+    }
 }
 
 void SequencerPanel::updateStatusLabel()
 {
     juce::String text;
-    if (selectedStep < 0)
-        text = "Editing BASE sound - applies to every unlocked step";
-    else if (editButton.getToggleState())
-        text = "LOCKING step " + juce::String (selectedStep + 1) + " - move a knob to lock it here";
+    if (! editButton.getToggleState())
+        text = "Step Activate mode - click step buttons to toggle synth triggers on/off";
+    else if (selectedStep < 0)
+    {
+        bool hasDrumTarget = false;
+        for (size_t i = 0; i < drumTrackControls.size(); ++i)
+        {
+            const auto& row = drumTrackControls[i];
+            if (row != nullptr && row->selectedStep >= 0)
+            {
+                text = "P-Lock Edit mode - editing Drum " + juce::String ((int) i + 1)
+                     + " step " + juce::String (row->selectedStep + 1) + " velocity";
+                hasDrumTarget = true;
+                break;
+            }
+        }
+        if (! hasDrumTarget)
+            text = "Editing BASE sound - applies to every unlocked step";
+    }
     else
-        text = "Step " + juce::String (selectedStep + 1) + " locks (read-only) - enable Edit Locks to change";
+        text = "P-Lock Edit mode - editing step " + juce::String (selectedStep + 1) + " locks";
 
     statusLabel.setText (text, juce::dontSendNotification);
 }
@@ -561,6 +1125,7 @@ void SequencerPanel::play()
 
     playStopButton.setButtonText ("Stop");
     feedLookahead();                // prime the horizon before the first timer tick
+    updatePlayheadStep();
     startTimer (kSchedulerTickMs);
 }
 
@@ -585,6 +1150,7 @@ void SequencerPanel::stop()
     for (const auto& lp : sequence.lockable)
         sendParamNow (lp.paramId, lp.instance, lp.baseValue);
 
+    updatePlayheadStep();
     updateStatusLabel();
 }
 
@@ -601,37 +1167,41 @@ void SequencerPanel::feedLookahead()
         juce::MidiBuffer buffer;
         const double stepMs = casioxw::stepIntervalMs (sequence);
         const double drumGateMs = juce::jmax (1.0, stepMs * 0.5);
-        for (const auto& e : casioxw::scheduleStep (sequence, nextStepIndex, prevStepIndex, nextStepStartMs))
-        {
-            const int samplePos = (int) std::llround (e.timeMs);   // 1 sample == 1 ms (kScheduleSampleRate)
-            switch (e.type)
+        if (! muteSynthButton.getToggleState())
+            for (const auto& e : casioxw::scheduleStep (sequence, nextStepIndex, prevStepIndex, nextStepStartMs))
             {
-                case casioxw::ScheduledEvent::Type::noteOn:
-                    buffer.addEvent (juce::MidiMessage::noteOn (e.channel, e.note, (juce::uint8) e.velocity), samplePos);
-                    break;
-                case casioxw::ScheduledEvent::Type::noteOff:
-                    buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note), samplePos);
-                    break;
-                case casioxw::ScheduledEvent::Type::paramChange:
-                    for (const auto& m : paramMessages (e.paramId, e.instance, e.value, sequence.channel))
-                        buffer.addEvent (m, samplePos);
-                    break;
+                const int samplePos = (int) std::llround (e.timeMs);   // 1 sample == 1 ms (kScheduleSampleRate)
+                switch (e.type)
+                {
+                    case casioxw::ScheduledEvent::Type::noteOn:
+                        buffer.addEvent (juce::MidiMessage::noteOn (e.channel, e.note, (juce::uint8) e.velocity), samplePos);
+                        break;
+                    case casioxw::ScheduledEvent::Type::noteOff:
+                        buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note), samplePos);
+                        break;
+                    case casioxw::ScheduledEvent::Type::paramChange:
+                        for (const auto& m : paramMessages (e.paramId, e.instance, e.value, sequence.channel))
+                            buffer.addEvent (m, samplePos);
+                        break;
+                }
             }
-        }
 
         for (const auto& row : drumTrackControls)
         {
-            if (row == nullptr || ! row->steps[(size_t) nextStepIndex].getToggleState())
+            if (row == nullptr || row->mute.getToggleState() || ! row->steps[(size_t) nextStepIndex].getToggleState())
                 continue;
 
             const int note = juce::jlimit (0, 127, (int) row->note.getValue());
-            const int vel = juce::jlimit (1, 127, sequence.steps[(size_t) nextStepIndex].velocity);
+            int velocity = row->baseVelocity;
+            if (const auto locked = row->velocityLocks[(size_t) nextStepIndex])
+                velocity = *locked;
+            velocity = juce::jlimit (1, 127, velocity);
             const int channel = juce::jlimit (1, 16, row->channel.getSelectedId() > 0
                                                          ? row->channel.getSelectedId()
                                                          : sequence.channel);
             const int onPos = (int) std::llround (nextStepStartMs);
             const int offPos = (int) std::llround (nextStepStartMs + drumGateMs);
-            buffer.addEvent (juce::MidiMessage::noteOn (channel, note, (juce::uint8) vel), onPos);
+            buffer.addEvent (juce::MidiMessage::noteOn (channel, note, (juce::uint8) velocity), onPos);
             buffer.addEvent (juce::MidiMessage::noteOff (channel, note), offPos);
         }
 
@@ -647,12 +1217,36 @@ void SequencerPanel::feedLookahead()
 void SequencerPanel::timerCallback()
 {
     feedLookahead();
+    updatePlayheadStep();
+}
+
+void SequencerPanel::updatePlayheadStep()
+{
+    int nextPlayhead = -1;
+    if (playing)
+    {
+        const double stepMs = casioxw::stepIntervalMs (sequence);
+        if (stepMs > 0.0)
+        {
+            const double now = (double) juce::Time::getMillisecondCounter();
+            const double elapsed = now - transportStartMs;
+            if (elapsed >= 0.0)
+                nextPlayhead = (int) std::floor (elapsed / stepMs) % 16;
+        }
+    }
+
+    if (nextPlayhead == playheadStep)
+        return;
+
+    playheadStep = nextPlayhead;
+    repaint (playheadLaneBounds);
 }
 
 void SequencerPanel::resized()
 {
     auto bounds = getLocalBounds().reduced (8);
 
+    bounds.removeFromTop (6);
     auto transportRow = bounds.removeFromTop (28);
     playStopButton.setBounds (transportRow.removeFromLeft (80));
     transportRow.removeFromLeft (8);
@@ -668,81 +1262,143 @@ void SequencerPanel::resized()
     auto transportRow2 = bounds.removeFromTop (28);
     channelLabel.setBounds (transportRow2.removeFromLeft (90));
     channelSlider.setBounds (transportRow2.removeFromLeft (130));
-    transportRow2.removeFromLeft (16);
-    velocityLabel.setBounds (transportRow2.removeFromLeft (60));
-    velocitySlider.setBounds (transportRow2.removeFromLeft (130));
     transportRow2.removeFromLeft (24);
-    saveButton.setBounds (transportRow2.removeFromLeft (70));
+    saveButton.setBounds (transportRow2.removeFromLeft (80));
     transportRow2.removeFromLeft (8);
-    loadButton.setBounds (transportRow2.removeFromLeft (70));
-
-    bounds.removeFromTop (8);
-    auto modeRow = bounds.removeFromTop (28);
-    baseButton.setBounds (modeRow.removeFromLeft (70));
-    modeRow.removeFromLeft (8);
-    editButton.setBounds (modeRow.removeFromLeft (110));
-    modeRow.removeFromLeft (8);
-    clearLocksButton.setBounds (modeRow.removeFromLeft (140));
-    modeRow.removeFromLeft (24);
-    shiftLeftButton.setBounds (modeRow.removeFromLeft (70));
-    modeRow.removeFromLeft (8);
-    shiftRightButton.setBounds (modeRow.removeFromLeft (70));
+    loadButton.setBounds (transportRow2.removeFromLeft (80));
+    transportRow2.removeFromLeft (8);
+    sequenceDirButton.setBounds (transportRow2.removeFromLeft (84));
 
     bounds.removeFromTop (8);
     statusLabel.setBounds (bounds.removeFromTop (20));
 
     bounds.removeFromTop (6);
-    drumTracksLabel.setBounds (bounds.removeFromTop (20));
+    auto globalModeRow = bounds.removeFromTop (28);
+    editButton.setBounds (globalModeRow.removeFromLeft (110));
+    globalModeRow.removeFromLeft (8);
+    clearLocksButton.setBounds (globalModeRow.removeFromLeft (140));
+
+    const bool showDrumControls = drumControlsButton.getToggleState();
+    const bool showSynthControls = synthControlsButton.getToggleState();
+
+    bounds.removeFromTop (6);
+    auto drumHeader = bounds.removeFromTop (20);
+    drumTracksLabel.setBounds (drumHeader.removeFromLeft (kStepGridWidth));
+    drumHeader.removeFromLeft (8);
+    drumControlsButton.setBounds (drumHeader.removeFromLeft (22));
+    const int playheadTop = bounds.getY();
     for (const auto& row : drumTrackControls)
     {
         if (row == nullptr)
             continue;
         auto r = bounds.removeFromTop (kDrumTrackRowHeight);
-        auto controls = r.removeFromLeft (kDrumControlWidth);
-        row->trackLabel.setBounds (controls.removeFromLeft (70));
-        controls.removeFromLeft (6);
-        row->channel.setBounds (controls.removeFromLeft (kDrumChannelWidth));
-        controls.removeFromLeft (6);
-        row->note.setBounds (controls.removeFromLeft (kDrumControlWidth - 70 - 6 - kDrumChannelWidth - 6));
+        auto stepCells = r.removeFromLeft (kStepGridWidth);
+        if (showDrumControls)
+        {
+            r.removeFromLeft (8);
+            auto controls = r.removeFromLeft (kTrackControlWidth);
+            row->trackLabel.setBounds (controls.removeFromLeft (62));
+            controls.removeFromLeft (4);
+            row->mute.setBounds (controls.removeFromLeft (56));
+            controls.removeFromLeft (kDrumControlGap);
+            row->channel.setBounds (controls.removeFromLeft (kDrumChannelWidth));
+            controls.removeFromLeft (kDrumControlGap);
+            auto noteVel = controls;
+            row->note.setBounds (noteVel.removeFromTop (22));
+            noteVel.removeFromTop (4);
+            auto velRow = noteVel.removeFromTop (22);
+            row->velocityMarker.setBounds (velRow.removeFromRight (92));
+            row->velocity.setBounds (velRow);
+        }
+        else
+        {
+            row->trackLabel.setBounds (0, 0, 0, 0);
+            row->mute.setBounds (0, 0, 0, 0);
+            row->channel.setBounds (0, 0, 0, 0);
+            row->note.setBounds (0, 0, 0, 0);
+            row->velocity.setBounds (0, 0, 0, 0);
+            row->velocityMarker.setBounds (0, 0, 0, 0);
+        }
 
         for (auto& b : row->steps)
-            b.setBounds (r.removeFromLeft (kStepWidth).withTrimmedTop (4).withHeight (20).reduced (16, 0));
+        {
+            auto cell = stepCells.removeFromLeft (kStepWidth);
+            b.setBounds (cell.removeFromTop (20).reduced (3, 0));
+        }
 
-        bounds.removeFromTop (2);
-    }
-
-    bounds.removeFromTop (6);
-    bounds.removeFromTop (4);
-    for (auto& row : lockRows)
-    {
-        auto r = bounds.removeFromTop (28);
-        row->control->setBounds (r.removeFromLeft (kParamControlWidth));
-        r.removeFromLeft (10);
-        row->lockMarker.setBounds (r.removeFromLeft (150));
         bounds.removeFromTop (2);
     }
 
     bounds.removeFromTop (10);
     auto stepRow = bounds.removeFromTop (kStepColumnHeight);
+    const int playheadColumnsX = stepRow.getX();
+    const int playheadBottom = stepRow.getBottom();
 
-    // Left gutter: row labels aligned to the On / Pitch / Gate rows of every column.
+    auto stepCols = stepRow.removeFromLeft (kStepGridWidth);
+    stepRow.removeFromLeft (8);
+    auto rightPane = stepRow;
+
+    // Right pane labels aligned to the Pitch / Gate / Velocity rows of every column.
+    if (showSynthControls)
     {
-        auto gutter = stepRow.removeFromLeft (kLeftGutter);
-        gutter.removeFromLeft (2);
-        gutter.removeFromRight (4);
-        gutter.removeFromTop (20 + 2);                        // skip the select-button row
-        onRowLabel.setBounds (gutter.removeFromTop (20));
-        pitchRowLabel.setBounds (gutter.removeFromTop (kKnobCell));
-        gateRowLabel.setBounds (gutter.removeFromTop (kKnobCell));
+        auto labels = rightPane.removeFromLeft (kStepLabelWidth);
+        labels.removeFromTop (20 + 2);                        // skip the select-button row
+        pitchRowLabel.setBounds (labels.removeFromTop (kKnobCell));
+        gateRowLabel.setBounds (labels.removeFromTop (kKnobCell));
+        velocityRowLabel.setBounds (labels.removeFromTop (kKnobCell));
+
+        auto synthControls = rightPane;
+        auto modeRow1 = synthControls.removeFromTop (28);
+        synthControlsButton.setBounds (modeRow1.removeFromLeft (22));
+        modeRow1.removeFromLeft (6);
+        baseButton.setBounds (modeRow1.removeFromLeft (70));
+        modeRow1.removeFromLeft (8);
+        muteSynthButton.setBounds (modeRow1.removeFromLeft (100));
+
+        synthControls.removeFromTop (4);
+        auto modeRow2 = synthControls.removeFromTop (28);
+        shiftLeftButton.setBounds (modeRow2.removeFromLeft (70));
+        modeRow2.removeFromLeft (8);
+        shiftRightButton.setBounds (modeRow2.removeFromLeft (70));
+
+        synthControls.removeFromTop (6);
+        for (auto& row : lockRows)
+        {
+            auto r = synthControls.removeFromTop (28);
+            const int markerWidth = 140;
+            const int controlWidth = juce::jmax (180, r.getWidth() - 10 - markerWidth);
+            row->control->setBounds (r.removeFromLeft (controlWidth));
+            r.removeFromLeft (10);
+            row->lockMarker.setBounds (r.removeFromLeft (markerWidth));
+            synthControls.removeFromTop (2);
+        }
+    }
+    else
+    {
+        synthControlsButton.setBounds (rightPane.removeFromLeft (22));
+        baseButton.setBounds (0, 0, 0, 0);
+        muteSynthButton.setBounds (0, 0, 0, 0);
+        shiftLeftButton.setBounds (0, 0, 0, 0);
+        shiftRightButton.setBounds (0, 0, 0, 0);
+        for (auto& row : lockRows)
+        {
+            row->control->setBounds (0, 0, 0, 0);
+            row->lockMarker.setBounds (0, 0, 0, 0);
+        }
+        pitchRowLabel.setBounds (0, 0, 0, 0);
+        gateRowLabel.setBounds (0, 0, 0, 0);
+        velocityRowLabel.setBounds (0, 0, 0, 0);
     }
 
     for (int i = 0; i < 16; ++i)
     {
-        auto col = stepRow.removeFromLeft (kStepWidth).reduced (3);
+        auto col = stepCols.removeFromLeft (kStepWidth).reduced (3);
         stepControls[(size_t) i]->select.setBounds (col.removeFromTop (20));
         col.removeFromTop (2);
-        stepControls[(size_t) i]->enabled.setBounds (col.removeFromTop (20));
         stepControls[(size_t) i]->note.setBounds (col.removeFromTop (kKnobCell));   // bigger rotary knob
         stepControls[(size_t) i]->gate.setBounds (col.removeFromTop (kKnobCell));   // gate-length knob
+        stepControls[(size_t) i]->velocity.setBounds (col.removeFromTop (kKnobCell));
     }
+
+    playheadLaneBounds = { playheadColumnsX, playheadTop, kStepGridWidth, playheadBottom - playheadTop };
 }

@@ -75,3 +75,6 @@ __pycache__/
 # making this repo public -- see .wolf/cerebrum.md for the full rationale.
 reference/lua/
 PRD.md
+
+# Sequences I'm saving
+sequences/**

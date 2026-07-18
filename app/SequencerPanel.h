@@ -43,15 +43,23 @@ public:
     SequencerPanel (casioxw::SysExCodec& codec, casioxw::MidiIO& midiIO);
     ~SequencerPanel() override;
 
+    void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
+    enum class SaveKind
+    {
+        solo,
+        drums,
+        sequenceSet
+    };
+
     struct StepControl
     {
         juce::TextButton select;              // shows step number; click selects it
-        juce::ToggleButton enabled;
         juce::Slider note { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
         juce::Slider gate { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
+        juce::Slider velocity { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
     };
 
     struct LockRow
@@ -63,9 +71,15 @@ private:
     struct DrumTrackControl
     {
         juce::Label trackLabel;
+        juce::TextButton mute { "Mute" };
         juce::ComboBox channel;
         juce::Slider note { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+        juce::Slider velocity { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+        juce::Label velocityMarker;
         std::array<juce::TextButton, 16> steps;
+        int baseVelocity = 100;
+        std::array<std::optional<int>, 16> velocityLocks;
+        int selectedStep = -1; // per-track p-lock selection target, -1 means base
     };
 
     void timerCallback() override;
@@ -79,12 +93,25 @@ private:
     void updateStatusLabel();
     void randomizeSequence();                  // Randomize button -> casioxw::randomize + resync widgets
     void syncStepWidgetsFromSequence();        // push sequence's note/enable back into the step widgets
-    void syncTransportWidgetsFromSequence();   // push channel/tempo/rate/velocity back into their widgets
+    void syncTransportWidgetsFromSequence();   // push channel/tempo/rate back into their widgets
     void saveSequenceToFile();
     void loadSequenceFromFile();
-    void applyLoadedText (const juce::String& text, const juce::String& name);  // parse + adopt + resync
+    void saveByKind (SaveKind kind);
+    juce::String serializeDrumsToJson() const;
+    juce::String serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile) const;
+    bool applySoloSequenceText (const juce::String& text);
+    bool applyDrumSequenceText (const juce::String& text);
+    bool applyLoadedText (const juce::String& text, const juce::File& sourceFile);  // parse + adopt + resync
+    void chooseSequenceDirectory();
+    juce::File settingsFilePath() const;
+    void loadSequenceSettings();
+    void saveSequenceSettings() const;
+    bool hasAnyDrumStepSelected() const;
+    void clearDrumSelections();
+    void updateClearLocksEnabled();
 
     void feedLookahead();   // scheduler tick: fill the look-ahead horizon with timestamped events
+    void updatePlayheadStep(); // shared step-column playhead for synth + drum lanes
 
     // The p-lock transport seam. Builds the MIDI message(s) for one parameter change: NRPN where
     // mapped (to cut traffic on the live transport path), with SysEx fallback through the proven
@@ -106,29 +133,31 @@ private:
     juce::TextButton randomizeButton { "Randomize" };
     juce::TextButton saveButton { "Save" };
     juce::TextButton loadButton { "Load" };
+    juce::TextButton sequenceDirButton { "Seq Dir" };
     std::unique_ptr<juce::FileChooser> fileChooser;   // kept alive across the async dialog
     juce::Slider tempoSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Slider channelSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
-    juce::Slider velocitySlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::ComboBox rateCombo;
     juce::Label tempoLabel { {}, "Tempo (BPM)" };
     juce::Label channelLabel { {}, "MIDI Channel" };
-    juce::Label velocityLabel { {}, "Velocity" };
     juce::Label rateLabel { {}, "Rate" };
 
     juce::Random rng;   // seeded from time; drives the Randomize button
 
     juce::TextButton baseButton { "Base" };
-    juce::ToggleButton editButton { "Edit Locks" };
+    juce::TextButton editButton { "P-Lock Edit" };
+    juce::TextButton muteSynthButton { "Mute Synth" };
     juce::TextButton clearLocksButton { "Clear Step Locks" };
     juce::TextButton shiftLeftButton  { "Shift <" };
     juce::TextButton shiftRightButton { "Shift >" };
+    juce::TextButton drumControlsButton;
+    juce::TextButton synthControlsButton;
     juce::Label statusLabel;
     juce::Label drumTracksLabel { {}, "Drum Tracks (16-step on/off lanes)" };
 
-    juce::Label onRowLabel    { {}, "On" };    // left-gutter row labels for the step grid
     juce::Label pitchRowLabel { {}, "Pitch" };
     juce::Label gateRowLabel  { {}, "Gate" };
+    juce::Label velocityRowLabel { {}, "Velocity" };
 
     // Look-ahead transport state (message thread only — the feeder timer runs there, so no locking
     // against `sequence` is needed; precise dispatch happens on JUCE's output thread instead).
@@ -143,6 +172,9 @@ private:
 
     bool playing = false;
     int selectedStep = -1;                     // -1 == Base
+    int playheadStep = -1;                     // -1 == hidden (stopped / before first step)
+    juce::Rectangle<int> playheadLaneBounds;   // shared aligned step columns (drums + synth row)
+    juce::File sequenceDefaultDirectory;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SequencerPanel)
 };
