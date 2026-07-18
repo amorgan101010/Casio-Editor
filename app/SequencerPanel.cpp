@@ -4,6 +4,7 @@
 #include "casioxw/NoteNames.h"
 #include "casioxw/Scheduler.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace
@@ -23,6 +24,7 @@ namespace
     constexpr int kLaneLabelWidth = 64;                   // shared label gutter: drum names + Pitch/Gate/Vel
     constexpr int kCardWidth = 470;                       // right-side control cards (drum / synth)
     constexpr int kDrumTrackRowHeight = 52;
+    constexpr int kPcmTrackRowHeight = 52;                // same shape as a drum row: label/mute/channel + 16 steps
     constexpr int kDrumKeyHeight = 34;                    // drum trig keys, tall enough to read as keys
     constexpr int kSelectKeyHeight = 24;                  // synth select/trig row
     constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
@@ -36,6 +38,13 @@ namespace
     // StepKeyButton::paintButton; these two remain for the Base button + lock markers.
     const juce::Colour kSelectedColour = EditorColours::selected;
     const juce::Colour kIdleColour     = EditorColours::idleStep;
+
+    // Sentinel lockableIndex values for the PCM step editor's raw (non-ParamInfo) cells --
+    // negative, so they can never collide with a real index into sequence.lockable (always >= 0).
+    // onParamEdited() branches on these instead of indexing sequence.lockable.
+    constexpr int kPcmNoteCell = -1;
+    constexpr int kPcmGateCell = -2;
+    constexpr int kPcmVelCell  = -3;
 
     // The p-lockable parameter set, organised into ParamPageDisplay pages (Digitakt-style: one
     // page of 8 cells on screen at a time). Base defaults are musical/neutral — the sequencer
@@ -94,6 +103,22 @@ namespace
         { "Drum 3", 10, 42 },
         { "Drum 4", 11, 46 },
         { "Drum 5", 12, 49 },
+    };
+
+    struct PcmTrackDef
+    {
+        const char* label;
+        int defaultChannel;
+    };
+
+    // The Step Sequencer's remaining note parts (XWP1_1B_EN.pdf p.E-49): Drum 1-5 are parts 8-12
+    // above; Bass/Solo 1/Solo 2/Chords are parts 13-16, mixer channels 13ch-16ch 1:1. Any of these
+    // can hold a PCM Melody tone (or any other tone type) in a configured Performance.
+    constexpr PcmTrackDef kPcmTracks[] = {
+        { "Bass",   13 },
+        { "Solo 1", 14 },
+        { "Solo 2", 15 },
+        { "Chords", 16 },
     };
 
     struct NrpnAddress
@@ -422,6 +447,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         addAndMakeVisible (button);
     };
     initArrowToggle (drumControlsButton, "Toggle drum controls");
+    initArrowToggle (pcmControlsButton, "Toggle PCM track controls");
     initArrowToggle (synthControlsButton, "Toggle synth controls");
 
     // ---- transport -------------------------------------------------------------------------
@@ -523,7 +549,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     addAndMakeVisible (statusLabel);
 
     // ---- drum-track controls (5 lanes, each with channel + note + 16 step on/off + velocity) ---
-    for (auto* l : { &drumTracksLabel, &synthLabel })
+    for (auto* l : { &drumTracksLabel, &pcmTracksLabel, &synthLabel })
     {
         l->setColour (juce::Label::textColourId, EditorColours::textHeader);
         l->setJustificationType (juce::Justification::centredLeft);
@@ -615,48 +641,91 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         drumTrackControls[i] = std::move (row);
     }
 
-    // ---- the pageable p-lock parameter display (the "screen") ------------------------------
-    const auto& model = codec.model();
-    paramDisplay = std::make_unique<ParamPageDisplay> (model);
+    // ---- PCM-track controls (4 melodic lanes: Bass/Solo 1/Solo 2/Chords, XWP1_1B_EN.pdf p.E-49).
+    // Each is its own lane (label/mute/channel/16 step keys), not a shared column with the Solo
+    // Synth. In P-LOCK mode, selecting a step swaps the screen to a NOTE/GATE/VEL editor for it
+    // (refreshParamDisplayPages()); in STEP mode, clicking a step just toggles it on/off.
+    for (size_t i = 0; i < std::size (kPcmTracks); ++i)
     {
-        std::vector<ParamPageDisplay::Page> pages;
-        for (const auto* name : kLockPageNames)
-            pages.push_back ({ name, {} });
+        const auto& def = kPcmTracks[i];
+        auto row = std::make_unique<PcmTrackControl>();
+        auto* rowPtr = row.get();
 
-        for (size_t i = 0; i < sequence.lockable.size(); ++i)
+        for (auto& step : row->track.steps)
+            step.velocity = 100;
+        row->track.channel = def.defaultChannel;
+
+        row->trackLabel.setText (def.label, juce::dontSendNotification);
+        row->trackLabel.setJustificationType (juce::Justification::centredLeft);
+        row->trackLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
+        row->trackLabel.setFont (EditorFonts::header (11.0f));
+        addAndMakeVisible (row->trackLabel);
+
+        row->mute.setClickingTogglesState (true);
+        addAndMakeVisible (row->mute);
+
+        for (int ch = 1; ch <= 16; ++ch)
+            row->channel.addItem (juce::String (ch), ch);
+        row->channel.setSelectedId (def.defaultChannel, juce::dontSendNotification);
+        row->channel.onChange = [rowPtr]
         {
-            const auto& l = kLockables[i];
-            const auto* info = model.find (l.paramId);
-            jassert (info != nullptr);   // kLockables ids must exist in xwp1.json
-            if (info == nullptr)
-                continue;
+            rowPtr->track.channel = juce::jlimit (1, 16, rowPtr->channel.getSelectedId());
+        };
+        addAndMakeVisible (row->channel);
 
-            // Bound randomized locks by the parameter's real range (read from metadata so a
-            // differently-ranged lockable randomizes correctly).
-            sequence.lockable[i].minValue = info->range.min;
-            sequence.lockable[i].maxValue = info->range.max;
-
-            // Continuous params only for Rnd by default — a per-step random filter TYPE or LFO
-            // wave is the chaos the owner vetoed; combo/toggle params opt in via the call-out.
-            if (casioxw::decideControlKind (*info, l.instance) == casioxw::ControlKind::Slider)
-                continuousLockables.push_back ((int) i);
-
-            pages[(size_t) l.page].cells.push_back ({ info, l.instance, l.shortName, (int) i });
+        for (size_t step = 0; step < row->steps.size(); ++step)
+        {
+            auto& b = row->steps[step];
+            b.setStepIndex ((int) step);
+            b.setClickingTogglesState (false);
+            b.setToggleState (false, juce::dontSendNotification);
+            b.onClick = [this, rowPtr, step]
+            {
+                if (editButton.getToggleState())
+                {
+                    const int newSelected = (rowPtr->selectedStep == (int) step ? -1 : (int) step);
+                    clearPcmSelections();   // mutual exclusion across all 4 PCM lanes
+                    rowPtr->selectedStep = newSelected;
+                    if (newSelected >= 0)
+                    {
+                        selectedStep = -1;
+                        clearDrumSelections();
+                    }
+                    refreshStepButtons();   // also swaps the screen via refreshParamDisplayPages()
+                    updateStatusLabel();
+                    updateClearLocksEnabled();
+                }
+                else
+                {
+                    auto& s = rowPtr->track.steps[step];
+                    s.enabled = ! s.enabled;
+                    refreshStepButtons();
+                    updateStatusLabel();
+                }
+            };
+            addAndMakeVisible (b);
         }
 
-        paramDisplay->setPages (std::move (pages));
-        paramDisplay->onValueEdited = [this] (int index, int value) { onParamEdited (index, value); };
+        pcmTrackControls[i] = std::move (row);
     }
+
+    // ---- the pageable p-lock parameter display (the "screen") ------------------------------
+    paramDisplay = std::make_unique<ParamPageDisplay> (codec.model());
+    rebuildSynthParamPages();
+    paramDisplay->onValueEdited = [this] (int index, int value) { onParamEdited (index, value); };
     addAndMakeVisible (*paramDisplay);
 
     setSize (8 + kStepGridWidth + kSectionGap + kLaneLabelWidth + kSectionGap + kCardWidth + 8,
              8 + kToolbarRowHeight + 8 + 20 + 4
                  + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
+                 + 10 + 20 + 4
+                 + (int) std::size (kPcmTracks) * (kPcmTrackRowHeight + 2)
                  + 10 + juce::jmax (kStepColumnHeight, kSynthSectionHeight)
                  + 6 + kFooterHeight + 8);
 
     selectStep (-1);   // start in Base mode
     clearDrumSelections();
+    clearPcmSelections();
     resized();
 }
 
@@ -698,6 +767,71 @@ void SequencerPanel::applyPreviewDemoState()
     updateClearLocksEnabled();
 }
 
+void SequencerPanel::applyPcmStepEditPreviewState()
+{
+    editButton.setToggleState (true, juce::dontSendNotification);
+    stepModeButton.setToggleState (false, juce::dontSendNotification);
+
+    if (auto& row = pcmTrackControls[0])   // Bass
+    {
+        for (int i : { 0, 3, 6, 10 })
+            row->track.steps[(size_t) i].enabled = true;
+        row->track.steps[3] = { 43, 110, true, 70, {} };   // note/velocity/enabled/gatePercent/locks
+        row->selectedStep = 3;                             // select it for editing
+        row->mute.setToggleState (false, juce::dontSendNotification);
+    }
+    if (auto& row = pcmTrackControls[2])   // Solo 2 -- muted, to check the mute button renders distinctly
+        row->mute.setToggleState (true, juce::dontSendNotification);
+
+    refreshStepButtons();   // also swaps the screen to Bass step 4's NOTE/GATE/VEL editor
+    updateStatusLabel();
+}
+
+bool SequencerPanel::verifyPcmRoundTripForPreview()
+{
+    if (pcmTrackControls[0] == nullptr || pcmTrackControls[1] == nullptr)
+        return false;
+
+    auto& bass = pcmTrackControls[0]->track;
+    auto& solo1 = pcmTrackControls[1]->track;
+
+    bass.channel = 13;
+    for (int i = 0; i < 16; ++i)
+    {
+        bass.steps[(size_t) i] = { 30 + i, 90 + i, i % 3 == 0, 40 + i, {} };
+        solo1.steps[(size_t) i] = { 60 - i, 20 + i, i % 2 == 0, 10 + i, {} };
+    }
+    solo1.channel = 14;
+
+    const auto expectedBass  = bass;
+    const auto expectedSolo1 = solo1;
+
+    const auto json = serializePcmTracksToJson();
+
+    // Clobber the live tracks so a false pass (comparing against unchanged data) is impossible.
+    bass  = casioxw::Sequence {};
+    solo1 = casioxw::Sequence {};
+
+    if (! applyPcmTracksText (json))
+        return false;
+
+    auto stepsMatch = [] (const casioxw::Step& a, const casioxw::Step& b)
+    {
+        return a.note == b.note && a.velocity == b.velocity
+            && a.enabled == b.enabled && a.gatePercent == b.gatePercent;
+    };
+
+    if (bass.channel != expectedBass.channel || solo1.channel != expectedSolo1.channel)
+        return false;
+
+    for (int i = 0; i < 16; ++i)
+        if (! stepsMatch (bass.steps[(size_t) i], expectedBass.steps[(size_t) i])
+            || ! stepsMatch (solo1.steps[(size_t) i], expectedSolo1.steps[(size_t) i]))
+            return false;
+
+    return true;
+}
+
 void SequencerPanel::paint (juce::Graphics& g)
 {
     g.fillAll (EditorColours::chassisBg);
@@ -706,7 +840,7 @@ void SequencerPanel::paint (juce::Graphics& g)
     // buttons/combos still read against them. (Quarter-step cues live on the trig keys
     // themselves now — StepKeyButton paints those outlines.)
     const auto cardColour = EditorColours::chassisBg.interpolatedWith (EditorColours::panelBg, 0.55f);
-    for (const auto& card : { drumCardBounds, synthCardBounds })
+    for (const auto& card : { drumCardBounds, pcmCardBounds, synthCardBounds })
     {
         if (card.isEmpty())
             continue;
@@ -776,13 +910,14 @@ void SequencerPanel::syncStepWidgetsFromSequence()
     for (int i = 0; i < 16; ++i)
     {
         auto& sc = *stepControls[(size_t) i];
+        const auto& step = sequence.steps[(size_t) i];
         // dontSendNotification: these are display updates, not user edits — don't fire the
         // onClick/onValueChange handlers that would write straight back into `sequence`.
-        sc.note.setValue ((double) sequence.steps[(size_t) i].note, juce::dontSendNotification);
+        sc.note.setValue ((double) step.note, juce::dontSendNotification);
         sc.note.updateText();
-        sc.gate.setValue ((double) sequence.steps[(size_t) i].gatePercent, juce::dontSendNotification);
+        sc.gate.setValue ((double) step.gatePercent, juce::dontSendNotification);
         sc.gate.updateText();
-        sc.velocity.setValue ((double) sequence.steps[(size_t) i].velocity, juce::dontSendNotification);
+        sc.velocity.setValue ((double) step.velocity, juce::dontSendNotification);
         sc.velocity.updateText();
     }
 }
@@ -799,13 +934,15 @@ void SequencerPanel::saveSequenceToFile()
     juce::PopupMenu menu;
     menu.addItem (1, "Save Solo Sequence (.xwseq)");
     menu.addItem (2, "Save Drum Sequence (.xwdrm)");
-    menu.addItem (3, "Save Sequence Set (.xwset)");
+    menu.addItem (3, "Save PCM Tracks (.xwpcm)");
+    menu.addItem (4, "Save Sequence Set (.xwset)");
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this] (int result)
                         {
                             if (result == 1) saveByKind (SaveKind::solo);
                             if (result == 2) saveByKind (SaveKind::drums);
-                            if (result == 3) saveByKind (SaveKind::sequenceSet);
+                            if (result == 3) saveByKind (SaveKind::pcm);
+                            if (result == 4) saveByKind (SaveKind::sequenceSet);
                         });
 }
 
@@ -859,6 +996,12 @@ void SequencerPanel::saveByKind (SaveKind kind)
         wildcard = "*.xwdrm";
         payload = serializeDrumsToJson();
     }
+    else if (kind == SaveKind::pcm)
+    {
+        fileName = "pcm-tracks.xwpcm";
+        wildcard = "*.xwpcm";
+        payload = serializePcmTracksToJson();
+    }
     else
     {
         fileName = "sequence-set.xwset";
@@ -880,7 +1023,10 @@ void SequencerPanel::saveByKind (SaveKind kind)
             if (file == juce::File())
                 return; // cancelled
 
-            const juce::String ext = kind == SaveKind::solo ? ".xwseq" : (kind == SaveKind::drums ? ".xwdrm" : ".xwset");
+            const juce::String ext = kind == SaveKind::solo ? ".xwseq"
+                                     : kind == SaveKind::drums ? ".xwdrm"
+                                     : kind == SaveKind::pcm ? ".xwpcm"
+                                                              : ".xwset";
             if (! file.hasFileExtension (ext.substring (1)))
                 file = file.withFileExtension (ext.substring (1));
 
@@ -889,15 +1035,18 @@ void SequencerPanel::saveByKind (SaveKind kind)
                 const auto baseName = file.getFileNameWithoutExtension();
                 const auto soloName = baseName + ".solo.xwseq";
                 const auto drumName = baseName + ".drums.xwdrm";
+                const auto pcmName = baseName + ".pcm.xwpcm";
                 const auto soloFile = file.getSiblingFile (soloName);
                 const auto drumFile = file.getSiblingFile (drumName);
-                const auto setPayload = serializeSequenceSetToJson (soloName, drumName);
+                const auto pcmFile = file.getSiblingFile (pcmName);
+                const auto setPayload = serializeSequenceSetToJson (soloName, drumName, pcmName);
 
                 const bool okSolo = soloFile.replaceWithText (casioxw::sequenceToJson (sequence));
                 const bool okDrums = drumFile.replaceWithText (serializeDrumsToJson());
+                const bool okPcm = pcmFile.replaceWithText (serializePcmTracksToJson());
                 const bool okSet = file.replaceWithText (setPayload);
 
-                if (okSolo && okDrums && okSet)
+                if (okSolo && okDrums && okPcm && okSet)
                     statusLabel.setText ("Saved set + refs: " + file.getFileName(), juce::dontSendNotification);
                 else
                     statusLabel.setText ("Save failed: " + file.getFullPathName(), juce::dontSendNotification);
@@ -949,16 +1098,35 @@ juce::String SequencerPanel::serializeDrumsToJson() const
     return juce::JSON::toString (juce::var (root.get()));
 }
 
-juce::String SequencerPanel::serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile) const
+juce::String SequencerPanel::serializePcmTracksToJson() const
+{
+    // Each PCM track IS a casioxw::Sequence, so reuse sequenceToJson() per track instead of
+    // hand-rolling per-field JSON (same round-trip guarantees as the Solo Synth save).
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty ("format", "casioxw-pcm-tracks");
+    root->setProperty ("version", 1);
+
+    juce::Array<juce::var> tracks;
+    for (const auto& row : pcmTrackControls)
+        tracks.add (row == nullptr ? juce::var()
+                                    : juce::JSON::parse (casioxw::sequenceToJson (row->track)));
+    root->setProperty ("tracks", tracks);
+    return juce::JSON::toString (juce::var (root.get()));
+}
+
+juce::String SequencerPanel::serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile,
+                                                         const juce::String& pcmFile) const
 {
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
     root->setProperty ("format", "casioxw-sequence-set-ref");
     root->setProperty ("version", 1);
     root->setProperty ("soloFile", soloFile);
     root->setProperty ("drumsFile", drumsFile);
+    root->setProperty ("pcmFile", pcmFile);
     // Keep inline copies too so old/new loaders can still recover even if sidecars are moved.
     root->setProperty ("solo", juce::JSON::parse (casioxw::sequenceToJson (sequence)));
     root->setProperty ("drums", juce::JSON::parse (serializeDrumsToJson()));
+    root->setProperty ("pcm", juce::JSON::parse (serializePcmTracksToJson()));
     return juce::JSON::toString (juce::var (root.get()));
 }
 
@@ -1040,6 +1208,41 @@ bool SequencerPanel::applyDrumSequenceText (const juce::String& text)
     return true;
 }
 
+bool SequencerPanel::applyPcmTracksText (const juce::String& text)
+{
+    const auto parsed = juce::JSON::parse (text);
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr || obj->getProperty ("format").toString() != "casioxw-pcm-tracks")
+        return false;
+
+    const auto* tracks = obj->getProperty ("tracks").getArray();
+    if (tracks == nullptr)
+        return false;
+
+    const int n = juce::jmin ((int) pcmTrackControls.size(), tracks->size());
+    for (int i = 0; i < n; ++i)
+    {
+        if (pcmTrackControls[(size_t) i] == nullptr)
+            continue;
+        auto& row = *pcmTrackControls[(size_t) i];
+
+        const auto& trackVar = (*tracks)[i];
+        if (trackVar.getDynamicObject() == nullptr)
+            continue;   // this track slot wasn't saved (older/shorter file) -- leave it as-is
+
+        const auto loaded = casioxw::sequenceFromJson (juce::JSON::toString (trackVar));
+        if (! loaded.has_value())
+            continue;
+
+        row.track.steps        = loaded->steps;
+        row.track.channel      = loaded->channel;
+        row.track.tempoBpm     = loaded->tempoBpm;
+        row.track.stepsPerBeat = loaded->stepsPerBeat;
+        row.channel.setSelectedId (juce::jlimit (1, 16, row.track.channel), juce::dontSendNotification);
+    }
+    return true;
+}
+
 bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File& sourceFile)
 {
     const auto parsed = juce::JSON::parse (text);
@@ -1062,12 +1265,17 @@ bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File
     {
         ok = applyDrumSequenceText (text);
     }
+    else if (format == "casioxw-pcm-tracks")
+    {
+        ok = applyPcmTracksText (text);
+    }
     else if (format == "casioxw-sequence-set-ref" || format == "casioxw-sequence-set")
     {
         ok = true;
 
         const auto soloRef = obj->getProperty ("soloFile").toString();
         const auto drumsRef = obj->getProperty ("drumsFile").toString();
+        const auto pcmRef = obj->getProperty ("pcmFile").toString();   // absent in older set files
         if (soloRef.isNotEmpty() && drumsRef.isNotEmpty())
         {
             const auto dir = sourceFile.getParentDirectory();
@@ -1077,6 +1285,12 @@ bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File
             {
                 ok = applySoloSequenceText (soloFile.loadFileAsString()) && ok;
                 ok = applyDrumSequenceText (drumsFile.loadFileAsString()) && ok;
+                if (pcmRef.isNotEmpty())
+                {
+                    const auto pcmFile = dir.getChildFile (pcmRef);
+                    if (pcmFile.existsAsFile())
+                        applyPcmTracksText (pcmFile.loadFileAsString());   // optional -- absent doesn't fail the set
+                }
             }
             else
             {
@@ -1102,6 +1316,9 @@ bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File
                 ok = applyDrumSequenceText (juce::JSON::toString (drums)) && ok;
             else
                 ok = false;
+            const auto pcm = obj->getProperty ("pcm");   // optional -- absent in older set files
+            if (pcm.getDynamicObject() != nullptr)
+                applyPcmTracksText (juce::JSON::toString (pcm));
         }
     }
     else
@@ -1121,6 +1338,7 @@ bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File
     syncTransportWidgetsFromSequence();
     selectStep (-1);   // back to Base; also refreshes param controls, step markers, status
     clearDrumSelections();
+    clearPcmSelections();
     statusLabel.setText ("Loaded " + sourceFile.getFileName(), juce::dontSendNotification);
     return true;
 }
@@ -1205,9 +1423,24 @@ bool SequencerPanel::hasAnyDrumStepSelected() const
     return false;
 }
 
+bool SequencerPanel::hasAnyPcmStepSelected() const
+{
+    for (const auto& row : pcmTrackControls)
+        if (row != nullptr && row->selectedStep >= 0)
+            return true;
+    return false;
+}
+
 void SequencerPanel::clearDrumSelections()
 {
     for (auto& row : drumTrackControls)
+        if (row != nullptr)
+            row->selectedStep = -1;
+}
+
+void SequencerPanel::clearPcmSelections()
+{
+    for (auto& row : pcmTrackControls)
         if (row != nullptr)
             row->selectedStep = -1;
 }
@@ -1221,7 +1454,10 @@ void SequencerPanel::selectStep (int step)
 {
     selectedStep = step;
     if (step >= 0)
+    {
         clearDrumSelections();
+        clearPcmSelections();
+    }
     updateClearLocksEnabled();
     refreshParamControls();
     refreshStepButtons();
@@ -1234,6 +1470,7 @@ void SequencerPanel::setPLockMode (bool pLockMode)
     {
         selectStep (-1);       // also refreshes controls/steps/status
         clearDrumSelections();
+        clearPcmSelections();
     }
     refreshParamControls();
     refreshStepButtons();
@@ -1243,6 +1480,27 @@ void SequencerPanel::setPLockMode (bool pLockMode)
 
 void SequencerPanel::onParamEdited (int lockableIndex, int value)
 {
+    if (lockableIndex < 0)   // a PCM track's step NOTE/GATE/VEL cell, not a real synth param
+    {
+        int pcmRow = -1;
+        for (size_t i = 0; i < pcmTrackControls.size(); ++i)
+            if (pcmTrackControls[i] != nullptr && pcmTrackControls[i]->selectedStep >= 0)
+            {
+                pcmRow = (int) i;
+                break;
+            }
+        if (pcmRow < 0)
+            return;   // shouldn't happen (the page wouldn't be showing), but guard anyway
+
+        auto& row = *pcmTrackControls[(size_t) pcmRow];
+        auto& step = row.track.steps[(size_t) row.selectedStep];
+        if (lockableIndex == kPcmNoteCell)      step.note        = juce::jlimit (0, 127, value);
+        else if (lockableIndex == kPcmGateCell) step.gatePercent = juce::jlimit (1, 100, value);
+        else if (lockableIndex == kPcmVelCell)  step.velocity    = juce::jlimit (1, 127, value);
+        refreshPcmStepCellValues (pcmRow);
+        return;
+    }
+
     const auto& lp = sequence.lockable[(size_t) lockableIndex];
 
     if (selectedStep < 0)
@@ -1285,6 +1543,98 @@ void SequencerPanel::refreshParamControls()
     }
 }
 
+void SequencerPanel::rebuildSynthParamPages()
+{
+    std::vector<ParamPageDisplay::Page> pages;
+    for (const auto* name : kLockPageNames)
+        pages.push_back ({ name, {} });
+
+    const auto& model = codec.model();
+    for (size_t i = 0; i < sequence.lockable.size(); ++i)
+    {
+        const auto& l = kLockables[i];
+        const auto* info = model.find (l.paramId);
+        jassert (info != nullptr);   // kLockables ids must exist in xwp1.json
+        if (info == nullptr)
+            continue;
+
+        // Bound randomized locks by the parameter's real range (read from metadata so a
+        // differently-ranged lockable randomizes correctly).
+        sequence.lockable[i].minValue = info->range.min;
+        sequence.lockable[i].maxValue = info->range.max;
+
+        // Continuous params only for Rnd by default — a per-step random filter TYPE or LFO
+        // wave is the chaos the owner vetoed; combo/toggle params opt in via the call-out.
+        if (casioxw::decideControlKind (*info, l.instance) == casioxw::ControlKind::Slider)
+            if (std::find (continuousLockables.begin(), continuousLockables.end(), (int) i) == continuousLockables.end())
+                continuousLockables.push_back ((int) i);
+
+        ParamPageDisplay::CellSpec spec;
+        spec.info = info;
+        spec.instance = l.instance;
+        spec.shortName = l.shortName;
+        spec.lockableIndex = (int) i;
+        pages[(size_t) l.page].cells.push_back (spec);
+    }
+
+    paramDisplay->setPages (std::move (pages));
+    displayedPcmRow = -1;
+}
+
+void SequencerPanel::refreshPcmStepCellValues (int pcmRow)
+{
+    if (pcmRow < 0 || pcmTrackControls[(size_t) pcmRow] == nullptr)
+        return;
+    const auto& row = *pcmTrackControls[(size_t) pcmRow];
+    if (row.selectedStep < 0)
+        return;
+    const auto& step = row.track.steps[(size_t) row.selectedStep];
+    paramDisplay->setCellState (kPcmNoteCell, step.note, false);
+    paramDisplay->setCellState (kPcmGateCell, step.gatePercent, false);
+    paramDisplay->setCellState (kPcmVelCell,  step.velocity, false);
+}
+
+void SequencerPanel::refreshParamDisplayPages()
+{
+    int pcmRow = -1;
+    for (size_t i = 0; i < pcmTrackControls.size(); ++i)
+        if (pcmTrackControls[i] != nullptr && pcmTrackControls[i]->selectedStep >= 0)
+        {
+            pcmRow = (int) i;
+            break;
+        }
+
+    if (pcmRow == displayedPcmRow)
+    {
+        refreshPcmStepCellValues (pcmRow);   // same lane -- but the selected step within it may differ
+        return;
+    }
+
+    displayedPcmRow = pcmRow;
+    if (pcmRow < 0)
+    {
+        rebuildSynthParamPages();   // rebuildSynthParamPages() also resets displayedPcmRow to -1
+        refreshParamControls();     // freshly-built cells default to range min -- populate real values
+        return;
+    }
+
+    static const char* const kPcmTrackNames[] = { "BASS", "SOLO 1", "SOLO 2", "CHORDS" };
+    std::vector<ParamPageDisplay::Page> pages;
+    ParamPageDisplay::Page page { kPcmTrackNames[(size_t) pcmRow], {} };
+    ParamPageDisplay::CellSpec note, gate, vel;
+    note.rawMin = 0;   note.rawMax = 127; note.rawFormat = ParamPageDisplay::ValueFormat::Note;
+    note.shortName = "NOTE"; note.lockableIndex = kPcmNoteCell;
+    gate.rawMin = 1;   gate.rawMax = 100; gate.rawFormat = ParamPageDisplay::ValueFormat::Percent;
+    gate.shortName = "GATE"; gate.lockableIndex = kPcmGateCell;
+    vel.rawMin  = 1;   vel.rawMax  = 127; vel.rawFormat  = ParamPageDisplay::ValueFormat::Plain;
+    vel.shortName  = "VEL";  vel.lockableIndex  = kPcmVelCell;
+    page.cells = { note, gate, vel };
+    pages.push_back (std::move (page));
+
+    paramDisplay->setPages (std::move (pages));
+    refreshPcmStepCellValues (pcmRow);
+}
+
 void SequencerPanel::refreshStepButtons()
 {
     const bool pLockMode = editButton.getToggleState();
@@ -1292,9 +1642,9 @@ void SequencerPanel::refreshStepButtons()
     for (int i = 0; i < 16; ++i)
     {
         auto& btn = stepControls[(size_t) i]->select;
-        btn.setToggleState (sequence.steps[(size_t) i].enabled, juce::dontSendNotification);
-        btn.setLockState (! sequence.steps[(size_t) i].locks.empty(),
-                          pLockMode && i == selectedStep);
+        const auto& step = sequence.steps[(size_t) i];
+        btn.setToggleState (step.enabled, juce::dontSendNotification);
+        btn.setLockState (! step.locks.empty(), pLockMode && i == selectedStep);
     }
     baseButton.setColour (juce::TextButton::buttonColourId,
                           selectedStep < 0 ? kSelectedColour : kIdleColour);
@@ -1329,6 +1679,24 @@ void SequencerPanel::refreshStepButtons()
                               pLockMode && i == row.selectedStep);
         }
     }
+
+    for (auto& rowPtr : pcmTrackControls)
+    {
+        if (rowPtr == nullptr)
+            continue;
+
+        auto& row = *rowPtr;
+        for (int i = 0; i < 16; ++i)
+        {
+            auto& btn = row.steps[(size_t) i];
+            btn.setToggleState (row.track.steps[(size_t) i].enabled, juce::dontSendNotification);
+            // No lock LED here -- a PCM step's note/gate/vel are always-defined, never "unlocked";
+            // `selected` is the only state worth showing (which step the screen is editing).
+            btn.setLockState (false, pLockMode && i == row.selectedStep);
+        }
+    }
+
+    refreshParamDisplayPages();   // keep the screen in sync with whichever lane owns the selection
 }
 
 void SequencerPanel::updateStatusLabel()
@@ -1340,19 +1708,30 @@ void SequencerPanel::updateStatusLabel()
         text = "GRID  BASE SOUND";
     else if (selectedStep < 0)
     {
-        bool hasDrumTarget = false;
-        for (size_t i = 0; i < drumTrackControls.size(); ++i)
+        static const char* const kPcmTrackNames[] = { "BASS", "SOLO 1", "SOLO 2", "CHORDS" };
+        bool hasTarget = false;
+        for (size_t i = 0; i < pcmTrackControls.size(); ++i)
+        {
+            const auto& row = pcmTrackControls[i];
+            if (row != nullptr && row->selectedStep >= 0)
+            {
+                text = juce::String (kPcmTrackNames[i]) + "  STEP "
+                     + juce::String (row->selectedStep + 1).paddedLeft ('0', 2);
+                hasTarget = true;
+                break;
+            }
+        }
+        for (size_t i = 0; ! hasTarget && i < drumTrackControls.size(); ++i)
         {
             const auto& row = drumTrackControls[i];
             if (row != nullptr && row->selectedStep >= 0)
             {
                 text = "P-LOCK  DRUM " + juce::String ((int) i + 1)
                      + "  STEP " + juce::String (row->selectedStep + 1).paddedLeft ('0', 2) + " VEL";
-                hasDrumTarget = true;
-                break;
+                hasTarget = true;
             }
         }
-        if (! hasDrumTarget)
+        if (! hasTarget)
             text = "P-LOCK  BASE SOUND";
     }
     else
@@ -1408,6 +1787,9 @@ void SequencerPanel::stop()
     for (const auto& row : drumTrackControls)
         if (row != nullptr)
             midiIO.sendAllNotesOff (juce::jlimit (1, 16, row->channel.getSelectedId()));
+    for (const auto& row : pcmTrackControls)
+        if (row != nullptr)
+            midiIO.sendAllNotesOff (juce::jlimit (1, 16, row->track.channel));
 
     // Reset every parameter to its base so a p-lock can't leave the filter stuck closed/resonant.
     for (const auto& lp : sequence.lockable)
@@ -1466,6 +1848,37 @@ void SequencerPanel::feedLookahead()
             const int offPos = (int) std::llround (nextStepStartMs + drumGateMs);
             buffer.addEvent (juce::MidiMessage::noteOn (channel, note, (juce::uint8) velocity), onPos);
             buffer.addEvent (juce::MidiMessage::noteOff (channel, note), offPos);
+        }
+
+        // PCM tracks (Bass/Solo 1/Solo 2/Chords) are melodic like the Solo Synth track, so they go
+        // through the exact same scheduleStep()->ScheduledEvent path — no bespoke event-building.
+        // tempoBpm/stepsPerBeat are mirrored from the main sequence every tick rather than edited
+        // independently, so all melodic tracks + drums share one clock even across live tempo/rate
+        // changes. Each track's own `lockable` is empty in this pass, so scheduleStep only ever
+        // emits noteOn/noteOff for it (no paramChange p-locks yet - a follow-up chunk).
+        for (const auto& row : pcmTrackControls)
+        {
+            if (row == nullptr || row->mute.getToggleState())
+                continue;
+
+            row->track.tempoBpm     = sequence.tempoBpm;
+            row->track.stepsPerBeat = sequence.stepsPerBeat;
+
+            for (const auto& e : casioxw::scheduleStep (row->track, nextStepIndex, prevStepIndex, nextStepStartMs))
+            {
+                const int samplePos = (int) std::llround (e.timeMs);
+                switch (e.type)
+                {
+                    case casioxw::ScheduledEvent::Type::noteOn:
+                        buffer.addEvent (juce::MidiMessage::noteOn (e.channel, e.note, (juce::uint8) e.velocity), samplePos);
+                        break;
+                    case casioxw::ScheduledEvent::Type::noteOff:
+                        buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note), samplePos);
+                        break;
+                    case casioxw::ScheduledEvent::Type::paramChange:
+                        break;   // no lockable params on a PCM track yet
+                }
+            }
         }
 
         if (! buffer.isEmpty())
@@ -1664,6 +2077,52 @@ void SequencerPanel::resized()
     }
     drumCardBounds = showDrumControls
         ? juce::Rectangle<int> (cardX, drumTop - 2, kCardWidth, bounds.getY() - drumTop + 2)
+        : juce::Rectangle<int>();
+
+    bounds.removeFromTop (10);
+
+    // ---- PCM-track section: own lane per track (label/mute/channel + 16 step keys), same shape
+    // as a drum row -- note/gate/velocity for the selected step live in the screen, not here. ----
+    const bool showPcmControls = pcmControlsButton.getToggleState();
+    auto pcmHeader = bounds.removeFromTop (20);
+    pcmTracksLabel.setBounds (pcmHeader.removeFromLeft (140));
+    pcmControlsButton.setBounds (pcmHeader.removeFromLeft (22));
+    bounds.removeFromTop (4);
+
+    const int pcmTop = bounds.getY();
+    for (const auto& row : pcmTrackControls)
+    {
+        if (row == nullptr)
+            continue;
+        auto r = bounds.removeFromTop (kPcmTrackRowHeight);
+        auto stepCells = r.removeFromLeft (kStepGridWidth);
+        r.removeFromLeft (kSectionGap);
+        row->trackLabel.setBounds (r.removeFromLeft (kLaneLabelWidth));
+        r.removeFromLeft (kSectionGap);
+
+        if (showPcmControls)
+        {
+            auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
+            row->mute.setBounds (controls.removeFromLeft (46).withSizeKeepingCentre (46, 24));
+            controls.removeFromLeft (6);
+            row->channel.setBounds (controls.removeFromLeft (58).withSizeKeepingCentre (58, 24));
+        }
+        else
+        {
+            row->mute.setBounds (0, 0, 0, 0);
+            row->channel.setBounds (0, 0, 0, 0);
+        }
+
+        for (auto& b : row->steps)
+        {
+            auto cell = stepCells.removeFromLeft (kStepWidth);
+            b.setBounds (cell.withSizeKeepingCentre (kStepWidth - 6, kDrumKeyHeight));
+        }
+
+        bounds.removeFromTop (2);
+    }
+    pcmCardBounds = showPcmControls
+        ? juce::Rectangle<int> (cardX, pcmTop - 2, kCardWidth, bounds.getY() - pcmTop + 2)
         : juce::Rectangle<int>();
 
     bounds.removeFromTop (10);

@@ -115,7 +115,7 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    if (mode == "sequencer" || mode == "sequencer-demo")
+    if (mode == "sequencer" || mode == "sequencer-demo" || mode == "sequencer-pcm-demo")
     {
         if (argc < 3)
         {
@@ -126,14 +126,29 @@ int main (int argc, char* argv[])
         casioxw::SysExCodec codec (std::move (model));
         casioxw::MidiIO midiIO;
         SequencerPanel panel (codec, midiIO);
-        if (mode == "sequencer-demo")   // representative trigs/locks/selection/playhead state
+        if (mode == "sequencer-demo")       // representative trigs/locks/selection/playhead state
             panel.applyPreviewDemoState();
+        else if (mode == "sequencer-pcm-demo")   // a PCM track's step selected, screen showing NOTE/GATE/VEL
+            panel.applyPcmStepEditPreviewState();
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|sequencer)\n", mode.toRawUTF8());
+    if (mode == "sequencer-pcm-roundtrip")
+    {
+        // Headless correctness check for PCM track save/load -- no snapshot, no display needed.
+        auto model = casioxw::ParamModel::fromFile (jsonPath);
+        casioxw::SysExCodec codec (std::move (model));
+        casioxw::MidiIO midiIO;
+        SequencerPanel panel (codec, midiIO);
+        const bool ok = panel.verifyPcmRoundTripForPreview();
+        std::printf (ok ? "PASS: PCM tracks round-trip through serialize/apply intact\n"
+                         : "FAIL: PCM tracks round-trip lost data\n");
+        return ok ? 0 : 1;
+    }
+
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-pcm-roundtrip)\n", mode.toRawUTF8());
     return 1;
 }

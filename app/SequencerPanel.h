@@ -80,11 +80,25 @@ public:
         state-dependent rendering a fresh panel never shows. Never called by the app itself. */
     void applyPreviewDemoState();
 
+    /** tools/gui-preview only: select a step on a PCM track (Bass) with P-LOCK mode on, so an
+        offscreen snapshot can verify the screen actually swaps to the NOTE/GATE/VEL step editor
+        (and back) rather than always showing the Solo Synth's pages. Never called by the app
+        itself. */
+    void applyPcmStepEditPreviewState();
+
+    /** tools/gui-preview only: headless correctness check for the PCM tracks save/load path (the
+        one genuinely new bit of logic in that feature -- everything else reuses already-tested
+        casioxw_core functions). Seeds two PCM tracks with distinct data, serializes, clobbers the
+        live tracks, reloads, and compares. Returns true iff every seeded field round-trips.
+        Never called by the app itself; no display/JUCE peer required. */
+    bool verifyPcmRoundTripForPreview();
+
 private:
     enum class SaveKind
     {
         solo,
         drums,
+        pcm,
         sequenceSet
     };
 
@@ -110,6 +124,26 @@ private:
         int selectedStep = -1; // per-track p-lock selection target, -1 means base
     };
 
+    /** One melodic PCM/Melody track (Bass, Solo 1, Solo 2, or Chords — the Step Sequencer note
+        parts that aren't Drum 1-5 or the Solo Synth's own Zone Part 1, XWP1_1B_EN.pdf p.E-49). Its
+        own lane, structured like DrumTrackControl (label/mute/channel/16 step keys), NOT a shared
+        column with the Solo Synth. `track` reuses casioxw::Sequence as a self-contained per-track
+        model (channel + 16 steps + an empty `lockable` for now) so every existing pure core
+        function — scheduleStep, stepIntervalMs, sequenceToJson/FromJson — works on it unchanged;
+        tempoBpm/stepsPerBeat are mirrored from the main `sequence` every playback tick. A step's
+        note/gate/velocity are always-defined (no base-vs-lock inheritance the way FLTR/ENV params
+        have) — selecting a step in P-LOCK mode swaps the screen to a 3-cell NOTE/GATE/VEL editor
+        for it (see refreshParamDisplayPages()), not a per-row knob column. */
+    struct PcmTrackControl
+    {
+        juce::Label trackLabel;
+        juce::TextButton mute { "Mute" };
+        juce::ComboBox channel;
+        std::array<StepKeyButton, 16> steps;
+        int selectedStep = -1;   // -1 == none; which step's note/gate/vel the screen currently edits
+        casioxw::Sequence track;
+    };
+
     void timerCallback() override;
     void play();
     void stop();
@@ -127,6 +161,19 @@ private:
     void onParamEdited (int lockableIndex, int value);
     void refreshParamControls();               // value + locked flags into the param display
     void refreshStepButtons();                 // selected highlight + has-locks LED
+
+    /** Load the Solo Synth's FLTR/FLT2/ENV/LFO pages into paramDisplay (kLockables-driven). The
+        screen's normal content; ctor calls it once, refreshParamDisplayPages() calls it again
+        whenever a PCM track's step selection is cleared and control returns to the Solo Synth. */
+    void rebuildSynthParamPages();
+
+    /** Swap paramDisplay's page set to match whichever lane currently owns the edit target: the
+        Solo Synth's normal pages, or -- if a PCM track has a step selected -- a single-page
+        NOTE/GATE/VEL editor for that step (raw cells, no ParamInfo/SysEx address). Cheap to call
+        liberally; it only rebuilds when the target lane actually changed. Called from the tail of
+        refreshStepButtons() so every selection-changing action stays in sync automatically. */
+    void refreshParamDisplayPages();
+    void refreshPcmStepCellValues (int pcmRow);   // push the selected step's note/gate/vel into the screen
     void updateStatusLabel();                  // edit-target readout in the display header
     void randomizeSequence();                  // Randomize button -> casioxw::randomize + resync widgets
     void showRandomizeOptions();               // call-out editing randomizeOptions in place
@@ -136,16 +183,21 @@ private:
     void loadSequenceFromFile();
     void saveByKind (SaveKind kind);
     juce::String serializeDrumsToJson() const;
-    juce::String serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile) const;
+    juce::String serializePcmTracksToJson() const;
+    juce::String serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile,
+                                             const juce::String& pcmFile) const;
     bool applySoloSequenceText (const juce::String& text);
     bool applyDrumSequenceText (const juce::String& text);
+    bool applyPcmTracksText (const juce::String& text);
     bool applyLoadedText (const juce::String& text, const juce::File& sourceFile);  // parse + adopt + resync
     void chooseSequenceDirectory();
     juce::File settingsFilePath() const;
     void loadSequenceSettings();
     void saveSequenceSettings() const;
     bool hasAnyDrumStepSelected() const;
+    bool hasAnyPcmStepSelected() const;
     void clearDrumSelections();
+    void clearPcmSelections();
     void updateClearLocksEnabled();
 
     void feedLookahead();   // scheduler tick: fill the look-ahead horizon with timestamped events
@@ -161,11 +213,12 @@ private:
     casioxw::SysExCodec& codec;
     casioxw::MidiIO& midiIO;
 
-    casioxw::Sequence sequence;                // source of truth
+    casioxw::Sequence sequence;                // source of truth (Solo Synth track)
 
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
     std::unique_ptr<ParamPageDisplay> paramDisplay;   // the pageable p-lock parameter sub-window
     std::array<std::unique_ptr<DrumTrackControl>, 5> drumTrackControls;
+    std::array<std::unique_ptr<PcmTrackControl>, 4> pcmTrackControls;
 
     juce::TextButton playStopButton { "Play" };
     juce::TextButton randomizeButton { "Rnd" };
@@ -200,8 +253,10 @@ private:
     juce::TextButton shiftRightButton { ">" };
     juce::TextButton drumControlsButton;
     juce::TextButton synthControlsButton;
+    juce::TextButton pcmControlsButton;
     juce::Label statusLabel;                          // footer: file/save/load messages only
     juce::Label drumTracksLabel { {}, "DRUM TRACKS" };
+    juce::Label pcmTracksLabel { {}, "PCM TRACKS" };
     juce::Label synthLabel { {}, "SOLO SYNTH" };
 
     juce::Label pitchRowLabel { {}, "Pitch" };
@@ -210,6 +265,7 @@ private:
 
     // Card regions computed by resized(), painted by paint().
     juce::Rectangle<int> drumCardBounds;
+    juce::Rectangle<int> pcmCardBounds;
     juce::Rectangle<int> synthCardBounds;
 
     // Look-ahead transport state (message thread only — the feeder timer runs there, so no locking
@@ -227,6 +283,11 @@ private:
     // non-empty while a base sync is awaiting replies (the shared timer polls the receive queue).
     std::map<juce::String, int> outstandingBaseSync;
     juce::uint32 baseSyncStartedMs = 0;
+
+    // Which lane paramDisplay currently shows: -1 == Solo Synth's normal pages, 0-3 == a PCM
+    // track's single-page NOTE/GATE/VEL step editor. Purely a cache so refreshParamDisplayPages()
+    // can skip rebuilding pages when the target lane hasn't actually changed.
+    int displayedPcmRow = -1;
 
     bool playing = false;
     int selectedStep = -1;                     // -1 == Base

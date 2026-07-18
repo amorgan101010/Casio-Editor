@@ -21,14 +21,34 @@
     Dumb like ParamControl: it knows nothing about the Sequence or MIDI. The owner describes the
     pages once (setPages), pushes state in (setCellState / setStatus), and receives edits back
     through onValueEdited(lockableIndex, value). lockableIndex is the owner's own flat index
-    (SequencerPanel: the index into sequence.lockable), carried through untouched. */
+    (SequencerPanel: the index into sequence.lockable), carried through untouched.
+
+    A cell doesn't have to be a real synth parameter: CellSpec::info may be nullptr for a "raw"
+    cell (range/formatting from rawMin/rawMax/rawFormat instead) -- SequencerPanel uses this for a
+    PCM track's per-step NOTE/GATE/VEL, which have no SysEx address at all. setPages() can be
+    called again later to swap the whole page set (e.g. between the Solo Synth's lockable pages
+    and a PCM track's step-edit page) -- it fully rebuilds, so do it on selection changes, not
+    per-frame. */
 class ParamPageDisplay : public juce::Component
 {
 public:
+    /** How a raw (non-ParamInfo) cell's value is formatted for display. Ignored when `info` is
+        set -- that path already derives formatting from the param's own metadata (unit=="note",
+        enum tables, etc). */
+    enum class ValueFormat { Plain, Note, Percent };
+
     struct CellSpec
     {
+        // ParamInfo-backed cell (the usual case: a real synth parameter from codec.model()):
         const casioxw::ParamInfo* info = nullptr;   // must outlive the display (codec.model())
         int instance = 1;
+
+        // Raw cell (info == nullptr): a value with no SysEx address at all -- e.g. a sequencer
+        // step's note/gate/velocity. Range and formatting come from these fields instead.
+        int rawMin = 0;
+        int rawMax = 127;
+        ValueFormat rawFormat = ValueFormat::Plain;
+
         juce::String shortName;                     // 3-4 char hardware-style label ("CUT", "RES")
         int lockableIndex = 0;                      // owner's flat index, echoed in onValueEdited
     };
