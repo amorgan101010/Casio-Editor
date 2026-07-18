@@ -1811,7 +1811,13 @@ void SequencerPanel::play()
     transportStartMs = (double) juce::Time::getMillisecondCounter() + kStartLeadMs;
     nextStepStartMs  = 0.0;
     nextStepIndex    = 0;
-    prevStepIndex    = -1;          // first fed step establishes every parameter's value fresh
+    // The device is already sitting at every param's base value here (a Sync pulls the device's
+    // values into base, and stop() resets the device back to base), so the first step must NOT
+    // re-dump the whole baseline -- that ~24-param NRPN/SysEx burst, fired at the same instant as
+    // the first note-ons, is what made the XW-P1 drop notes and respond late on step 1. The
+    // kPrevStepBaseline sentinel makes scheduleStep() emit only the params step 0 actually locks
+    // away from base (usually none), so nothing floods the synth and no pre-roll gap is needed.
+    prevStepIndex = casioxw::kPrevStepBaseline;
     scheduledPlayheadMarks.clear(); // playhead follows this fresh schedule (see updatePlayheadStep)
     playheadStep = -1;              // hidden until step 0's boundary is actually reached
 

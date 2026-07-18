@@ -43,13 +43,25 @@ namespace casioxw
           1. `paramChange` events (at `stepStartMs`), so a locked/base value lands on the synth
              BEFORE the note sounds. Emitted with a dedup: a param is included only when this step's
              effective value differs from `prevStepIndex`'s — the parameter analogue of the note-off
-             dedup, so an unchanging base isn't re-sent every step. `prevStepIndex == -1` forces every
-             lockable param out (used for the first step fed at play-start, to establish the sound).
+             dedup, so an unchanging base isn't re-sent every step. `prevStepIndex >= 0` diffs against
+             that real step; two negative sentinels cover the first step fed at play-start (see
+             kPrevStepFresh / kPrevStepBaseline below).
           2. `noteOn` at `stepStartMs` — only if the step is enabled.
           3. `noteOff` at `stepStartMs + stepGateMs(seq, stepIndex)` — only if the step is enabled.
 
         A disabled (rest) step still contributes its changed param events (a p-lock on a rest is
         valid), just no note. */
+
+    /** First-step `prevStepIndex` sentinels (there is no real previous step at play-start):
+          * kPrevStepFresh (-1): force EVERY lockable param out — a full establish that assumes the
+            device state is unknown.
+          * kPrevStepBaseline (-2): the device is ALREADY at every param's base value (true after a
+            Sync, or after stop()'s reset-to-base), so emit ONLY the params this step locks away from
+            base, never the redundant baseline. This is the normal play-start: base mirrors the
+            device, so re-dumping the whole baseline just floods the synth. */
+    constexpr int kPrevStepFresh    = -1;
+    constexpr int kPrevStepBaseline = -2;
+
     std::vector<ScheduledEvent> scheduleStep (const Sequence& seq, int stepIndex,
                                               int prevStepIndex, double stepStartMs);
 }
