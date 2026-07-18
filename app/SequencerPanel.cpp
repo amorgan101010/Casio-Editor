@@ -1461,6 +1461,9 @@ void SequencerPanel::stop()
     for (const auto& row : drumTrackControls)
         if (row != nullptr)
             midiIO.sendAllNotesOff (juce::jlimit (1, 16, row->channel.getSelectedId()));
+    for (const auto& row : pcmTrackControls)
+        if (row != nullptr)
+            midiIO.sendAllNotesOff (juce::jlimit (1, 16, row->track.channel));
 
     // Reset every parameter to its base so a p-lock can't leave the filter stuck closed/resonant.
     for (const auto& lp : sequence.lockable)
@@ -1519,6 +1522,37 @@ void SequencerPanel::feedLookahead()
             const int offPos = (int) std::llround (nextStepStartMs + drumGateMs);
             buffer.addEvent (juce::MidiMessage::noteOn (channel, note, (juce::uint8) velocity), onPos);
             buffer.addEvent (juce::MidiMessage::noteOff (channel, note), offPos);
+        }
+
+        // PCM tracks (Bass/Solo 1/Solo 2/Chords) are melodic like the Solo Synth track, so they go
+        // through the exact same scheduleStep()->ScheduledEvent path — no bespoke event-building.
+        // tempoBpm/stepsPerBeat are mirrored from the main sequence every tick rather than edited
+        // independently, so all melodic tracks + drums share one clock even across live tempo/rate
+        // changes. Each track's own `lockable` is empty in this pass, so scheduleStep only ever
+        // emits noteOn/noteOff for it (no paramChange p-locks yet - a follow-up chunk).
+        for (const auto& row : pcmTrackControls)
+        {
+            if (row == nullptr || row->mute.getToggleState())
+                continue;
+
+            row->track.tempoBpm     = sequence.tempoBpm;
+            row->track.stepsPerBeat = sequence.stepsPerBeat;
+
+            for (const auto& e : casioxw::scheduleStep (row->track, nextStepIndex, prevStepIndex, nextStepStartMs))
+            {
+                const int samplePos = (int) std::llround (e.timeMs);
+                switch (e.type)
+                {
+                    case casioxw::ScheduledEvent::Type::noteOn:
+                        buffer.addEvent (juce::MidiMessage::noteOn (e.channel, e.note, (juce::uint8) e.velocity), samplePos);
+                        break;
+                    case casioxw::ScheduledEvent::Type::noteOff:
+                        buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note), samplePos);
+                        break;
+                    case casioxw::ScheduledEvent::Type::paramChange:
+                        break;   // no lockable params on a PCM track yet
+                }
+            }
         }
 
         if (! buffer.isEmpty())
