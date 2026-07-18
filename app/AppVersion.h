@@ -3,5 +3,5 @@
 namespace casioxw::app
 {
     inline constexpr const char* kApplicationName    = "Casio XW-P1 Editor";
-    inline constexpr const char* kApplicationVersion = "0.13.0-pcm-engine";
+    inline constexpr const char* kApplicationVersion = "0.13.1-pcm-engine";
 }

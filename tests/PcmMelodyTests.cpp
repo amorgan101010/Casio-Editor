@@ -31,7 +31,9 @@ TEST_CASE ("ParamModel: pcmMelody section carries all 10 manual-sourced params",
         const auto* p = model.find (id);
         REQUIRE (p != nullptr);
         CHECK (p->section == "pcmMelody");
-        CHECK (p->ct == 0x05);
+        // Every Melody sound param is category 0x05 EXCEPT Volume, which is hardware-verified to
+        // be the Tone-category (0x03) "Level" -- see the pcmVolume test below and its JSON note.
+        CHECK (p->ct == (juce::String (id) == "pcmVolume" ? 0x03 : 0x05));
         CHECK (p->instanceCount == 1);
     }
 }
@@ -93,6 +95,10 @@ TEST_CASE ("ParamModel: pcmVolume is a plain 0..127 nf fader", "[parammodel][pcm
     CHECK (p->vt == "nf");
     CHECK (p->range.min == 0);
     CHECK (p->range.max == 127);
+    // Hardware-verified 2026-07-18: the PCM tone Volume is the Tone-category "Level"
+    // (ct 0x03 / id 0x08), not the Melody-category 0x1F the manual's sec 23 lists.
+    CHECK (p->ct == 0x03);
+    CHECK (p->addr == 0x08);
 }
 
 // --- Codec: hand-computed frames (no Lua source for this domain to derive golden vectors from) ---

@@ -13653,7 +13653,7 @@
     "pcmMelody": {
       "category": "0x05",
       "status": "complete",
-      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 23 'Melody Parameter' (printed p70) -- no Lua source exists for this domain (franky's CTRLR panel never implemented a Melody/PCM tone editor page). addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth's franky-derived 18-byte address also happens to match, so encode()/decode() need no codec changes -- but unlike soloSynth this section has neither a second independent source (the Lua) nor a hardware round-trip confirming a cat=0x05 IPS actually lands on the live Melody tone buffer. Flagged unverified; do not promote to the same trust level as soloSynth until hardware-tested.",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 23 'Melody Parameter' (printed p70) -- no Lua source exists for this domain (franky's CTRLR panel never implemented a Melody/PCM tone editor page). addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth's franky-derived 18-byte address also happens to match, so encode()/decode() need no codec changes. PARTIAL HARDWARE ROUND-TRIP 2026-07-18 (owner + midi-probe on a real XW-P1): the 9 sound-shaping params (Attack/Release/Cutoff/Vibrato*/Octave Shift/Touch Sense) DO read back correctly from cat=0x05, so that category/address landing is confirmed for them. The 10th, Volume, did NOT: it was mistranscribed to cat05/0x1F (a live but ineffective register) -- the real PCM tone Volume is the Tone-category Level at cat=0x03/id=0x08, now corrected and hardware-verified (see pcmVolume's own note). Ranges/defaults of the cf params remain unconfirmed for exact bounds; do not treat the whole section as soloSynth-grade yet.",
       "params": [
         {
           "id": "pcmAttackTime",
@@ -13910,8 +13910,8 @@
           "block": "Melody",
           "group": "General",
           "address": {
-            "ct": 5,
-            "id": 31,
+            "ct": 3,
+            "id": 8,
             "ai": 0,
             "an": 0
           },
@@ -13933,7 +13933,8 @@
             "labels": [
               "Melody"
             ]
-          }
+          },
+          "note": "HARDWARE-VERIFIED 2026-07-18 (owner + midi-probe scan on a real XW-P1): the PCM tone Volume shown/edited in the synth's Tone->PCM view is the Tone-category 'Level' parameter (ct 0x03, id 0x08, 00-7F-7F, 0-127), NOT the Melody-category (0x05) 'Volume' at id 0x1F that XWP1_midi_EN.pdf sec 23 lists. Reads/writes to cat05/0x1F succeed (it is a live register) but do not affect the audible/displayed tone volume; a synth-side change to the tone Volume showed up at cat03/0x08 instead. Address corrected to ct=0x03/id=0x08; encoding (nf, 0-127, default 127) was already correct. Was the original 'this section is hardware-UNVERIFIED' caveat coming due (see the pcmMelody section note)."
         },
         {
           "id": "pcmTouchSense",

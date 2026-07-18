@@ -324,7 +324,9 @@ MELODY_PARAMS = [
     ("pcmVibratoSpeed","Vibrato Speed", 0x1C, "cf", (-64, 63), 0,   "Vibrato",  "slider", None),
     ("pcmVibratoDelay","Vibrato Delay", 0x1D, "cf", (-64, 63), 0,   "Vibrato",  "slider", None),
     ("pcmOctaveShift", "Octave Shift",  0x1E, "cf", (-2, 2),   0,   "General",  "slider", None),
-    ("pcmVolume",      "Volume",        0x1F, "nf", (0, 127),  127, "General",  "slider", None),
+    # HARDWARE-VERIFIED override (see VOLUME_NOTE): the real PCM tone Volume is the Tone-category
+    # "Level" (ct 0x03 / id 0x08), NOT the Melody-category (0x05) "Volume" at 0x1F that §23 lists.
+    ("pcmVolume",      "Volume",        0x08, "nf", (0, 127),  127, "General",  "slider", None),
     ("pcmTouchSense",  "Touch Sense",   0x20, "cf", (-64, 63), 0,   "General",  "slider", None),
 ]
 
@@ -340,6 +342,21 @@ TOUCH_SENSE_NOTE = (
     "read-back to confirm."
 )
 
+# pcmVolume lives in the Tone category (0x03), not Melody (0x05) -- hardware-verified per
+# VOLUME_NOTE. Every other Melody param stays in 0x05.
+MELODY_CT_OVERRIDE = {"pcmVolume": 0x03}
+
+VOLUME_NOTE = (
+    "HARDWARE-VERIFIED 2026-07-18 (owner + midi-probe scan on a real XW-P1): the PCM tone "
+    "Volume shown/edited in the synth's Tone->PCM view is the Tone-category 'Level' parameter "
+    "(ct 0x03, id 0x08, 00-7F-7F, 0-127), NOT the Melody-category (0x05) 'Volume' at id 0x1F "
+    "that XWP1_midi_EN.pdf sec 23 lists. Reads/writes to cat05/0x1F succeed (it is a live "
+    "register) but do not affect the audible/displayed tone volume; a synth-side change to the "
+    "tone Volume showed up at cat03/0x08 instead. Address corrected to ct=0x03/id=0x08; encoding "
+    "(nf, 0-127, default 127) was already correct. Was the original 'this section is "
+    "hardware-UNVERIFIED' caveat coming due (see the pcmMelody section note)."
+)
+
 def build_melody_params():
     out = []
     for pid, name, idhex, vt, rng, default, group, ui, enum in MELODY_PARAMS:
@@ -348,7 +365,7 @@ def build_melody_params():
             "name": name,
             "block": "Melody",
             "group": group,
-            "address": {"ct": 0x05, "id": idhex, "ai": 0, "an": 0},
+            "address": {"ct": MELODY_CT_OVERRIDE.get(pid, 0x05), "id": idhex, "ai": 0, "an": 0},
             "vt": vt,
             "range": {"min": rng[0], "max": rng[1]},
             "default": default,
@@ -366,6 +383,8 @@ def build_melody_params():
             entry["ui"]["enum"] = enum
         if pid == "pcmTouchSense":
             entry["note"] = TOUCH_SENSE_NOTE
+        if pid == "pcmVolume":
+            entry["note"] = VOLUME_NOTE
         out.append(entry)
     return out
 
@@ -482,10 +501,14 @@ doc = {
               "no Lua source exists for this domain (franky's CTRLR panel never implemented a Melody/"
               "PCM tone editor page). addr/vt follow the general SX frame field layout (midi-spec.md "
               "section 2) that soloSynth's franky-derived 18-byte address also happens to match, so "
-              "encode()/decode() need no codec changes -- but unlike soloSynth this section has "
-              "neither a second independent source (the Lua) nor a hardware round-trip confirming a "
-              "cat=0x05 IPS actually lands on the live Melody tone buffer. Flagged unverified; do not "
-              "promote to the same trust level as soloSynth until hardware-tested.",
+              "encode()/decode() need no codec changes. PARTIAL HARDWARE ROUND-TRIP 2026-07-18 "
+              "(owner + midi-probe on a real XW-P1): the 9 sound-shaping params (Attack/Release/"
+              "Cutoff/Vibrato*/Octave Shift/Touch Sense) DO read back correctly from cat=0x05, so "
+              "that category/address landing is confirmed for them. The 10th, Volume, did NOT: it "
+              "was mistranscribed to cat05/0x1F (a live but ineffective register) -- the real PCM "
+              "tone Volume is the Tone-category Level at cat=0x03/id=0x08, now corrected and "
+              "hardware-verified (see pcmVolume's own note). Ranges/defaults of the cf params remain "
+              "unconfirmed for exact bounds; do not treat the whole section as soloSynth-grade yet.",
       "params": melody_params
     },
     "mixer":       {"status":"stub","params":[]},
