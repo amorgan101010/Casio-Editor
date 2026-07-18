@@ -24,8 +24,11 @@ public:
         tabs.addTab ("Solo Synth", juce::Colours::darkgrey, &soloSynthPanel, false);
         tabs.addTab ("Sequencer", juce::Colours::darkgrey, &sequencerPanel, false);
         addAndMakeVisible (tabs);
+        // Size to fully contain the taller/wider of the two tabs plus the actual tab-bar depth
+        // (not a hardcoded 30), so whichever tab is shown on open gets its full height and neither
+        // is clipped as panels grow.
         setSize (juce::jmax (soloSynthPanel.getWidth(), sequencerPanel.getWidth()),
-                 soloSynthPanel.getHeight() + 30);
+                 juce::jmax (soloSynthPanel.getHeight(), sequencerPanel.getHeight()) + tabs.getTabBarDepth());
     }
 
     void resized() override

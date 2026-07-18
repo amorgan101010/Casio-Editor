@@ -91,7 +91,11 @@ namespace
 SoloSynthPanel::SoloSynthPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& midiIOIn)
     : codec (codecIn), midiIO (midiIOIn)
 {
-    setSize (860, 620);
+    // 760 (was 620): the param list lives in a scrollable viewport that fills whatever height is
+    // left below the device/nav rows, so a short window isn't broken — but with the knob-grid rows
+    // it left the viewport cramped enough to read as "window too small on open" until a manual
+    // resize. A taller default gives a usable viewport out of the box; the window is still resizable.
+    setSize (860, 760);
 
     // ---- Device panel -----------------------------------------------------------------------
     addAndMakeVisible (deviceLabel);
@@ -215,6 +219,13 @@ void SoloSynthPanel::connectButtonClicked()
 
 void SoloSynthPanel::autoSyncIfConnected()
 {
+    // Don't auto-sync while a sequence is playing: a full-block param sync (a syncRequest per param
+    // + a poll timer draining the replies) floods the shared port and competes with the running
+    // transport, which the owner noticed as slowdown on page/tab change. The playback background
+    // thread runs iff the sequencer is playing, so it's a zero-coupling signal. The manual Sync
+    // button still works — that's a deliberate user action, not an incidental page switch.
+    if (midiIO.isPlaybackActive())
+        return;
     if (midiIO.isInputOpen() && midiIO.isOutputOpen())
         syncButtonClicked();
 }

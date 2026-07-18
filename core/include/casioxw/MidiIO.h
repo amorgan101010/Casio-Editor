@@ -93,6 +93,13 @@ namespace casioxw
 
         // ---- Timestamped playback (sequencer look-ahead scheduler) ---------------------------
 
+        /** True while a sequence is playing — i.e. the timestamped-output background thread is
+            running (startPlaybackThread() called, not yet stopped). A zero-coupling "is the
+            sequencer running?" signal for other panels: e.g. the tone editor suppresses its
+            auto-sync while this is true, since a full-block param sync would flood the port and
+            compete with the running transport. False if no output is open. */
+        bool isPlaybackActive() const noexcept { return output != nullptr && output->isBackgroundThreadRunning(); }
+
         /** Starts JUCE's internal high-resolution output thread so scheduleBlock() can dispatch
             timestamped messages at their exact times, decoupled from the (deliberately loose,
             message-thread) look-ahead feeder — this is what keeps note timing steady even when the
