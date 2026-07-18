@@ -129,6 +129,7 @@ private:
     void refreshStepButtons();                 // selected highlight + has-locks LED
     void updateStatusLabel();                  // edit-target readout in the display header
     void randomizeSequence();                  // Randomize button -> casioxw::randomize + resync widgets
+    void showRandomizeOptions();               // call-out editing randomizeOptions in place
     void syncStepWidgetsFromSequence();        // push sequence's note/enable back into the step widgets
     void syncTransportWidgetsFromSequence();   // push channel/tempo/rate back into their widgets
     void saveSequenceToFile();
@@ -168,6 +169,14 @@ private:
 
     juce::TextButton playStopButton { "Play" };
     juce::TextButton randomizeButton { "Rnd" };
+    juce::TextButton rndOptionsButton;                // "..." beside Rnd: opens the options call-out
+
+    // Randomize tuning, edited live by the call-out. continuousLockables = the Slider-kind
+    // lockable indices (combo/toggle params sit out unless randomizeComboParams is on).
+    casioxw::RandomizeOptions randomizeOptions;
+    bool randomizeComboParams = false;
+    std::vector<int> continuousLockables;
+    juce::Component::SafePointer<juce::CallOutBox> activeCallout;   // dismissed in the destructor
     juce::TextButton saveButton { "Save" };
     juce::TextButton loadButton { "Load" };
     juce::TextButton sequenceDirButton { "Seq Dir" };

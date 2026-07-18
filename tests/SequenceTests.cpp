@@ -2,6 +2,8 @@
 
 #include "casioxw/Sequence.h"
 
+#include <algorithm>
+
 // Sequencer MVP (SEQUENCER_HANDOFF.md) — pure logic only: stepEvent()/stepIntervalMs() have no
 // MIDI I/O or real time, so the actual note-off/timing correctness (app/SequencerPanel.cpp's
 // timerCallback) is a hardware-verified boundary, same as the rest of the app/ layer.
@@ -321,4 +323,74 @@ TEST_CASE ("randomize: leaves channel/tempo/rate and the lockable set untouched"
     CHECK (seq.stepsPerBeat == 3);
     REQUIRE (seq.lockable.size() == 1);
     CHECK (seq.lockable[0].baseValue == 90);   // base untouched; only per-step locks change
+}
+
+TEST_CASE ("randomize options: notes confined to range and scale", "[sequence][random]")
+{
+    auto seq = seqWithCutoff (90);
+    casioxw::RandomizeOptions o;
+    o.noteMin = 60;
+    o.noteMax = 71;
+    o.rootNote = 2;                                        // D
+    o.scale = casioxw::RandomizeOptions::Scale::major;
+    static const int majorDeg[] = { 0, 2, 4, 5, 7, 9, 11 };
+    juce::Random rng (42);
+    casioxw::randomize (seq, rng, o);
+    for (const auto& step : seq.steps)
+    {
+        CHECK (step.note >= 60);
+        CHECK (step.note <= 71);
+        const int pc = ((step.note - o.rootNote) % 12 + 12) % 12;
+        CHECK (std::find (std::begin (majorDeg), std::end (majorDeg), pc) != std::end (majorDeg));
+    }
+}
+TEST_CASE ("randomize options: zero lock density locks nothing, zero trig density enables nothing",
+           "[sequence][random]")
+{
+    auto seq = seqWithCutoff (90);
+    casioxw::RandomizeOptions o;
+    o.lockDensity = 0.0f;
+    o.trigDensity = 0.0f;
+    juce::Random rng (7);
+    casioxw::randomize (seq, rng, o);
+    for (const auto& step : seq.steps)
+    {
+        CHECK (step.locks.empty());
+        CHECK (! step.enabled);
+    }
+}
+TEST_CASE ("randomize options: lockableIndices restricts which params may lock", "[sequence][random]")
+{
+    auto seq = seqWithCutoff (90);
+    seq.lockable.push_back (casioxw::LockableParam { "tssFLTFreso", 1, 0 });
+    seq.lockable[1].minValue = 0;
+    seq.lockable[1].maxValue = 127;
+    casioxw::RandomizeOptions o;
+    o.lockDensity = 1.0f;          // every eligible param locks on every step
+    o.lockableIndices = { 1 };     // ...but only resonance is eligible
+    juce::Random rng (9);
+    casioxw::randomize (seq, rng, o);
+    for (const auto& step : seq.steps)
+    {
+        REQUIRE (step.locks.size() == 1);
+        CHECK (step.locks[0].paramId == "tssFLTFreso");
+    }
+}
+TEST_CASE ("randomize options: deterministic for a given seed + options", "[sequence][random]")
+{
+    auto a = seqWithCutoff (90);
+    auto b = seqWithCutoff (90);
+    casioxw::RandomizeOptions o;
+    o.scale = casioxw::RandomizeOptions::Scale::chromatic;
+    o.lockDensity = 0.5f;
+    juce::Random rngA (31337);
+    juce::Random rngB (31337);
+    casioxw::randomize (a, rngA, o);
+    casioxw::randomize (b, rngB, o);
+    for (int i = 0; i < 16; ++i)
+    {
+        CHECK (a.steps[(size_t) i].enabled == b.steps[(size_t) i].enabled);
+        CHECK (a.steps[(size_t) i].note    == b.steps[(size_t) i].note);
+        REQUIRE (a.steps[(size_t) i].locks.size() == b.steps[(size_t) i].locks.size());
+    }
 }

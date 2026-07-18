@@ -132,11 +132,38 @@ namespace casioxw
         a pattern be re-anchored to a different starting step without re-authoring it. */
     void shiftSteps (Sequence& seq, int delta);
 
-    /** Randomize the musical content of a sequence in place: per-step gate (~60% on), note (snapped
-        to a C-minor-pentatonic scale over two octaves so it stays musical), velocity, and p-locks
-        (each lockable param has a ~30% chance to lock to a random in-range value on each step).
-        Leaves channel / tempo / rate / the lockable set + base values untouched. `rng` makes this
-        deterministic for a given seed — the whole reason it's a pure core function, so the UI's
-        Randomize button is exercised headlessly (tests/SequenceTests.cpp). */
+    /** Tuning for randomize() — trig density, note range/scale/root, lock density, and which
+        lockable params may receive locks at all. Defaults reproduce a moderate musical starting
+        point (close to the original hardcoded behaviour, but with a much lower lock density now
+        that the lockable set is large). Edited from SequencerPanel's Rnd options call-out. */
+    struct RandomizeOptions
+    {
+        enum class Scale { minorPentatonic, majorPentatonic, naturalMinor, major, chromatic };
+
+        float trigDensity = 0.6f;     // chance a step's trig is enabled
+        float lockDensity = 0.1f;     // chance per (eligible param, step) of a p-lock
+        int   noteMin  = 48;          // C3 — notes drawn from [noteMin, noteMax], snapped to scale
+        int   noteMax  = 72;          // C5
+        int   rootNote = 0;           // pitch class 0=C .. 11=B the scale degrees offset from
+        Scale scale = Scale::minorPentatonic;
+        int   gateMin = 30,  gateMax = 100;       // percent
+        int   velocityMin = 70, velocityMax = 127;
+
+        /** Indices into Sequence::lockable eligible to receive random locks. Empty == every
+            lockable is eligible. SequencerPanel passes only the continuous (Slider-kind) params
+            by default so filter type / LFO wave / sync don't jump per step. */
+        std::vector<int> lockableIndices;
+    };
+
+    /** Randomize the musical content of a sequence in place, tuned by `options`: per-step trig,
+        note (snapped to options.scale over [noteMin, noteMax]), velocity, gate, and p-locks
+        (each eligible lockable param locks with probability lockDensity per step, to a random
+        in-range value). Leaves channel / tempo / rate / the lockable set + base values untouched.
+        `rng` makes this deterministic for a given (seed, options) — the whole reason it's a pure
+        core function, so the UI's Randomize button is exercised headlessly
+        (tests/SequenceTests.cpp). */
+    void randomize (Sequence& seq, juce::Random& rng, const RandomizeOptions& options);
+
+    /** Default-options overload (kept for existing callers/tests). */
     void randomize (Sequence& seq, juce::Random& rng);
 }
