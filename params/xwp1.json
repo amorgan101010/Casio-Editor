@@ -10224,6 +10224,24 @@
         "value": 17,
         "label": "4U"
       }
+    ],
+    "melodyVibratoType": [
+      {
+        "value": 0,
+        "label": "Sine"
+      },
+      {
+        "value": 1,
+        "label": "Triangle"
+      },
+      {
+        "value": 2,
+        "label": "Saw"
+      },
+      {
+        "value": 3,
+        "label": "Square"
+      }
     ]
   },
   "groupOrder": [
@@ -10235,7 +10253,9 @@
     "External Input",
     "External Trigger",
     "Pitch Shifter",
-    "LFO"
+    "LFO",
+    "Envelope",
+    "Vibrato"
   ],
   "sections": {
     "soloSynth": {
@@ -13632,8 +13652,322 @@
     },
     "pcmMelody": {
       "category": "0x05",
-      "status": "stub",
-      "params": []
+      "status": "complete",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 23 'Melody Parameter' (printed p70) -- no Lua source exists for this domain (franky's CTRLR panel never implemented a Melody/PCM tone editor page). addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth's franky-derived 18-byte address also happens to match, so encode()/decode() need no codec changes -- but unlike soloSynth this section has neither a second independent source (the Lua) nor a hardware round-trip confirming a cat=0x05 IPS actually lands on the live Melody tone buffer. Flagged unverified; do not promote to the same trust level as soloSynth until hardware-tested.",
+      "params": [
+        {
+          "id": "pcmAttackTime",
+          "name": "Attack Time",
+          "block": "Melody",
+          "group": "Envelope",
+          "address": {
+            "ct": 5,
+            "id": 23,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          }
+        },
+        {
+          "id": "pcmReleaseTime",
+          "name": "Release Time",
+          "block": "Melody",
+          "group": "Envelope",
+          "address": {
+            "ct": 5,
+            "id": 24,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          }
+        },
+        {
+          "id": "pcmCutoffFreq",
+          "name": "Cutoff Freq",
+          "block": "Melody",
+          "group": "Envelope",
+          "address": {
+            "ct": 5,
+            "id": 25,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          }
+        },
+        {
+          "id": "pcmVibratoType",
+          "name": "Vibrato Type",
+          "block": "Melody",
+          "group": "Vibrato",
+          "address": {
+            "ct": 5,
+            "id": 26,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 3
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "combo",
+            "enum": "melodyVibratoType"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          }
+        },
+        {
+          "id": "pcmVibratoDepth",
+          "name": "Vibrato Depth",
+          "block": "Melody",
+          "group": "Vibrato",
+          "address": {
+            "ct": 5,
+            "id": 27,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          }
+        },
+        {
+          "id": "pcmVibratoSpeed",
+          "name": "Vibrato Speed",
+          "block": "Melody",
+          "group": "Vibrato",
+          "address": {
+            "ct": 5,
+            "id": 28,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          }
+        },
+        {
+          "id": "pcmVibratoDelay",
+          "name": "Vibrato Delay",
+          "block": "Melody",
+          "group": "Vibrato",
+          "address": {
+            "ct": 5,
+            "id": 29,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          }
+        },
+        {
+          "id": "pcmOctaveShift",
+          "name": "Octave Shift",
+          "block": "Melody",
+          "group": "General",
+          "address": {
+            "ct": 5,
+            "id": 30,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -2,
+            "max": 2
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          }
+        },
+        {
+          "id": "pcmVolume",
+          "name": "Volume",
+          "block": "Melody",
+          "group": "General",
+          "address": {
+            "ct": 5,
+            "id": 31,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 127,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          }
+        },
+        {
+          "id": "pcmTouchSense",
+          "name": "Touch Sense",
+          "block": "Melody",
+          "group": "General",
+          "address": {
+            "ct": 5,
+            "id": 32,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Melody"
+            ]
+          },
+          "note": "midi-spec.md/PDF p70 sec 23: the manual's own hex Min-Def-Max column for Touch Sense (00-7F-7F) is IDENTICAL to Volume's row directly above it, but Touch Sense's described effective range is signed (-64..+63, matching the cf-encoded params above it) while Volume's is unsigned 0-127 -- the two rows cannot both be literally correct under one encoding. Encoded here as cf (consistent with every other -64..+63 param in this block); default taken from the effective-range description (0, centered) rather than the hex column's 0x7F (which would decode to +63 under cf and makes no sense as a centered default). Likely a copy-paste artifact in the manual's own table. Needs hardware read-back to confirm."
+        }
+      ]
     },
     "mixer": {
       "status": "stub",

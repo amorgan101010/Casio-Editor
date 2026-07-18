@@ -6,6 +6,7 @@ add_executable(casioxw_tests
     GoldenTests.cpp
     MidiIOTests.cpp
     ParamModelTests.cpp
+    PcmMelodyTests.cpp
     NoteNamesTests.cpp
     SequenceTests.cpp
     SchedulerTests.cpp

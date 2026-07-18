@@ -153,7 +153,8 @@ OVR = {
 # ever named "X Envelope" any more).
 # ---------------------------------------------------------------------------
 GROUP_ORDER = ["General", "Pitch", "Filter", "Amp", "PWM",
-               "External Input", "External Trigger", "Pitch Shifter", "LFO"]
+               "External Input", "External Trigger", "Pitch Shifter", "LFO",
+               "Envelope", "Vibrato"]
 
 def group_for(pid):
     if "ENV" in pid:
@@ -291,6 +292,86 @@ def build_params():
 
 solo_params = build_params()
 
+# ---------------------------------------------------------------------------
+# 4b. Melody (PCM engine) params -- HAND-AUTHORED, not mined from Lua.
+#
+# franky's CTRLR panel has no handler for this domain (no "Melody"/"PCM" Lua
+# file under reference/lua/ -- only ToneSoloSynth/ToneHexLayer/XWMixer/XWOrgan/
+# DSPHandler exist), so there is nothing to parse here the way solo_params is
+# built. Every field below is transcribed directly from XWP1_midi_EN.pdf
+# section 23 "Melody Parameter" (printed page 70), category 05H -- the
+# manual's own vocabulary for what the project/UI calls the PCM engine (see
+# midi-spec.md:749 "PCM Melody"). UNVERIFIED against real hardware (unlike
+# soloSynth, which is both Lua-cross-checked and hardware-verified) -- treat
+# addr/vt as high-confidence (matches the general SX frame field layout in
+# midi-spec.md section 2) but budget a hardware read/write check before
+# trusting this section the way soloSynth is trusted.
+#
+# All 10 params share one flat block (manual's "Block 00000000" -- no nested
+# blk dimension, unlike soloSynth's per-oscillator instances), ai=0/an=0 for
+# every entry (manual's Array column is 01 for all of them; an is franky's
+# name for the general frame's "len" field, and every existing scalar solo-
+# synth param -- 1, 2, and 3-byte vt alike -- carries an=0, so a single-
+# element scalar param taking an=0 here is the established pattern, not a
+# guess).
+MELODY_PARAMS = [
+    # id,              manual name,     hex id, vt,  range,        default, group,    ui,      enum
+    ("pcmAttackTime",  "Attack Time",   0x17, "cf", (-64, 63), 0,   "Envelope", "slider", None),
+    ("pcmReleaseTime", "Release Time",  0x18, "cf", (-64, 63), 0,   "Envelope", "slider", None),
+    ("pcmCutoffFreq",  "Cutoff Freq",   0x19, "cf", (-64, 63), 0,   "Envelope", "slider", None),
+    ("pcmVibratoType", "Vibrato Type",  0x1A, "nf", (0, 3),    0,   "Vibrato",  "combo",  "melodyVibratoType"),
+    ("pcmVibratoDepth","Vibrato Depth", 0x1B, "cf", (-64, 63), 0,   "Vibrato",  "slider", None),
+    ("pcmVibratoSpeed","Vibrato Speed", 0x1C, "cf", (-64, 63), 0,   "Vibrato",  "slider", None),
+    ("pcmVibratoDelay","Vibrato Delay", 0x1D, "cf", (-64, 63), 0,   "Vibrato",  "slider", None),
+    ("pcmOctaveShift", "Octave Shift",  0x1E, "cf", (-2, 2),   0,   "General",  "slider", None),
+    ("pcmVolume",      "Volume",        0x1F, "nf", (0, 127),  127, "General",  "slider", None),
+    ("pcmTouchSense",  "Touch Sense",   0x20, "cf", (-64, 63), 0,   "General",  "slider", None),
+]
+
+TOUCH_SENSE_NOTE = (
+    "midi-spec.md/PDF p70 sec 23: the manual's own hex Min-Def-Max column for Touch Sense "
+    "(00-7F-7F) is IDENTICAL to Volume's row directly above it, but Touch Sense's described "
+    "effective range is signed (-64..+63, matching the cf-encoded params above it) while "
+    "Volume's is unsigned 0-127 -- the two rows cannot both be literally correct under one "
+    "encoding. Encoded here as cf (consistent with every other -64..+63 param in this block); "
+    "default taken from the effective-range description (0, centered) rather than the hex "
+    "column's 0x7F (which would decode to +63 under cf and makes no sense as a centered "
+    "default). Likely a copy-paste artifact in the manual's own table. Needs hardware "
+    "read-back to confirm."
+)
+
+def build_melody_params():
+    out = []
+    for pid, name, idhex, vt, rng, default, group, ui, enum in MELODY_PARAMS:
+        entry = {
+            "id": pid,
+            "name": name,
+            "block": "Melody",
+            "group": group,
+            "address": {"ct": 0x05, "id": idhex, "ai": 0, "an": 0},
+            "vt": vt,
+            "range": {"min": rng[0], "max": rng[1]},
+            "default": default,
+            "unit": "",
+            "ui": {"control": ui},
+            "instances": {
+                "count": 1,
+                "blkByteOffset": 0,
+                "addressByteIndex": 10,
+                "idSuffix": False,
+                "labels": ["Melody"],
+            },
+        }
+        if enum:
+            entry["ui"]["enum"] = enum
+        if pid == "pcmTouchSense":
+            entry["note"] = TOUCH_SENSE_NOTE
+        out.append(entry)
+    return out
+
+melody_params = build_melody_params()
+print(f"PCM/Melody params: {len(melody_params)} (hand-authored, unverified against hardware)")
+
 # Address collision detection (same 18-byte address for >1 param within same instance)
 def addr_key(e):
     return (e["address"]["ct"], e["address"]["id"], e["address"]["ai"], e["address"]["an"])
@@ -333,6 +414,10 @@ enums = {
     "lfoClockTrigger": [{"value": i, "label": lbl} for i, lbl in enumerate(
         ["1/4", "1/3", "1/2", "2/3", "1", "3/2", "2", "3", "4",
          "1/4U", "1/3U", "1/2U", "2/3U", "1U", "3/2U", "2U", "3U", "4U"])],
+    # Melody (PCM engine) Vibrato Type (PDF p70 sec 23): 0=Sine/1=Triangle/2=Saw/3=Square.
+    # Distinct from soloSynth's 8-value lfoWave enum -- Melody's is its own, smaller list.
+    "melodyVibratoType": [{"value":0,"label":"Sine"},{"value":1,"label":"Triangle"},
+                            {"value":2,"label":"Saw"},{"value":3,"label":"Square"}],
 }
 
 # ---------------------------------------------------------------------------
@@ -390,7 +475,19 @@ doc = {
       "params": solo_params
     },
     "hexLayer":    {"category":"0x08","status":"stub","params":[]},
-    "pcmMelody":   {"category":"0x05","status":"stub","params":[]},
+    "pcmMelody":   {
+      "category": "0x05",
+      "status": "complete",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 23 'Melody Parameter' (printed p70) -- "
+              "no Lua source exists for this domain (franky's CTRLR panel never implemented a Melody/"
+              "PCM tone editor page). addr/vt follow the general SX frame field layout (midi-spec.md "
+              "section 2) that soloSynth's franky-derived 18-byte address also happens to match, so "
+              "encode()/decode() need no codec changes -- but unlike soloSynth this section has "
+              "neither a second independent source (the Lua) nor a hardware round-trip confirming a "
+              "cat=0x05 IPS actually lands on the live Melody tone buffer. Flagged unverified; do not "
+              "promote to the same trust level as soloSynth until hardware-tested.",
+      "params": melody_params
+    },
     "mixer":       {"status":"stub","params":[]},
     "performance": {"category":"0x02","status":"stub","params":[]},
     "dsp":         {"category":"0x13","status":"stub","params":[]}

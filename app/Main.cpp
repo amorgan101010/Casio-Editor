@@ -2,6 +2,7 @@
 
 #include "AppVersion.h"
 #include "EditorLookAndFeel.h"
+#include "PCMEnginePanel.h"
 #include "SequencerPanel.h"
 #include "SoloSynthPanel.h"
 #include "casioxw/MidiIO.h"
@@ -12,15 +13,18 @@
 /** Owns the long-lived model/codec/MIDI objects the GUI is wired to, plus the panels. Chunk 7a:
     replaces the Chunk 4 PlaceholderComponent — this is the first real editor UI. Sequencer MVP
     adds a second tab that shares the same MidiIO as the Solo Synth panel (one output port —
-    Connect on either tab opens it for both). codec/midiIO must outlive both panels (SoloSynthPanel
-    and ParamControl keep references into codec.model()), so they are declared before the panels
-    in this class and never moved/copied afterwards. */
+    Connect on either tab opens it for both); the PCM Engine tab (category 0x05 "Melody", see
+    app/PCMEnginePanel.h) is a third sibling on the same shared MidiIO, with no device combo of
+    its own — same pattern SequencerPanel already established. codec/midiIO must outlive every
+    panel (SoloSynthPanel/PCMEnginePanel and ParamControl keep references into codec.model()), so
+    they are declared before the panels in this class and never moved/copied afterwards. */
 class MainContentComponent : public juce::Component
 {
 public:
     MainContentComponent()
         : codec (casioxw::ParamModel::fromFile (juce::File (CASIOXW_PARAMS_JSON))),
           soloSynthPanel (codec, midiIO),
+          pcmEnginePanel (codec, midiIO),
           sequencerPanel (codec, midiIO)
     {
         // Capture the panels' natural sizes BEFORE tabbing them. addTab() reparents each panel into
@@ -28,12 +32,13 @@ public:
         // here -- so reading getWidth()/getHeight() afterwards yields 0. Reading it after was the
         // real cause of the window opening at 0x30 / tiny (bug-071, pinned by the launch diagnostic);
         // the panels' own constructors have already set these to the real values.
-        const int contentW = juce::jmax (soloSynthPanel.getWidth(), sequencerPanel.getWidth());
-        const int contentH = juce::jmax (soloSynthPanel.getHeight(), sequencerPanel.getHeight());
+        const int contentW = juce::jmax (soloSynthPanel.getWidth(), pcmEnginePanel.getWidth(), sequencerPanel.getWidth());
+        const int contentH = juce::jmax (soloSynthPanel.getHeight(), pcmEnginePanel.getHeight(), sequencerPanel.getHeight());
 
         // TabbedComponent's colour arg only matters for its OWN default tab-content-area fill;
         // EditorLookAndFeel::drawTabButton/drawTabbedButtonBarBackground own the visible tab bar.
         tabs.addTab ("Solo Synth", EditorColours::chassisBg, &soloSynthPanel, false);
+        tabs.addTab ("PCM Engine", EditorColours::chassisBg, &pcmEnginePanel, false);
         tabs.addTab ("Sequencer", EditorColours::chassisBg, &sequencerPanel, false);
         addAndMakeVisible (tabs);
         // + actual tab-bar depth (not a hardcoded 30) so the shown tab gets its full height.
@@ -49,6 +54,7 @@ private:
     casioxw::SysExCodec codec;
     casioxw::MidiIO midiIO;
     SoloSynthPanel soloSynthPanel;
+    PCMEnginePanel pcmEnginePanel;
     SequencerPanel sequencerPanel;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
 

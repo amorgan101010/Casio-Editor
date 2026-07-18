@@ -15,6 +15,7 @@ target_sources(CasioXWEditor PRIVATE
     SoloSynthPanel.cpp
     EnvelopeDisplay.cpp
     SequencerPanel.cpp
+    PCMEnginePanel.cpp
 )
 
 # Absolute path to the params map so the app finds it regardless of the working directory it's
