@@ -74,19 +74,28 @@ public:
         {
             setUsingNativeTitleBar (true);
 
-            // NOT centreWithSize(getWidth(), getHeight()) -- that reads the size back off this
-            // DocumentWindow itself, implicitly trusting that setContentOwned(..., true)'s
-            // resize-to-fit has already landed by this point. On at least one Linux WM/native
-            // title bar combination that timing didn't hold, so the window opened at some tiny
-            // pre-resize default and only a manual drag fixed it (same failure class as bug-009 --
-            // an implicit "has the layout already happened?" dependency). Read the size directly
-            // from the content component we just built instead: it is known-correct the moment
-            // MainContentComponent's constructor returns, with no window-peer timing involved.
+            // Capture the intended size from the content component (known-correct the moment its
+            // constructor returns) BEFORE setContentOwned, so no window-peer timing is involved.
             auto* content = new MainContentComponent();
+            const int contentW = content->getWidth();
+            const int contentH = content->getHeight();
+
             setContentOwned (content, true);
             setResizable (true, true);
-            centreWithSize (content->getWidth(), content->getHeight());
+
+            // Floor the size so no window manager can map the window at a near-zero default (jmin
+            // guards the degenerate case where the content is somehow smaller than the floor).
+            setResizeLimits (juce::jmin (760, contentW), juce::jmin (520, contentH), 10000, 10000);
+
+            // Size + centre BEFORE showing -- honoured by well-behaved WMs...
+            centreWithSize (contentW, contentH);
             setVisible (true);
+            // ...then re-assert AFTER setVisible, once the native peer exists. Some Linux WMs drop
+            // bounds set before the window is mapped and open it genuinely tiny (bug-071: "stuff is
+            // visible but no room to display most of it, a manual resize brings it to life" -- the
+            // bug-009 launch-timing class). Re-centring on the live peer forces the intended size;
+            // it's a flicker-free no-op on WMs that already applied the pre-map bounds.
+            centreWithSize (contentW, contentH);
         }
 
         void closeButtonPressed() override
