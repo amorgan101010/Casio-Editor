@@ -23,6 +23,7 @@ namespace
     constexpr int kLaneLabelWidth = 64;                   // shared label gutter: drum names + Pitch/Gate/Vel
     constexpr int kCardWidth = 470;                       // right-side control cards (drum / synth)
     constexpr int kDrumTrackRowHeight = 52;
+    constexpr int kPcmTrackRowHeight = 30;                // compact: label + mute + channel only
     constexpr int kDrumKeyHeight = 34;                    // drum trig keys, tall enough to read as keys
     constexpr int kSelectKeyHeight = 24;                  // synth select/trig row
     constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
@@ -94,6 +95,22 @@ namespace
         { "Drum 3", 10, 42 },
         { "Drum 4", 11, 46 },
         { "Drum 5", 12, 49 },
+    };
+
+    struct PcmTrackDef
+    {
+        const char* label;
+        int defaultChannel;
+    };
+
+    // The Step Sequencer's remaining note parts (XWP1_1B_EN.pdf p.E-49): Drum 1-5 are parts 8-12
+    // above; Bass/Solo 1/Solo 2/Chords are parts 13-16, mixer channels 13ch-16ch 1:1. Any of these
+    // can hold a PCM Melody tone (or any other tone type) in a configured Performance.
+    constexpr PcmTrackDef kPcmTracks[] = {
+        { "Bass",   13 },
+        { "Solo 1", 14 },
+        { "Solo 2", 15 },
+        { "Chords", 16 },
     };
 
     struct NrpnAddress
@@ -422,6 +439,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         addAndMakeVisible (button);
     };
     initArrowToggle (drumControlsButton, "Toggle drum controls");
+    initArrowToggle (pcmControlsButton, "Toggle PCM track controls");
     initArrowToggle (synthControlsButton, "Toggle synth controls");
 
     // ---- transport -------------------------------------------------------------------------
@@ -523,7 +541,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     addAndMakeVisible (statusLabel);
 
     // ---- drum-track controls (5 lanes, each with channel + note + 16 step on/off + velocity) ---
-    for (auto* l : { &drumTracksLabel, &synthLabel })
+    for (auto* l : { &drumTracksLabel, &pcmTracksLabel, &synthLabel })
     {
         l->setColour (juce::Label::textColourId, EditorColours::textHeader);
         l->setJustificationType (juce::Justification::centredLeft);
@@ -615,6 +633,39 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         drumTrackControls[i] = std::move (row);
     }
 
+    // ---- PCM-track controls (4 melodic lanes: Bass/Solo 1/Solo 2/Chords, XWP1_1B_EN.pdf p.E-49).
+    // Compact rows only (label/mute/channel) in this pass; full per-step note/gate/velocity editing
+    // comes via a focus selector onto the shared step column in a follow-up chunk.
+    for (size_t i = 0; i < std::size (kPcmTracks); ++i)
+    {
+        const auto& def = kPcmTracks[i];
+        auto row = std::make_unique<PcmTrackControl>();
+
+        for (auto& step : row->track.steps)
+            step.velocity = 100;
+        row->track.channel = def.defaultChannel;
+
+        row->trackLabel.setText (def.label, juce::dontSendNotification);
+        row->trackLabel.setJustificationType (juce::Justification::centredLeft);
+        row->trackLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
+        row->trackLabel.setFont (EditorFonts::header (11.0f));
+        addAndMakeVisible (row->trackLabel);
+
+        row->mute.setClickingTogglesState (true);
+        addAndMakeVisible (row->mute);
+
+        for (int ch = 1; ch <= 16; ++ch)
+            row->channel.addItem (juce::String (ch), ch);
+        row->channel.setSelectedId (def.defaultChannel, juce::dontSendNotification);
+        row->channel.onChange = [rowPtr = row.get()]
+        {
+            rowPtr->track.channel = juce::jlimit (1, 16, rowPtr->channel.getSelectedId());
+        };
+        addAndMakeVisible (row->channel);
+
+        pcmTrackControls[i] = std::move (row);
+    }
+
     // ---- the pageable p-lock parameter display (the "screen") ------------------------------
     const auto& model = codec.model();
     paramDisplay = std::make_unique<ParamPageDisplay> (model);
@@ -652,6 +703,8 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     setSize (8 + kStepGridWidth + kSectionGap + kLaneLabelWidth + kSectionGap + kCardWidth + 8,
              8 + kToolbarRowHeight + 8 + 20 + 4
                  + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
+                 + 10 + 20 + 4
+                 + (int) std::size (kPcmTracks) * (kPcmTrackRowHeight + 2)
                  + 10 + juce::jmax (kStepColumnHeight, kSynthSectionHeight)
                  + 6 + kFooterHeight + 8);
 
@@ -706,7 +759,7 @@ void SequencerPanel::paint (juce::Graphics& g)
     // buttons/combos still read against them. (Quarter-step cues live on the trig keys
     // themselves now — StepKeyButton paints those outlines.)
     const auto cardColour = EditorColours::chassisBg.interpolatedWith (EditorColours::panelBg, 0.55f);
-    for (const auto& card : { drumCardBounds, synthCardBounds })
+    for (const auto& card : { drumCardBounds, pcmCardBounds, synthCardBounds })
     {
         if (card.isEmpty())
             continue;
@@ -1664,6 +1717,45 @@ void SequencerPanel::resized()
     }
     drumCardBounds = showDrumControls
         ? juce::Rectangle<int> (cardX, drumTop - 2, kCardWidth, bounds.getY() - drumTop + 2)
+        : juce::Rectangle<int>();
+
+    bounds.removeFromTop (10);
+
+    // ---- PCM-track section (compact: label + mute + channel; step editing is a follow-up) ----
+    const bool showPcmControls = pcmControlsButton.getToggleState();
+    auto pcmHeader = bounds.removeFromTop (20);
+    pcmTracksLabel.setBounds (pcmHeader.removeFromLeft (140));
+    pcmControlsButton.setBounds (pcmHeader.removeFromLeft (22));
+    bounds.removeFromTop (4);
+
+    const int pcmTop = bounds.getY();
+    for (const auto& row : pcmTrackControls)
+    {
+        if (row == nullptr)
+            continue;
+        auto r = bounds.removeFromTop (kPcmTrackRowHeight);
+        r.removeFromLeft (kStepGridWidth);
+        r.removeFromLeft (kSectionGap);
+        row->trackLabel.setBounds (r.removeFromLeft (kLaneLabelWidth));
+        r.removeFromLeft (kSectionGap);
+
+        if (showPcmControls)
+        {
+            auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
+            row->mute.setBounds (controls.removeFromLeft (46).withSizeKeepingCentre (46, 24));
+            controls.removeFromLeft (6);
+            row->channel.setBounds (controls.removeFromLeft (58).withSizeKeepingCentre (58, 24));
+        }
+        else
+        {
+            row->mute.setBounds (0, 0, 0, 0);
+            row->channel.setBounds (0, 0, 0, 0);
+        }
+
+        bounds.removeFromTop (2);
+    }
+    pcmCardBounds = showPcmControls
+        ? juce::Rectangle<int> (cardX, pcmTop - 2, kCardWidth, bounds.getY() - pcmTop + 2)
         : juce::Rectangle<int>();
 
     bounds.removeFromTop (10);

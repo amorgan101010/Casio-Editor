@@ -110,6 +110,22 @@ private:
         int selectedStep = -1; // per-track p-lock selection target, -1 means base
     };
 
+    /** One melodic PCM/Melody track (Bass, Solo 1, Solo 2, or Chords — the Step Sequencer note
+        parts that aren't Drum 1-5 or the Solo Synth's own Zone Part 1, XWP1_1B_EN.pdf p.E-49).
+        `track` reuses casioxw::Sequence as a self-contained per-track model (channel + 16 steps +
+        an empty `lockable` for now) so every existing pure core function — scheduleStep,
+        stepIntervalMs, sequenceToJson/FromJson — works on it unchanged; tempoBpm/stepsPerBeat are
+        mirrored from the main `sequence` every playback tick rather than edited directly. Full
+        per-step note/gate/velocity editing happens by focusing this track onto the shared step
+        column (like the Solo Synth's), not from this compact row. */
+    struct PcmTrackControl
+    {
+        juce::Label trackLabel;
+        juce::TextButton mute { "Mute" };
+        juce::ComboBox channel;
+        casioxw::Sequence track;
+    };
+
     void timerCallback() override;
     void play();
     void stop();
@@ -166,6 +182,7 @@ private:
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
     std::unique_ptr<ParamPageDisplay> paramDisplay;   // the pageable p-lock parameter sub-window
     std::array<std::unique_ptr<DrumTrackControl>, 5> drumTrackControls;
+    std::array<std::unique_ptr<PcmTrackControl>, 4> pcmTrackControls;
 
     juce::TextButton playStopButton { "Play" };
     juce::TextButton randomizeButton { "Rnd" };
@@ -200,8 +217,10 @@ private:
     juce::TextButton shiftRightButton { ">" };
     juce::TextButton drumControlsButton;
     juce::TextButton synthControlsButton;
+    juce::TextButton pcmControlsButton;
     juce::Label statusLabel;                          // footer: file/save/load messages only
     juce::Label drumTracksLabel { {}, "DRUM TRACKS" };
+    juce::Label pcmTracksLabel { {}, "PCM TRACKS" };
     juce::Label synthLabel { {}, "SOLO SYNTH" };
 
     juce::Label pitchRowLabel { {}, "Pitch" };
@@ -210,6 +229,7 @@ private:
 
     // Card regions computed by resized(), painted by paint().
     juce::Rectangle<int> drumCardBounds;
+    juce::Rectangle<int> pcmCardBounds;
     juce::Rectangle<int> synthCardBounds;
 
     // Look-ahead transport state (message thread only — the feeder timer runs there, so no locking
