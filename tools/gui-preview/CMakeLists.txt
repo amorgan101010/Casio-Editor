@@ -27,6 +27,7 @@ target_compile_definitions(gui-preview PRIVATE
 
 target_link_libraries(gui-preview PRIVATE
     casioxw_core
+    CasioXWEditorIcon
     juce::juce_gui_basics
     juce::juce_audio_devices
     juce::juce_recommended_config_flags
