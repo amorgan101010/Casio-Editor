@@ -27,27 +27,49 @@ jobs:
           import sys
 
           version_file = "app/AppVersion.h"
+          legacy_version_file = "app/Main.cpp"
           pattern = re.compile(r'kApplicationVersion\s*=\s*"([^"]+)"')
+          legacy_pattern = re.compile(r'getApplicationVersion\(\)\s+override\s*\{\s*return\s+"([^"]+)"\s*;\s*\}')
           semver = re.compile(r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$')
 
-          def read_at(sha: str) -> str:
+          def show_file_at(sha: str, path: str):
               try:
-                  text = subprocess.check_output(
-                      ["git", "show", f"{sha}:{version_file}"],
+                  return subprocess.check_output(
+                      ["git", "show", f"{sha}:{path}"],
                       text=True,
                       stderr=subprocess.STDOUT,
                   )
               except subprocess.CalledProcessError as e:
-                  print(e.output)
-                  raise RuntimeError(f"Failed to read {version_file} at {sha}") from e
+                  out = e.output or ""
+                  # During rollout, base commits may predate app/AppVersion.h.
+                  missing = ("exists on disk, but not in" in out) or ("does not exist in" in out)
+                  if missing:
+                      return None
+                  print(out)
+                  raise RuntimeError(f"Failed to read {path} at {sha}") from e
 
-              m = pattern.search(text)
+          def extract_semver(text: str, source: str, regex: re.Pattern) -> str:
+              m = regex.search(text)
               if not m:
-                  raise RuntimeError(f"Could not find kApplicationVersion in {version_file} at {sha}")
+                  raise RuntimeError(f"Could not find version in {source}")
               v = m.group(1)
               if not semver.fullmatch(v):
-                  raise RuntimeError(f"{version_file} has non-semver version '{v}' at {sha}")
+                  raise RuntimeError(f"{source} has non-semver version '{v}'")
               return v
+
+          def read_at(sha: str) -> str:
+              text = show_file_at(sha, version_file)
+              if text is not None:
+                  return extract_semver(text, f"{version_file} at {sha}", pattern)
+
+              legacy_text = show_file_at(sha, legacy_version_file)
+              if legacy_text is not None:
+                  return extract_semver(legacy_text, f"{legacy_version_file} at {sha}", legacy_pattern)
+
+              raise RuntimeError(
+                  f"No app version source found at {sha}; expected {version_file} "
+                  f"or legacy {legacy_version_file}"
+              )
 
           base = read_at(os.environ["BASE_SHA"])
           head = read_at(os.environ["HEAD_SHA"])
