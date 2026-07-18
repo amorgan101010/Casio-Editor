@@ -18,8 +18,8 @@
 
     `sequence` is the single source of truth (note/vel/enable/tempo/channel + per-step p-locks +
     per-param base values); every widget writes into it on edit and is refreshed from it. Notes go
-    out as channel-voice messages; p-locks go out as SysEx via the shared SysExCodec — a p-lock IS
-    a tone edit scheduled to a step.
+    out as channel-voice messages; p-locks go out as NRPN where mapped (SysEx fallback otherwise) —
+    a p-lock IS a tone edit scheduled to a step.
 
     Interaction model (one rule: the edit target is `(selectedStep, editMode)`, surfaced in a
     status label):
@@ -78,10 +78,11 @@ private:
 
     void feedLookahead();   // scheduler tick: fill the look-ahead horizon with timestamped events
 
-    // The p-lock transport seam. Builds the MIDI message(s) for one parameter change — SysEx via
-    // the proven codec today; the NRPN/CC map (prefer NRPN, CC where verified absolute) is the next
-    // chunk and edits ONLY this function. Returns >1 message once NRPN lands (LSB/MSB/data).
-    std::vector<juce::MidiMessage> paramMessages (const juce::String& paramId, int instance, int value) const;
+    // The p-lock transport seam. Builds the MIDI message(s) for one parameter change: NRPN where
+    // mapped (to cut traffic on the live transport path), with SysEx fallback through the proven
+    // codec for anything unmapped.
+    std::vector<juce::MidiMessage> paramMessages (const juce::String& paramId, int instance, int value,
+                                                  int channel) const;
     void sendParamNow (const juce::String& paramId, int instance, int value);   // immediate (audition/reset)
 
     casioxw::SysExCodec& codec;
