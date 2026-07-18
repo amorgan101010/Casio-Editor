@@ -80,11 +80,11 @@ public:
         state-dependent rendering a fresh panel never shows. Never called by the app itself. */
     void applyPreviewDemoState();
 
-    /** tools/gui-preview only: focus a PCM track (Bass) with a few seeded steps, so an offscreen
-        snapshot can verify the shared step column actually retargets (synthLabel/note values/
-        disabled P-LOCK controls) rather than always showing the Solo Synth. Never called by the
-        app itself. */
-    void applyPcmFocusPreviewState();
+    /** tools/gui-preview only: select a step on a PCM track (Bass) with P-LOCK mode on, so an
+        offscreen snapshot can verify the screen actually swaps to the NOTE/GATE/VEL step editor
+        (and back) rather than always showing the Solo Synth's pages. Never called by the app
+        itself. */
+    void applyPcmStepEditPreviewState();
 
     /** tools/gui-preview only: headless correctness check for the PCM tracks save/load path (the
         one genuinely new bit of logic in that feature -- everything else reuses already-tested
@@ -125,19 +125,22 @@ private:
     };
 
     /** One melodic PCM/Melody track (Bass, Solo 1, Solo 2, or Chords — the Step Sequencer note
-        parts that aren't Drum 1-5 or the Solo Synth's own Zone Part 1, XWP1_1B_EN.pdf p.E-49).
-        `track` reuses casioxw::Sequence as a self-contained per-track model (channel + 16 steps +
-        an empty `lockable` for now) so every existing pure core function — scheduleStep,
-        stepIntervalMs, sequenceToJson/FromJson — works on it unchanged; tempoBpm/stepsPerBeat are
-        mirrored from the main `sequence` every playback tick rather than edited directly. Full
-        per-step note/gate/velocity editing happens by focusing this track onto the shared step
-        column (like the Solo Synth's), not from this compact row. */
+        parts that aren't Drum 1-5 or the Solo Synth's own Zone Part 1, XWP1_1B_EN.pdf p.E-49). Its
+        own lane, structured like DrumTrackControl (label/mute/channel/16 step keys), NOT a shared
+        column with the Solo Synth. `track` reuses casioxw::Sequence as a self-contained per-track
+        model (channel + 16 steps + an empty `lockable` for now) so every existing pure core
+        function — scheduleStep, stepIntervalMs, sequenceToJson/FromJson — works on it unchanged;
+        tempoBpm/stepsPerBeat are mirrored from the main `sequence` every playback tick. A step's
+        note/gate/velocity are always-defined (no base-vs-lock inheritance the way FLTR/ENV params
+        have) — selecting a step in P-LOCK mode swaps the screen to a 3-cell NOTE/GATE/VEL editor
+        for it (see refreshParamDisplayPages()), not a per-row knob column. */
     struct PcmTrackControl
     {
         juce::Label trackLabel;
         juce::TextButton mute { "Mute" };
         juce::ComboBox channel;
-        juce::TextButton focusButton { "Focus" };   // radio-grouped with synthFocusButton
+        std::array<StepKeyButton, 16> steps;
+        int selectedStep = -1;   // -1 == none; which step's note/gate/vel the screen currently edits
         casioxw::Sequence track;
     };
 
@@ -153,18 +156,24 @@ private:
         feeder owns this panel's timer while playing. */
     void syncBaseValuesFromSynth();
 
-    /** Repoint the shared step column (stepControls: select/note/gate/velocity) at a different
-        melodic track: -1 == Solo Synth (`sequence`), 0-3 == pcmTrackControls[idx]->track. P-lock
-        editing (editButton) is Solo-Synth-only so far (PCM tracks carry no lockable params yet) —
-        disabled and forced to STEP mode whenever a PCM track has focus, along with the other
-        Solo-Synth-only tools (Base/Sync/Rnd/Shift) that only ever mutate `sequence`. */
-    void setMelodicFocus (int trackIndex);
-
     void selectStep (int step);                // -1 == Base
     void setPLockMode (bool pLockMode);        // STEP / P-LOCK mode keys both land here
     void onParamEdited (int lockableIndex, int value);
     void refreshParamControls();               // value + locked flags into the param display
     void refreshStepButtons();                 // selected highlight + has-locks LED
+
+    /** Load the Solo Synth's FLTR/FLT2/ENV/LFO pages into paramDisplay (kLockables-driven). The
+        screen's normal content; ctor calls it once, refreshParamDisplayPages() calls it again
+        whenever a PCM track's step selection is cleared and control returns to the Solo Synth. */
+    void rebuildSynthParamPages();
+
+    /** Swap paramDisplay's page set to match whichever lane currently owns the edit target: the
+        Solo Synth's normal pages, or -- if a PCM track has a step selected -- a single-page
+        NOTE/GATE/VEL editor for that step (raw cells, no ParamInfo/SysEx address). Cheap to call
+        liberally; it only rebuilds when the target lane actually changed. Called from the tail of
+        refreshStepButtons() so every selection-changing action stays in sync automatically. */
+    void refreshParamDisplayPages();
+    void refreshPcmStepCellValues (int pcmRow);   // push the selected step's note/gate/vel into the screen
     void updateStatusLabel();                  // edit-target readout in the display header
     void randomizeSequence();                  // Randomize button -> casioxw::randomize + resync widgets
     void showRandomizeOptions();               // call-out editing randomizeOptions in place
@@ -186,7 +195,9 @@ private:
     void loadSequenceSettings();
     void saveSequenceSettings() const;
     bool hasAnyDrumStepSelected() const;
+    bool hasAnyPcmStepSelected() const;
     void clearDrumSelections();
+    void clearPcmSelections();
     void updateClearLocksEnabled();
 
     void feedLookahead();   // scheduler tick: fill the look-ahead horizon with timestamped events
@@ -203,12 +214,6 @@ private:
     casioxw::MidiIO& midiIO;
 
     casioxw::Sequence sequence;                // source of truth (Solo Synth track)
-
-    // Which melodic track the shared step column (stepControls) currently shows/edits.
-    // -1 == sequence (Solo Synth); 0-3 == pcmTrackControls[focusedTrackIndex]->track.
-    casioxw::Sequence* activeMelodicTrack = &sequence;
-    int focusedTrackIndex = -1;
-    juce::TextButton synthFocusButton { "S" };   // radio-grouped with each PcmTrackControl::focusButton; tooltip explains
 
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
     std::unique_ptr<ParamPageDisplay> paramDisplay;   // the pageable p-lock parameter sub-window
@@ -278,6 +283,11 @@ private:
     // non-empty while a base sync is awaiting replies (the shared timer polls the receive queue).
     std::map<juce::String, int> outstandingBaseSync;
     juce::uint32 baseSyncStartedMs = 0;
+
+    // Which lane paramDisplay currently shows: -1 == Solo Synth's normal pages, 0-3 == a PCM
+    // track's single-page NOTE/GATE/VEL step editor. Purely a cache so refreshParamDisplayPages()
+    // can skip rebuilding pages when the target lane hasn't actually changed.
+    int displayedPcmRow = -1;
 
     bool playing = false;
     int selectedStep = -1;                     // -1 == Base

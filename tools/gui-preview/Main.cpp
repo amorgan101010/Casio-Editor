@@ -128,8 +128,8 @@ int main (int argc, char* argv[])
         SequencerPanel panel (codec, midiIO);
         if (mode == "sequencer-demo")       // representative trigs/locks/selection/playhead state
             panel.applyPreviewDemoState();
-        else if (mode == "sequencer-pcm-demo")   // shared step column focused onto a PCM track
-            panel.applyPcmFocusPreviewState();
+        else if (mode == "sequencer-pcm-demo")   // a PCM track's step selected, screen showing NOTE/GATE/VEL
+            panel.applyPcmStepEditPreviewState();
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());

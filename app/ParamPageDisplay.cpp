@@ -21,13 +21,19 @@ struct ParamPageDisplay::Cell : public juce::Component
     Cell (ParamPageDisplay& ownerIn, const CellSpec& specIn, int pageIndexIn)
         : owner (ownerIn), spec (specIn), pageIndex (pageIndexIn)
     {
-        kind = casioxw::decideControlKind (*spec.info, spec.instance);
-        const auto enumName = casioxw::resolveEnumName (*spec.info, spec.instance);
-        enumTable = enumName.isNotEmpty() ? owner.model.enumValues (enumName) : nullptr;
+        int rangeMin = spec.rawMin, rangeMax = spec.rawMax;
+        if (spec.info != nullptr)
+        {
+            kind = casioxw::decideControlKind (*spec.info, spec.instance);
+            const auto enumName = casioxw::resolveEnumName (*spec.info, spec.instance);
+            enumTable = enumName.isNotEmpty() ? owner.model.enumValues (enumName) : nullptr;
+            rangeMin = spec.info->range.min;
+            rangeMax = spec.info->range.max;
+        }
 
         knob.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         knob.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        knob.setRange ((double) spec.info->range.min, (double) spec.info->range.max, 1.0);
+        knob.setRange ((double) rangeMin, (double) rangeMax, 1.0);
         knob.onValueChange = [this]
         {
             repaint();
@@ -59,6 +65,17 @@ struct ParamPageDisplay::Cell : public juce::Component
     juce::String valueText() const
     {
         const int v = (int) knob.getValue();
+
+        if (spec.info == nullptr)
+        {
+            switch (spec.rawFormat)
+            {
+                case ValueFormat::Note:    return casioxw::midiNoteName (v);
+                case ValueFormat::Percent: return juce::String (v) + "%";
+                case ValueFormat::Plain:   default: return juce::String (v);
+            }
+        }
+
         if (kind == casioxw::ControlKind::Toggle)
             return v != 0 ? "ON" : "OFF";
         if (enumTable != nullptr)
@@ -131,7 +148,8 @@ void ParamPageDisplay::setPages (std::vector<Page> pages)
     {
         for (const auto& spec : pageDefs[p].cells)
         {
-            jassert (spec.info != nullptr);
+            // spec.info == nullptr is valid -- a "raw" cell (e.g. a sequencer step's note/gate/
+            // velocity) with no SysEx address, formatted via spec.rawFormat instead.
             auto cell = std::make_unique<Cell> (*this, spec, (int) p);
             addChildComponent (*cell);   // visibility managed per page
             cells.push_back (std::move (cell));
