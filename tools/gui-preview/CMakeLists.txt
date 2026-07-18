@@ -13,6 +13,7 @@ target_sources(gui-preview PRIVATE
     ../../app/SoloSynthPanel.cpp
     ../../app/SequencerPanel.cpp
     ../../app/EnvelopeDisplay.cpp
+    ../../app/PCMEnginePanel.cpp
 )
 
 target_include_directories(gui-preview PRIVATE

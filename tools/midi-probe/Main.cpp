@@ -117,6 +117,65 @@ int main (int argc, char* argv[])
         return 0;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected get|set)\n", mode.toRawUTF8());
+    if (mode == "setraw")
+    {
+        // setraw <ct> <id> <value>  (single unsigned 7-bit value byte, block/instance/ai/an = 0)
+        const int ct    = juce::String (argv[2]).getIntValue();
+        const int id    = juce::String (argv[3]).getIntValue();
+        const int value = argc > 4 ? juce::String (argv[4]).getIntValue() : 0;
+        std::vector<std::uint8_t> frame = {
+            0xF0, 0x44, 0x16, 0x03, 0x7F, 0x01, (std::uint8_t) ct,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            (std::uint8_t) id, 0, 0, 0, 0, 0,
+            (std::uint8_t) (value & 0x7F), 0xF7
+        };
+        std::printf ("SETRAW ct=%d id=0x%02X value=%d\nFrame: %s\n", ct, id, value, hex (frame).toRawUTF8());
+        io.sendFrame (frame);
+        std::printf ("Sent.\n");
+        return 0;
+    }
+
+    if (mode == "scan")
+    {
+        // scan <ct> <idFrom> <idTo> [wantValue]
+        // Sweeps raw get requests over category <ct>, param-id byte idFrom..idTo (instance 1,
+        // ai=0, an=0), printing every reply's id + value byte. Diagnostic for finding a
+        // mistranscribed address: set the target on the synth to a known value, then look for
+        // the id whose reply carries it. Bypasses the codec's paramId map entirely (raw bytes).
+        const int ct     = juce::String (argv[2]).getIntValue();
+        const int idFrom = juce::String (argv[3]).getIntValue();
+        const int idTo   = juce::String (argc > 4 ? argv[4] : argv[3]).getIntValue();
+        const int wantValue = argc > 5 ? juce::String (argv[5]).getIntValue() : -1;
+
+        std::printf ("SCAN ct=%d id=%d..%d%s\n", ct, idFrom, idTo,
+                     wantValue >= 0 ? (" looking for value " + juce::String (wantValue)).toRawUTF8() : "");
+
+        for (int id = idFrom; id <= idTo; ++id)
+        {
+            std::vector<std::uint8_t> req = {
+                0xF0, 0x44, 0x16, 0x03, 0x7F, 0x00, (std::uint8_t) ct,
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                (std::uint8_t) id, 0, 0, 0, 0, 0, 0xF7
+            };
+            io.sendFrame (req);
+
+            std::this_thread::sleep_for (std::chrono::milliseconds (35));
+            for (auto& frame : io.drainReceived())
+            {
+                if (frame.size() < 26) continue;
+                const int replyId    = frame[18];
+                const int replyValue = frame[24];
+                const bool hit = (wantValue < 0) || (replyValue == wantValue);
+                if (hit)
+                    std::printf ("  id 0x%02X (%3d) -> value 0x%02X (%3d)%s\n",
+                                 replyId, replyId, replyValue, replyValue,
+                                 (wantValue >= 0 && replyValue == wantValue) ? "   <== MATCH" : "");
+            }
+        }
+        std::printf ("Scan done.\n");
+        return 0;
+    }
+
+    std::fprintf (stderr, "unknown mode '%s' (expected get|set|scan)\n", mode.toRawUTF8());
     return 1;
 }

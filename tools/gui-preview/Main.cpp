@@ -8,6 +8,7 @@
 //   gui-preview panel <outPath.png>   (renders the full SoloSynthPanel at its default size)
 
 #include "../../app/EditorLookAndFeel.h"
+#include "../../app/PCMEnginePanel.h"
 #include "../../app/ParamControl.h"
 #include "../../app/SequencerPanel.h"
 #include "../../app/SoloSynthPanel.h"
@@ -91,6 +92,23 @@ int main (int argc, char* argv[])
         casioxw::SysExCodec codec (std::move (model));
         casioxw::MidiIO midiIO;
         SoloSynthPanel panel (codec, midiIO);
+        const bool ok = saveSnapshot (panel, juce::File (argv[2]));
+        std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
+                     argv[2], panel.getWidth(), panel.getHeight());
+        return ok ? 0 : 1;
+    }
+
+    if (mode == "pcm")
+    {
+        if (argc < 3)
+        {
+            std::fprintf (stderr, "pcm requires: <outPath.png>\n");
+            return 1;
+        }
+        auto model = casioxw::ParamModel::fromFile (jsonPath);
+        casioxw::SysExCodec codec (std::move (model));
+        casioxw::MidiIO midiIO;
+        PCMEnginePanel panel (codec, midiIO);
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());
