@@ -30,6 +30,7 @@ namespace
     constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
     constexpr int kStepColumnHeight = kSelectKeyHeight + 2 + kKnobCell * 3;   // select + note + gate + velocity
     constexpr int kSynthSectionHeight = 306;              // fits the card (header + LCD display + page keys)
+    constexpr int kSynthStepTopInset = 9;                 // visually match drum/PCM header-to-keys spacing
     constexpr int kToolbarRowHeight = 30;                 // transport toolbar rows (wrapping flow)
     constexpr int kFooterHeight = 18;                     // file save/load message line
     constexpr int kSectionGap = 6;
@@ -720,7 +721,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                  + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
                  + 10 + 20 + 4
                  + (int) std::size (kPcmTracks) * (kPcmTrackRowHeight + 2)
-                 + 10 + juce::jmax (kStepColumnHeight, kSynthSectionHeight)
+                 + 10 + 20 + 4 + juce::jmax (kStepColumnHeight, kSynthSectionHeight)
                  + 6 + kFooterHeight + 8);
 
     selectStep (-1);   // start in Base mode
@@ -2128,17 +2129,23 @@ void SequencerPanel::resized()
     bounds.removeFromTop (10);
 
     // ---- synth section ---------------------------------------------------------------------
+    auto synthHeader = bounds.removeFromTop (20);
+    synthLabel.setBounds (synthHeader.removeFromLeft (140));
+    synthControlsButton.setBounds (synthHeader.removeFromLeft (22));
+    bounds.removeFromTop (4);
+
     auto synthSection = bounds.removeFromTop (juce::jmax (kStepColumnHeight, kSynthSectionHeight));
-    const int playheadBottom = synthSection.getY() + kStepColumnHeight;
+    const int playheadBottom = synthSection.getY() + kSynthStepTopInset + kStepColumnHeight;
 
     auto stepCols = synthSection.removeFromLeft (kStepGridWidth);
     const int gridX = stepCols.getX();
+    stepCols.removeFromTop (kSynthStepTopInset);
     synthSection.removeFromLeft (kSectionGap);
 
     // Lane label gutter: row labels aligned to the Pitch / Gate / Velocity knob rows, same
     // column as the drum track names.
     auto labelCol = synthSection.removeFromLeft (kLaneLabelWidth);
-    labelCol.removeFromTop (kSelectKeyHeight + 2);
+    labelCol.removeFromTop (kSynthStepTopInset + kSelectKeyHeight + 2);
     pitchRowLabel.setBounds (labelCol.removeFromTop (kKnobCell));
     gateRowLabel.setBounds (labelCol.removeFromTop (kKnobCell));
     velocityRowLabel.setBounds (labelCol.removeFromTop (kKnobCell));
@@ -2147,9 +2154,6 @@ void SequencerPanel::resized()
     auto card = synthSection.removeFromLeft (kCardWidth);
     auto cardInner = card.reduced (8);
     auto headerRow = cardInner.removeFromTop (24);
-    synthControlsButton.setBounds (headerRow.removeFromLeft (22));
-    headerRow.removeFromLeft (4);
-    synthLabel.setBounds (headerRow.removeFromLeft (92));
 
     if (showSynthControls)
     {
