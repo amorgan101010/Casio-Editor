@@ -1,5 +1,6 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "AppVersion.h"
 #include "SequencerPanel.h"
 #include "SoloSynthPanel.h"
 #include "casioxw/MidiIO.h"
@@ -55,8 +56,8 @@ private:
 class CasioXWEditorApplication : public juce::JUCEApplication
 {
 public:
-    const juce::String getApplicationName() override       { return "Casio XW-P1 Editor"; }
-    const juce::String getApplicationVersion() override    { return "0.6.0-sequencer"; }
+    const juce::String getApplicationName() override       { return casioxw::app::kApplicationName; }
+    const juce::String getApplicationVersion() override    { return casioxw::app::kApplicationVersion; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 
     void initialise (const juce::String&) override

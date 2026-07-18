@@ -1,5 +1,6 @@
 #pragma once
 
+#include "casioxw/CoreVersion.h"
 #include "casioxw/ParamModel.h"
 
 #include <cstdint>
@@ -8,9 +9,6 @@
 
 namespace casioxw
 {
-    /** Returns the casioxw_core version string. */
-    std::string coreVersion();
-
     /** XW-P1 parameter SysEx codec.
 
         Encodes a (paramId, instance, value) triple into the full wire frame

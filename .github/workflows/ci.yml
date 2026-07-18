@@ -7,6 +7,58 @@ on:
     branches: [main]
 
 jobs:
+  version-policy:
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'feature/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enforce semver bump for feature PRs into main
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+          import sys
+
+          version_file = "app/AppVersion.h"
+          pattern = re.compile(r'kApplicationVersion\s*=\s*"([^"]+)"')
+          semver = re.compile(r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$')
+
+          def read_at(sha: str) -> str:
+              try:
+                  text = subprocess.check_output(
+                      ["git", "show", f"{sha}:{version_file}"],
+                      text=True,
+                      stderr=subprocess.STDOUT,
+                  )
+              except subprocess.CalledProcessError as e:
+                  print(e.output)
+                  raise RuntimeError(f"Failed to read {version_file} at {sha}") from e
+
+              m = pattern.search(text)
+              if not m:
+                  raise RuntimeError(f"Could not find kApplicationVersion in {version_file} at {sha}")
+              v = m.group(1)
+              if not semver.fullmatch(v):
+                  raise RuntimeError(f"{version_file} has non-semver version '{v}' at {sha}")
+              return v
+
+          base = read_at(os.environ["BASE_SHA"])
+          head = read_at(os.environ["HEAD_SHA"])
+
+          if base == head:
+              print(f"Feature PRs into main must bump app semver: base={base}, head={head}")
+              sys.exit(1)
+
+          print(f"Version policy OK: {base} -> {head}")
+          PY
+
   build-and-test:
     runs-on: ubuntu-latest
 

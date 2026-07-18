@@ -5,6 +5,7 @@
 # but must NEVER depend on a JUCE GUI module.
 
 add_library(casioxw_core STATIC
+    src/CoreVersion.cpp
     src/SysExCodec.cpp
     src/ParamModel.cpp
     src/MidiIO.cpp

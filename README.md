@@ -8,9 +8,16 @@ Linux-native JUCE editor for the Casio XW-P1 synth, with:
 
 ## Current status
 
-- App version: `0.6.0-sequencer`
+- App version: `0.6.0-sequencer` (source: `app/AppVersion.h`)
+- Core version: `0.1.0` (source: `core/include/casioxw/CoreVersion.h`)
 - CI: build + test on every push/PR to `main`
 - Test suite: Catch2 via CTest (core codec/model/MIDI/sequencer coverage)
+
+## Versioning rule
+
+- Feature branches merged into `main` must bump `app/AppVersion.h` using semantic versioning
+  (`MAJOR.MINOR.PATCH` with optional prerelease/build metadata).
+- CI enforces this on PRs where the source branch name starts with `feature/`.
 
 ## Features
 

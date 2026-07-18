@@ -38,11 +38,6 @@ namespace casioxw
         }
     }
 
-    std::string coreVersion()
-    {
-        return "0.1.0";
-    }
-
     std::vector<std::uint8_t> SysExCodec::soloSynthToneHeader()
     {
         return { 0xF0, 0x44, 0x16, 0x03, 0x7F, 0x01, 0x09 };
