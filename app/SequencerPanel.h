@@ -91,6 +91,7 @@ private:
     {
         solo,
         drums,
+        pcm,
         sequenceSet
     };
 
@@ -166,9 +167,12 @@ private:
     void loadSequenceFromFile();
     void saveByKind (SaveKind kind);
     juce::String serializeDrumsToJson() const;
-    juce::String serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile) const;
+    juce::String serializePcmTracksToJson() const;
+    juce::String serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile,
+                                             const juce::String& pcmFile) const;
     bool applySoloSequenceText (const juce::String& text);
     bool applyDrumSequenceText (const juce::String& text);
+    bool applyPcmTracksText (const juce::String& text);
     bool applyLoadedText (const juce::String& text, const juce::File& sourceFile);  // parse + adopt + resync
     void chooseSequenceDirectory();
     juce::File settingsFilePath() const;

@@ -888,13 +888,15 @@ void SequencerPanel::saveSequenceToFile()
     juce::PopupMenu menu;
     menu.addItem (1, "Save Solo Sequence (.xwseq)");
     menu.addItem (2, "Save Drum Sequence (.xwdrm)");
-    menu.addItem (3, "Save Sequence Set (.xwset)");
+    menu.addItem (3, "Save PCM Tracks (.xwpcm)");
+    menu.addItem (4, "Save Sequence Set (.xwset)");
     menu.showMenuAsync (juce::PopupMenu::Options(),
                         [this] (int result)
                         {
                             if (result == 1) saveByKind (SaveKind::solo);
                             if (result == 2) saveByKind (SaveKind::drums);
-                            if (result == 3) saveByKind (SaveKind::sequenceSet);
+                            if (result == 3) saveByKind (SaveKind::pcm);
+                            if (result == 4) saveByKind (SaveKind::sequenceSet);
                         });
 }
 
@@ -948,6 +950,12 @@ void SequencerPanel::saveByKind (SaveKind kind)
         wildcard = "*.xwdrm";
         payload = serializeDrumsToJson();
     }
+    else if (kind == SaveKind::pcm)
+    {
+        fileName = "pcm-tracks.xwpcm";
+        wildcard = "*.xwpcm";
+        payload = serializePcmTracksToJson();
+    }
     else
     {
         fileName = "sequence-set.xwset";
@@ -969,7 +977,10 @@ void SequencerPanel::saveByKind (SaveKind kind)
             if (file == juce::File())
                 return; // cancelled
 
-            const juce::String ext = kind == SaveKind::solo ? ".xwseq" : (kind == SaveKind::drums ? ".xwdrm" : ".xwset");
+            const juce::String ext = kind == SaveKind::solo ? ".xwseq"
+                                     : kind == SaveKind::drums ? ".xwdrm"
+                                     : kind == SaveKind::pcm ? ".xwpcm"
+                                                              : ".xwset";
             if (! file.hasFileExtension (ext.substring (1)))
                 file = file.withFileExtension (ext.substring (1));
 
@@ -978,15 +989,18 @@ void SequencerPanel::saveByKind (SaveKind kind)
                 const auto baseName = file.getFileNameWithoutExtension();
                 const auto soloName = baseName + ".solo.xwseq";
                 const auto drumName = baseName + ".drums.xwdrm";
+                const auto pcmName = baseName + ".pcm.xwpcm";
                 const auto soloFile = file.getSiblingFile (soloName);
                 const auto drumFile = file.getSiblingFile (drumName);
-                const auto setPayload = serializeSequenceSetToJson (soloName, drumName);
+                const auto pcmFile = file.getSiblingFile (pcmName);
+                const auto setPayload = serializeSequenceSetToJson (soloName, drumName, pcmName);
 
                 const bool okSolo = soloFile.replaceWithText (casioxw::sequenceToJson (sequence));
                 const bool okDrums = drumFile.replaceWithText (serializeDrumsToJson());
+                const bool okPcm = pcmFile.replaceWithText (serializePcmTracksToJson());
                 const bool okSet = file.replaceWithText (setPayload);
 
-                if (okSolo && okDrums && okSet)
+                if (okSolo && okDrums && okPcm && okSet)
                     statusLabel.setText ("Saved set + refs: " + file.getFileName(), juce::dontSendNotification);
                 else
                     statusLabel.setText ("Save failed: " + file.getFullPathName(), juce::dontSendNotification);
@@ -1038,16 +1052,35 @@ juce::String SequencerPanel::serializeDrumsToJson() const
     return juce::JSON::toString (juce::var (root.get()));
 }
 
-juce::String SequencerPanel::serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile) const
+juce::String SequencerPanel::serializePcmTracksToJson() const
+{
+    // Each PCM track IS a casioxw::Sequence, so reuse sequenceToJson() per track instead of
+    // hand-rolling per-field JSON (same round-trip guarantees as the Solo Synth save).
+    juce::DynamicObject::Ptr root = new juce::DynamicObject();
+    root->setProperty ("format", "casioxw-pcm-tracks");
+    root->setProperty ("version", 1);
+
+    juce::Array<juce::var> tracks;
+    for (const auto& row : pcmTrackControls)
+        tracks.add (row == nullptr ? juce::var()
+                                    : juce::JSON::parse (casioxw::sequenceToJson (row->track)));
+    root->setProperty ("tracks", tracks);
+    return juce::JSON::toString (juce::var (root.get()));
+}
+
+juce::String SequencerPanel::serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile,
+                                                         const juce::String& pcmFile) const
 {
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
     root->setProperty ("format", "casioxw-sequence-set-ref");
     root->setProperty ("version", 1);
     root->setProperty ("soloFile", soloFile);
     root->setProperty ("drumsFile", drumsFile);
+    root->setProperty ("pcmFile", pcmFile);
     // Keep inline copies too so old/new loaders can still recover even if sidecars are moved.
     root->setProperty ("solo", juce::JSON::parse (casioxw::sequenceToJson (sequence)));
     root->setProperty ("drums", juce::JSON::parse (serializeDrumsToJson()));
+    root->setProperty ("pcm", juce::JSON::parse (serializePcmTracksToJson()));
     return juce::JSON::toString (juce::var (root.get()));
 }
 
@@ -1129,6 +1162,41 @@ bool SequencerPanel::applyDrumSequenceText (const juce::String& text)
     return true;
 }
 
+bool SequencerPanel::applyPcmTracksText (const juce::String& text)
+{
+    const auto parsed = juce::JSON::parse (text);
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr || obj->getProperty ("format").toString() != "casioxw-pcm-tracks")
+        return false;
+
+    const auto* tracks = obj->getProperty ("tracks").getArray();
+    if (tracks == nullptr)
+        return false;
+
+    const int n = juce::jmin ((int) pcmTrackControls.size(), tracks->size());
+    for (int i = 0; i < n; ++i)
+    {
+        if (pcmTrackControls[(size_t) i] == nullptr)
+            continue;
+        auto& row = *pcmTrackControls[(size_t) i];
+
+        const auto& trackVar = (*tracks)[i];
+        if (trackVar.getDynamicObject() == nullptr)
+            continue;   // this track slot wasn't saved (older/shorter file) -- leave it as-is
+
+        const auto loaded = casioxw::sequenceFromJson (juce::JSON::toString (trackVar));
+        if (! loaded.has_value())
+            continue;
+
+        row.track.steps        = loaded->steps;
+        row.track.channel      = loaded->channel;
+        row.track.tempoBpm     = loaded->tempoBpm;
+        row.track.stepsPerBeat = loaded->stepsPerBeat;
+        row.channel.setSelectedId (juce::jlimit (1, 16, row.track.channel), juce::dontSendNotification);
+    }
+    return true;
+}
+
 bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File& sourceFile)
 {
     const auto parsed = juce::JSON::parse (text);
@@ -1151,12 +1219,17 @@ bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File
     {
         ok = applyDrumSequenceText (text);
     }
+    else if (format == "casioxw-pcm-tracks")
+    {
+        ok = applyPcmTracksText (text);
+    }
     else if (format == "casioxw-sequence-set-ref" || format == "casioxw-sequence-set")
     {
         ok = true;
 
         const auto soloRef = obj->getProperty ("soloFile").toString();
         const auto drumsRef = obj->getProperty ("drumsFile").toString();
+        const auto pcmRef = obj->getProperty ("pcmFile").toString();   // absent in older set files
         if (soloRef.isNotEmpty() && drumsRef.isNotEmpty())
         {
             const auto dir = sourceFile.getParentDirectory();
@@ -1166,6 +1239,12 @@ bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File
             {
                 ok = applySoloSequenceText (soloFile.loadFileAsString()) && ok;
                 ok = applyDrumSequenceText (drumsFile.loadFileAsString()) && ok;
+                if (pcmRef.isNotEmpty())
+                {
+                    const auto pcmFile = dir.getChildFile (pcmRef);
+                    if (pcmFile.existsAsFile())
+                        applyPcmTracksText (pcmFile.loadFileAsString());   // optional -- absent doesn't fail the set
+                }
             }
             else
             {
@@ -1191,6 +1270,9 @@ bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File
                 ok = applyDrumSequenceText (juce::JSON::toString (drums)) && ok;
             else
                 ok = false;
+            const auto pcm = obj->getProperty ("pcm");   // optional -- absent in older set files
+            if (pcm.getDynamicObject() != nullptr)
+                applyPcmTracksText (juce::JSON::toString (pcm));
         }
     }
     else
