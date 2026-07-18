@@ -6,6 +6,9 @@
 // Usage:
 //   gui-preview knob <paramId> <instance> <outPath.png>
 //   gui-preview panel <outPath.png>   (renders the full SoloSynthPanel at its default size)
+//   gui-preview icon <outPath.png>    (renders the app's taskbar/window icon, see app/Main.cpp)
+
+#include "BinaryData.h"
 
 #include "../../app/EditorLookAndFeel.h"
 #include "../../app/PCMEnginePanel.h"
@@ -81,6 +84,29 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
+    if (mode == "icon")
+    {
+        if (argc < 3)
+        {
+            std::fprintf (stderr, "icon requires: <outPath.png>\n");
+            return 1;
+        }
+        // Same rasterization app/Main.cpp's loadAppIconImage() does -- kept in sync by hand since
+        // it's ~8 lines; a genuine second offscreen consumer would be worth sharing properly.
+        auto svg = juce::XmlDocument::parse (juce::String (BinaryData::xwp1_svg, (size_t) BinaryData::xwp1_svgSize));
+        std::unique_ptr<juce::Drawable> drawable = juce::Drawable::createFromSVG (*svg);
+        constexpr int kIconSize = 256;
+        juce::Image icon (juce::Image::ARGB, kIconSize, kIconSize, true);
+        juce::Graphics g (icon);
+        drawable->drawWithin (g, icon.getBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
+
+        juce::PNGImageFormat png;
+        auto stream = juce::File (argv[2]).createOutputStream();
+        const bool ok = stream != nullptr && png.writeImageToStream (icon, *stream);
+        std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n", argv[2], kIconSize, kIconSize);
+        return ok ? 0 : 1;
+    }
+
     if (mode == "panel")
     {
         if (argc < 3)
@@ -149,6 +175,6 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-pcm-roundtrip)\n", mode.toRawUTF8());
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-pcm-roundtrip)\n", mode.toRawUTF8());
     return 1;
 }

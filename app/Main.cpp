@@ -1,5 +1,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "BinaryData.h"
+
 #include "AppVersion.h"
 #include "EditorLookAndFeel.h"
 #include "PCMEnginePanel.h"
@@ -62,6 +64,25 @@ private:
 };
 
 //==============================================================================
+/** Rasterises the embedded xw-p1.svg (BinaryData, see app/resources/) into a square ARGB image
+    for use as the taskbar/window icon. NOTE: DocumentWindow::setIcon() does NOT set this --
+    it only stores an icon JUCE's own custom-painted title bar would draw, which this app never
+    uses (setUsingNativeTitleBar(true)). The real OS-level icon (X11 _NET_WM_ICON + legacy
+    WM_HINTS, what window managers/taskbars actually read) is set via ComponentPeer::setIcon(),
+    reachable through getPeer() -- and only once the peer exists, i.e. after setVisible(true). */
+static juce::Image loadAppIconImage()
+{
+    auto svg = juce::XmlDocument::parse (juce::String (BinaryData::xwp1_svg, (size_t) BinaryData::xwp1_svgSize));
+    std::unique_ptr<juce::Drawable> drawable = juce::Drawable::createFromSVG (*svg);
+
+    constexpr int kIconSize = 256;
+    juce::Image icon (juce::Image::ARGB, kIconSize, kIconSize, true);
+    juce::Graphics g (icon);
+    drawable->drawWithin (g, icon.getBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
+    return icon;
+}
+
+//==============================================================================
 class CasioXWEditorApplication : public juce::JUCEApplication
 {
 public:
@@ -94,6 +115,9 @@ public:
         {
             setUsingNativeTitleBar (true);
 
+            const juce::Image appIcon = loadAppIconImage();
+            setIcon (appIcon);   // harmless fallback for JUCE's own title bar, unused while native
+
             auto* content = new MainContentComponent();
             const int contentW = content->getWidth();
             const int contentH = content->getHeight();
@@ -108,6 +132,12 @@ public:
             setVisible (true);
             // Re-assert size on the mapped peer for Linux WMs that drop pre-map bounds.
             centreWithSize (contentW, contentH);
+
+            // The OS-level window/taskbar icon (X11 _NET_WM_ICON + legacy WM_HINTS) is set on the
+            // ComponentPeer, not the DocumentWindow -- and the peer only exists once setVisible(true)
+            // has run above.
+            if (auto* peer = getPeer())
+                peer->setIcon (appIcon);
         }
 
         void closeButtonPressed() override
