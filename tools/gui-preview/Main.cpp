@@ -7,7 +7,9 @@
 //   gui-preview knob <paramId> <instance> <outPath.png>
 //   gui-preview panel <outPath.png>   (renders the full SoloSynthPanel at its default size)
 
+#include "../../app/EditorLookAndFeel.h"
 #include "../../app/ParamControl.h"
+#include "../../app/SequencerPanel.h"
 #include "../../app/SoloSynthPanel.h"
 #include <casioxw/MidiIO.h>
 #include <casioxw/ParamModel.h>
@@ -34,6 +36,9 @@ namespace
 int main (int argc, char* argv[])
 {
     juce::ScopedJuceInitialiser_GUI juceInit;   // RAII, local (not static) -- safe per buglog bug-007
+
+    static EditorLookAndFeel laf;   // static: must outlive every snapshot taken below
+    juce::LookAndFeel::setDefaultLookAndFeel (&laf);
 
     if (argc < 2)
     {
@@ -92,6 +97,23 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel)\n", mode.toRawUTF8());
+    if (mode == "sequencer")
+    {
+        if (argc < 3)
+        {
+            std::fprintf (stderr, "sequencer requires: <outPath.png>\n");
+            return 1;
+        }
+        auto model = casioxw::ParamModel::fromFile (jsonPath);
+        casioxw::SysExCodec codec (std::move (model));
+        casioxw::MidiIO midiIO;
+        SequencerPanel panel (codec, midiIO);
+        const bool ok = saveSnapshot (panel, juce::File (argv[2]));
+        std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
+                     argv[2], panel.getWidth(), panel.getHeight());
+        return ok ? 0 : 1;
+    }
+
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|sequencer)\n", mode.toRawUTF8());
     return 1;
 }

@@ -1,5 +1,6 @@
 #include "SequencerPanel.h"
 
+#include "EditorLookAndFeel.h"
 #include "casioxw/NoteNames.h"
 #include "casioxw/Scheduler.h"
 
@@ -29,10 +30,12 @@ namespace
     constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
     constexpr int kStepColumnHeight = 20 + 2 + kKnobCell + kKnobCell + kKnobCell;   // select + note + gate + velocity
 
-    const juce::Colour kSelectedColour = juce::Colours::orange;
-    const juce::Colour kHasLocksColour = juce::Colours::goldenrod.darker (0.4f);
-    const juce::Colour kActiveStepColour = juce::Colour::fromRGB (44, 96, 120);
-    const juce::Colour kIdleColour     = juce::Colours::darkgrey;
+    // Solarized Dark tokens (EditorColours) — same semantics as before (selected/has-locks/
+    // active/idle), just pulled from the app-wide palette instead of ad hoc juce::Colours values.
+    const juce::Colour kSelectedColour = EditorColours::selected;
+    const juce::Colour kHasLocksColour = EditorColours::hasLocks;
+    const juce::Colour kActiveStepColour = EditorColours::filledStep;
+    const juce::Colour kIdleColour     = EditorColours::idleStep;
 
     bool isQuarterStep (int stepIndex)
     {
@@ -183,7 +186,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     for (auto* l : { &pitchRowLabel, &gateRowLabel, &velocityRowLabel })
     {
         l->setJustificationType (juce::Justification::centredLeft);
-        l->setColour (juce::Label::textColourId, juce::Colours::grey);
+        l->setColour (juce::Label::textColourId, EditorColours::textMuted);
         addAndMakeVisible (*l);
     }
 
@@ -301,11 +304,11 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     addAndMakeVisible (shiftLeftButton);
     addAndMakeVisible (shiftRightButton);
 
-    statusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    statusLabel.setColour (juce::Label::textColourId, EditorColours::textHeader);
     addAndMakeVisible (statusLabel);
 
     // ---- drum-track controls (5 lanes, each with channel + note + 16 step on/off + velocity) ---
-    drumTracksLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    drumTracksLabel.setColour (juce::Label::textColourId, EditorColours::textHeader);
     drumTracksLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (drumTracksLabel);
 
@@ -356,7 +359,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
             refreshStepButtons();
         };
         row->velocityMarker.setJustificationType (juce::Justification::centredLeft);
-        row->velocityMarker.setColour (juce::Label::textColourId, juce::Colours::grey);
+        row->velocityMarker.setColour (juce::Label::textColourId, EditorColours::textMuted);
         addAndMakeVisible (row->velocity);
         addAndMakeVisible (row->velocityMarker);
 
@@ -435,9 +438,11 @@ SequencerPanel::~SequencerPanel()
 
 void SequencerPanel::paint (juce::Graphics& g)
 {
+    g.fillAll (EditorColours::chassisBg);
+
     if (! playheadLaneBounds.isEmpty())
     {
-        g.setColour (juce::Colours::whitesmoke.withAlpha (0.60f));
+        g.setColour (EditorColours::textHeader.withAlpha (0.55f));
         for (int step = 0; step < 16; ++step)
         {
             if (! isQuarterStep (step))
@@ -456,7 +461,9 @@ void SequencerPanel::paint (juce::Graphics& g)
     auto column = playheadLaneBounds.withX (playheadLaneBounds.getX() + clamped * kStepWidth)
                                     .withWidth (kStepWidth)
                                     .reduced (2, 0);
-    g.setColour (kSelectedColour.withAlpha (0.20f));
+    // Cyan, not the amber "selected" hue -- playback position and edit focus are different facts
+    // and shouldn't share a colour when a step happens to be both at once.
+    g.setColour (EditorColours::playhead.withAlpha (0.28f));
     g.fillRoundedRectangle (column.toFloat(), 4.0f);
 }
 
@@ -998,7 +1005,7 @@ void SequencerPanel::refreshParamControls()
             row.lockMarker.setText (locked ? "LOCKED" : "(inherits base)", juce::dontSendNotification);
 
         row.lockMarker.setColour (juce::Label::textColourId,
-                                  locked ? kSelectedColour : juce::Colours::grey);
+                                  locked ? kSelectedColour : EditorColours::textMuted);
     }
 }
 
@@ -1050,7 +1057,7 @@ void SequencerPanel::refreshStepButtons()
             row.velocityMarker.setText (locked ? "LOCKED" : "(inherits base)", juce::dontSendNotification);
         else
             row.velocityMarker.setText ("base value", juce::dontSendNotification);
-        row.velocityMarker.setColour (juce::Label::textColourId, locked ? kSelectedColour : juce::Colours::grey);
+        row.velocityMarker.setColour (juce::Label::textColourId, locked ? kSelectedColour : EditorColours::textMuted);
 
         for (int i = 0; i < 16; ++i)
         {

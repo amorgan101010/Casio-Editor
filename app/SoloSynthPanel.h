@@ -33,6 +33,7 @@ public:
     SoloSynthPanel (casioxw::SysExCodec& codec, casioxw::MidiIO& midiIO);
     ~SoloSynthPanel() override;
 
+    void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
