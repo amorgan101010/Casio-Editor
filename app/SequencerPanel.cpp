@@ -720,7 +720,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                  + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
                  + 10 + 20 + 4
                  + (int) std::size (kPcmTracks) * (kPcmTrackRowHeight + 2)
-                 + 10 + juce::jmax (kStepColumnHeight, kSynthSectionHeight)
+                 + 10 + 20 + 4 + juce::jmax (kStepColumnHeight, kSynthSectionHeight)
                  + 6 + kFooterHeight + 8);
 
     selectStep (-1);   // start in Base mode
@@ -2128,6 +2128,11 @@ void SequencerPanel::resized()
     bounds.removeFromTop (10);
 
     // ---- synth section ---------------------------------------------------------------------
+    auto synthHeader = bounds.removeFromTop (20);
+    synthLabel.setBounds (synthHeader.removeFromLeft (140));
+    synthControlsButton.setBounds (synthHeader.removeFromLeft (22));
+    bounds.removeFromTop (4);
+
     auto synthSection = bounds.removeFromTop (juce::jmax (kStepColumnHeight, kSynthSectionHeight));
     const int playheadBottom = synthSection.getY() + kStepColumnHeight;
 
@@ -2147,9 +2152,6 @@ void SequencerPanel::resized()
     auto card = synthSection.removeFromLeft (kCardWidth);
     auto cardInner = card.reduced (8);
     auto headerRow = cardInner.removeFromTop (24);
-    synthControlsButton.setBounds (headerRow.removeFromLeft (22));
-    headerRow.removeFromLeft (4);
-    synthLabel.setBounds (headerRow.removeFromLeft (92));
 
     if (showSynthControls)
     {
