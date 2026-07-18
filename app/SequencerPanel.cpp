@@ -20,6 +20,9 @@ namespace
     constexpr int kStepWidth = 58;
     constexpr int kLeftGutter = 46;                       // row labels (On / Pitch / Gate)
     constexpr int kParamControlWidth = 390;
+    constexpr int kDrumTrackRowHeight = 28;
+    constexpr int kDrumControlWidth = 318;
+    constexpr int kDrumChannelWidth = 70;
     constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
     constexpr int kStepColumnHeight = 20 + 2 + 20 + kKnobCell + kKnobCell;   // select + on + note + gate
 
@@ -34,6 +37,21 @@ namespace
     const Lockable kLockables[] = {
         { "tssFLTFcoff", 1, 127 },   // Total Filter Cutoff — fully open
         { "tssFLTFreso", 1, 0   },   // Total Filter Resonance — none
+    };
+
+    struct DrumTrackDef
+    {
+        const char* label;
+        int defaultChannel;
+        int defaultNote;
+    };
+
+    constexpr DrumTrackDef kDrumTracks[] = {
+        { "Drum 1", 8, 36 },
+        { "Drum 2", 9, 38 },
+        { "Drum 3", 10, 42 },
+        { "Drum 4", 11, 46 },
+        { "Drum 5", 12, 49 },
     };
 
     struct NrpnAddress
@@ -220,6 +238,52 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     addAndMakeVisible (statusLabel);
 
+    // ---- drum-track controls (5 lanes, each with channel + note + 16 step on/off buttons) ---
+    drumTracksLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    drumTracksLabel.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (drumTracksLabel);
+
+    const int noteMin = 0;
+    const int noteMax = 127;
+
+    for (size_t i = 0; i < std::size (kDrumTracks); ++i)
+    {
+        const auto& def = kDrumTracks[i];
+        auto row = std::make_unique<DrumTrackControl>();
+
+        row->trackLabel.setText (def.label, juce::dontSendNotification);
+        row->trackLabel.setJustificationType (juce::Justification::centredLeft);
+        addAndMakeVisible (row->trackLabel);
+
+        for (int ch = 1; ch <= 16; ++ch)
+            row->channel.addItem (juce::String (ch), ch);
+        row->channel.setSelectedId (def.defaultChannel, juce::dontSendNotification);
+        addAndMakeVisible (row->channel);
+
+        row->note.setRange ((double) noteMin, (double) noteMax, 1.0);
+        row->note.setValue ((double) juce::jlimit (noteMin, noteMax, def.defaultNote), juce::dontSendNotification);
+        row->note.textFromValueFunction = [] (double v) { return casioxw::midiNoteName ((int) v); };
+        row->note.valueFromTextFunction = [] (const juce::String& t) -> double
+        {
+            const auto n = casioxw::noteNameToMidi (t);
+            return n.has_value() ? (double) *n : 0.0;
+        };
+        row->note.updateText();
+        addAndMakeVisible (row->note);
+
+        for (size_t step = 0; step < row->steps.size(); ++step)
+        {
+            auto& b = row->steps[step];
+            b.setClickingTogglesState (true);
+            b.setToggleState (false, juce::dontSendNotification);
+            b.setButtonText (juce::String ((int) step + 1));
+            b.setColour (juce::TextButton::buttonOnColourId, kSelectedColour);
+            addAndMakeVisible (b);
+        }
+
+        drumTrackControls[i] = std::move (row);
+    }
+
     // ---- lockable-parameter controls (reuse the tone-editor ParamControl) ------------------
     const auto& model = codec.model();
     for (size_t i = 0; i < sequence.lockable.size(); ++i)
@@ -247,8 +311,9 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         lockRows.push_back (std::move (row));
     }
 
-    setSize (kLeftGutter + kStepWidth * 16 + 16,
-             8 + 28 + 6 + 28 + 8 + 28 + 8 + 20 + 4 + (int) lockRows.size() * 30 + 10 + kStepColumnHeight + 8);
+    setSize (juce::jmax (kLeftGutter + kStepWidth * 16 + 16, kDrumControlWidth + kStepWidth * 16 + 16),
+             8 + 28 + 6 + 28 + 8 + 28 + 8 + 20 + 6 + 20 + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
+                 + 6 + 4 + (int) lockRows.size() * 30 + 10 + kStepColumnHeight + 8);
 
     selectStep (-1);   // start in Base mode
     resized();
@@ -512,6 +577,9 @@ void SequencerPanel::stop()
     // release + reset explicitly since those dropped note-offs won't arrive on their own.
     midiIO.stopPlaybackThread();
     midiIO.sendAllNotesOff (sequence.channel);
+    for (const auto& row : drumTrackControls)
+        if (row != nullptr)
+            midiIO.sendAllNotesOff (juce::jlimit (1, 16, row->channel.getSelectedId()));
 
     // Reset every parameter to its base so a p-lock can't leave the filter stuck closed/resonant.
     for (const auto& lp : sequence.lockable)
@@ -531,6 +599,8 @@ void SequencerPanel::feedLookahead()
     while (transportStartMs + nextStepStartMs < horizon)
     {
         juce::MidiBuffer buffer;
+        const double stepMs = casioxw::stepIntervalMs (sequence);
+        const double drumGateMs = juce::jmax (1.0, stepMs * 0.5);
         for (const auto& e : casioxw::scheduleStep (sequence, nextStepIndex, prevStepIndex, nextStepStartMs))
         {
             const int samplePos = (int) std::llround (e.timeMs);   // 1 sample == 1 ms (kScheduleSampleRate)
@@ -547,6 +617,22 @@ void SequencerPanel::feedLookahead()
                         buffer.addEvent (m, samplePos);
                     break;
             }
+        }
+
+        for (const auto& row : drumTrackControls)
+        {
+            if (row == nullptr || ! row->steps[(size_t) nextStepIndex].getToggleState())
+                continue;
+
+            const int note = juce::jlimit (0, 127, (int) row->note.getValue());
+            const int vel = juce::jlimit (1, 127, sequence.steps[(size_t) nextStepIndex].velocity);
+            const int channel = juce::jlimit (1, 16, row->channel.getSelectedId() > 0
+                                                         ? row->channel.getSelectedId()
+                                                         : sequence.channel);
+            const int onPos = (int) std::llround (nextStepStartMs);
+            const int offPos = (int) std::llround (nextStepStartMs + drumGateMs);
+            buffer.addEvent (juce::MidiMessage::noteOn (channel, note, (juce::uint8) vel), onPos);
+            buffer.addEvent (juce::MidiMessage::noteOff (channel, note), offPos);
         }
 
         if (! buffer.isEmpty())
@@ -605,6 +691,27 @@ void SequencerPanel::resized()
     bounds.removeFromTop (8);
     statusLabel.setBounds (bounds.removeFromTop (20));
 
+    bounds.removeFromTop (6);
+    drumTracksLabel.setBounds (bounds.removeFromTop (20));
+    for (const auto& row : drumTrackControls)
+    {
+        if (row == nullptr)
+            continue;
+        auto r = bounds.removeFromTop (kDrumTrackRowHeight);
+        auto controls = r.removeFromLeft (kDrumControlWidth);
+        row->trackLabel.setBounds (controls.removeFromLeft (70));
+        controls.removeFromLeft (6);
+        row->channel.setBounds (controls.removeFromLeft (kDrumChannelWidth));
+        controls.removeFromLeft (6);
+        row->note.setBounds (controls.removeFromLeft (kDrumControlWidth - 70 - 6 - kDrumChannelWidth - 6));
+
+        for (auto& b : row->steps)
+            b.setBounds (r.removeFromLeft (kStepWidth).withTrimmedTop (4).withHeight (20).reduced (16, 0));
+
+        bounds.removeFromTop (2);
+    }
+
+    bounds.removeFromTop (6);
     bounds.removeFromTop (4);
     for (auto& row : lockRows)
     {

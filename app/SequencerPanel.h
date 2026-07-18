@@ -60,6 +60,14 @@ private:
         juce::Label lockMarker;                // "LOCKED" accent when locked on the selected step
     };
 
+    struct DrumTrackControl
+    {
+        juce::Label trackLabel;
+        juce::ComboBox channel;
+        juce::Slider note { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+        std::array<juce::TextButton, 16> steps;
+    };
+
     void timerCallback() override;
     void play();
     void stop();
@@ -92,6 +100,7 @@ private:
 
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
     std::vector<std::unique_ptr<LockRow>> lockRows;   // one per sequence.lockable entry
+    std::array<std::unique_ptr<DrumTrackControl>, 5> drumTrackControls;
 
     juce::TextButton playStopButton { "Play" };
     juce::TextButton randomizeButton { "Randomize" };
@@ -115,6 +124,7 @@ private:
     juce::TextButton shiftLeftButton  { "Shift <" };
     juce::TextButton shiftRightButton { "Shift >" };
     juce::Label statusLabel;
+    juce::Label drumTracksLabel { {}, "Drum Tracks (16-step on/off lanes)" };
 
     juce::Label onRowLabel    { {}, "On" };    // left-gutter row labels for the step grid
     juce::Label pitchRowLabel { {}, "Pitch" };
