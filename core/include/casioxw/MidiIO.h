@@ -84,6 +84,39 @@ namespace casioxw
             stop/teardown so a dropped note-off can never leave a note hanging. */
         bool sendAllNotesOff (int channel);
 
+        /** Sends any pre-built juce::MidiMessage immediately (channel voice, SysEx, CC, NRPN, ...).
+            The transport layer builds a p-lock's messages once (SysEx today, NRPN/CC later) and
+            routes them either through here (audition / stop-reset) or through the timestamped
+            scheduleBlock() path — one message-building seam, two delivery paths. Returns false if no
+            output is open. */
+        bool sendMessageNow (const juce::MidiMessage& message);
+
+        // ---- Timestamped playback (sequencer look-ahead scheduler) ---------------------------
+
+        /** True while a sequence is playing — i.e. the timestamped-output background thread is
+            running (startPlaybackThread() called, not yet stopped). A zero-coupling "is the
+            sequencer running?" signal for other panels: e.g. the tone editor suppresses its
+            auto-sync while this is true, since a full-block param sync would flood the port and
+            compete with the running transport. False if no output is open. */
+        bool isPlaybackActive() const noexcept { return output != nullptr && output->isBackgroundThreadRunning(); }
+
+        /** Starts JUCE's internal high-resolution output thread so scheduleBlock() can dispatch
+            timestamped messages at their exact times, decoupled from the (deliberately loose,
+            message-thread) look-ahead feeder — this is what keeps note timing steady even when the
+            feeder timer is jittery under background load. No-op if no output is open. */
+        void startPlaybackThread();
+
+        /** Stops the output thread AND discards every still-pending scheduled message (JUCE clears
+            them on stop). Because queued note-offs are dropped, the caller MUST follow this with an
+            explicit all-notes-off + parameter reset. No-op if no output is open. */
+        void stopPlaybackThread();
+
+        /** Queues a block of messages for future dispatch by the output thread. Each event's sample
+            position in `buffer` is converted to a wall-clock time via `samplesPerSec` against
+            `startMs` (a juce::Time::getMillisecondCounter() base value). No-op if no output is open.
+            Requires startPlaybackThread() to have been called. */
+        void scheduleBlock (const juce::MidiBuffer& buffer, double startMs, double samplesPerSec);
+
         // ---- Input ------------------------------------------------------------------------
 
         /** Opens a MIDI input port by identifier (from MidiDevices::availableInputs()), registers

@@ -21,11 +21,19 @@ public:
           soloSynthPanel (codec, midiIO),
           sequencerPanel (codec, midiIO)
     {
+        // Capture the panels' natural sizes BEFORE tabbing them. addTab() reparents each panel into
+        // the TabbedComponent's content area and resizes it to fit that area -- which is still 0x0
+        // here -- so reading getWidth()/getHeight() afterwards yields 0. Reading it after was the
+        // real cause of the window opening at 0x30 / tiny (bug-071, pinned by the launch diagnostic);
+        // the panels' own constructors have already set these to the real values.
+        const int contentW = juce::jmax (soloSynthPanel.getWidth(), sequencerPanel.getWidth());
+        const int contentH = juce::jmax (soloSynthPanel.getHeight(), sequencerPanel.getHeight());
+
         tabs.addTab ("Solo Synth", juce::Colours::darkgrey, &soloSynthPanel, false);
         tabs.addTab ("Sequencer", juce::Colours::darkgrey, &sequencerPanel, false);
         addAndMakeVisible (tabs);
-        setSize (juce::jmax (soloSynthPanel.getWidth(), sequencerPanel.getWidth()),
-                 soloSynthPanel.getHeight() + 30);
+        // + actual tab-bar depth (not a hardcoded 30) so the shown tab gets its full height.
+        setSize (contentW, contentH + tabs.getTabBarDepth());
     }
 
     void resized() override
@@ -48,7 +56,7 @@ class CasioXWEditorApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override       { return "Casio XW-P1 Editor"; }
-    const juce::String getApplicationVersion() override    { return "0.5.0-sequencer"; }
+    const juce::String getApplicationVersion() override    { return "0.6.0-sequencer"; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 
     void initialise (const juce::String&) override
@@ -71,19 +79,20 @@ public:
         {
             setUsingNativeTitleBar (true);
 
-            // NOT centreWithSize(getWidth(), getHeight()) -- that reads the size back off this
-            // DocumentWindow itself, implicitly trusting that setContentOwned(..., true)'s
-            // resize-to-fit has already landed by this point. On at least one Linux WM/native
-            // title bar combination that timing didn't hold, so the window opened at some tiny
-            // pre-resize default and only a manual drag fixed it (same failure class as bug-009 --
-            // an implicit "has the layout already happened?" dependency). Read the size directly
-            // from the content component we just built instead: it is known-correct the moment
-            // MainContentComponent's constructor returns, with no window-peer timing involved.
             auto* content = new MainContentComponent();
+            const int contentW = content->getWidth();
+            const int contentH = content->getHeight();
+
             setContentOwned (content, true);
             setResizable (true, true);
-            centreWithSize (content->getWidth(), content->getHeight());
+
+            // Guard against near-zero launch sizes on WMs that ignore pre-map bounds.
+            setResizeLimits (juce::jmin (760, contentW), juce::jmin (520, contentH), 10000, 10000);
+
+            centreWithSize (contentW, contentH);
             setVisible (true);
+            // Re-assert size on the mapped peer for Linux WMs that drop pre-map bounds.
+            centreWithSize (contentW, contentH);
         }
 
         void closeButtonPressed() override

@@ -8,6 +8,7 @@ add_executable(casioxw_tests
     ParamModelTests.cpp
     NoteNamesTests.cpp
     SequenceTests.cpp
+    SchedulerTests.cpp
 )
 
 target_link_libraries(casioxw_tests PRIVATE

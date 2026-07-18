@@ -1,11 +1,22 @@
 #include "SequencerPanel.h"
 
 #include "casioxw/NoteNames.h"
+#include "casioxw/Scheduler.h"
 
 #include <cmath>
 
 namespace
 {
+    // ---- Look-ahead transport tuning -------------------------------------------------------
+    // The feeder timer runs on the (jittery) message thread; precise dispatch is JUCE's output
+    // thread. The window must exceed the worst feeder stall to avoid an audible gap, but a bigger
+    // window also delays how soon a live edit / tempo change takes effect. These are conservative
+    // starting points — the owner can tune them on the actual game-loaded machine.
+    constexpr int    kSchedulerTickMs = 12;      // feeder fires ~every 12 ms
+    constexpr double kLookaheadMs     = 60.0;    // schedule this far ahead of now
+    constexpr double kStartLeadMs     = 15.0;    // put step 0 slightly in the future (valid timestamp)
+    constexpr double kScheduleSampleRate = 1000.0;   // 1 "sample" == 1 ms, so sample pos == timeMs
+
     constexpr int kStepWidth = 58;
     constexpr int kLeftGutter = 46;                       // row labels (On / Pitch / Gate)
     constexpr int kParamControlWidth = 390;
@@ -203,15 +214,23 @@ SequencerPanel::~SequencerPanel()
     stop();
 }
 
-juce::String SequencerPanel::syncKey (const juce::String& paramId, int instance) const
+std::vector<juce::MidiMessage> SequencerPanel::paramMessages (const juce::String& paramId,
+                                                             int instance, int value) const
 {
-    return paramId + "#" + juce::String (instance);
+    // The single p-lock transport seam. TODAY: one SysEx frame via the proven codec. The NRPN/CC
+    // map (prefer NRPN — covers the whole Solo Synth param set at ~1/3 the bytes; CC where
+    // hardware-verified absolute; SysEx fallback) is the next chunk and replaces only this body.
+    const auto frame = codec.encode (paramId, instance, value);
+    if (frame.size() < 3)
+        return {};
+    // createSysExMessage() re-adds its own F0/F7, so pass only the bytes between them (as sendFrame).
+    return { juce::MidiMessage::createSysExMessage (frame.data() + 1, (int) frame.size() - 2) };
 }
 
-void SequencerPanel::applyParam (const juce::String& paramId, int instance, int value)
+void SequencerPanel::sendParamNow (const juce::String& paramId, int instance, int value)
 {
-    midiIO.sendFrame (codec.encode (paramId, instance, value));
-    lastApplied[syncKey (paramId, instance)] = value;
+    for (const auto& m : paramMessages (paramId, instance, value))
+        midiIO.sendMessageNow (m);
 }
 
 void SequencerPanel::randomizeSequence()
@@ -335,8 +354,13 @@ void SequencerPanel::onParamEdited (int lockableIndex, int value)
     else
         casioxw::setStepLock (sequence, selectedStep, lp.paramId, lp.instance, value);
 
-    // Audition the edit immediately (and keep the playback dedup cache in step with the synth).
-    applyParam (lp.paramId, lp.instance, value);
+    // Audition immediately only when stopped, or editing the Base sound. A base edit during
+    // playback still needs the immediate send (the scheduler's step-to-step dedup won't re-emit an
+    // unchanging base). A LOCK edit during playback must NOT audition globally — under look-ahead it
+    // would bleed the locked value across the whole pattern; the scheduler plays it when that step
+    // next comes round (<= one loop), which is the correct p-lock feel anyway.
+    if (! playing || selectedStep < 0)
+        sendParamNow (lp.paramId, lp.instance, value);
 
     refreshParamControls();
     refreshStepButtons();
@@ -414,11 +438,16 @@ void SequencerPanel::play()
     }
 
     playing = true;
-    currentStep = 0;
-    phase = Phase::stepStart;
-    lastApplied.clear();   // force step 0 to establish every parameter's value fresh
+    midiIO.startPlaybackThread();   // JUCE's high-res output thread dispatches the timestamps
+
+    transportStartMs = (double) juce::Time::getMillisecondCounter() + kStartLeadMs;
+    nextStepStartMs  = 0.0;
+    nextStepIndex    = 0;
+    prevStepIndex    = -1;          // first fed step establishes every parameter's value fresh
+
     playStopButton.setButtonText ("Stop");
-    timerCallback();       // fire step 0 immediately rather than waiting one full interval
+    feedLookahead();                // prime the horizon before the first timer tick
+    startTimer (kSchedulerTickMs);
 }
 
 void SequencerPanel::stop()
@@ -428,80 +457,61 @@ void SequencerPanel::stop()
 
     stopTimer();
     playing = false;
-    phase = Phase::stepStart;
     playStopButton.setButtonText ("Play");
 
-    if (soundingNote.has_value())
-    {
-        midiIO.sendNoteOff (soundingChannel, *soundingNote);
-        soundingNote.reset();
-    }
+    // Discard everything still queued for future dispatch (incl. not-yet-fired note-offs), then
+    // release + reset explicitly since those dropped note-offs won't arrive on their own.
+    midiIO.stopPlaybackThread();
     midiIO.sendAllNotesOff (sequence.channel);
 
     // Reset every parameter to its base so a p-lock can't leave the filter stuck closed/resonant.
     for (const auto& lp : sequence.lockable)
-        applyParam (lp.paramId, lp.instance, lp.baseValue);
+        sendParamNow (lp.paramId, lp.instance, lp.baseValue);
 
     updateStatusLabel();
 }
 
+void SequencerPanel::feedLookahead()
+{
+    // Fill everything whose start time falls within [now, now + lookahead). The feeder only has to
+    // stay ahead of the horizon; the output thread delivers each event at its exact timestamp, so
+    // jitter in this (message-thread) callback doesn't move the notes.
+    const double now     = (double) juce::Time::getMillisecondCounter();
+    const double horizon = now + kLookaheadMs;
+
+    while (transportStartMs + nextStepStartMs < horizon)
+    {
+        juce::MidiBuffer buffer;
+        for (const auto& e : casioxw::scheduleStep (sequence, nextStepIndex, prevStepIndex, nextStepStartMs))
+        {
+            const int samplePos = (int) std::llround (e.timeMs);   // 1 sample == 1 ms (kScheduleSampleRate)
+            switch (e.type)
+            {
+                case casioxw::ScheduledEvent::Type::noteOn:
+                    buffer.addEvent (juce::MidiMessage::noteOn (e.channel, e.note, (juce::uint8) e.velocity), samplePos);
+                    break;
+                case casioxw::ScheduledEvent::Type::noteOff:
+                    buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note), samplePos);
+                    break;
+                case casioxw::ScheduledEvent::Type::paramChange:
+                    for (const auto& m : paramMessages (e.paramId, e.instance, e.value))
+                        buffer.addEvent (m, samplePos);
+                    break;
+            }
+        }
+
+        if (! buffer.isEmpty())
+            midiIO.scheduleBlock (buffer, transportStartMs, kScheduleSampleRate);
+
+        prevStepIndex   = nextStepIndex;
+        nextStepIndex   = (nextStepIndex + 1) % 16;
+        nextStepStartMs += casioxw::stepIntervalMs (sequence);   // per-step read = live tempo/rate changes
+    }
+}
+
 void SequencerPanel::timerCallback()
 {
-    if (phase == Phase::gateEnd)
-    {
-        // Sub-step gate elapsed: release the note, then run out the rest of the step as silence.
-        if (soundingNote.has_value())
-        {
-            midiIO.sendNoteOff (soundingChannel, *soundingNote);
-            soundingNote.reset();
-        }
-        currentStep = (currentStep + 1) % 16;
-        phase = Phase::stepStart;
-        startTimer ((int) std::lround (juce::jmax (1.0, pendingRemainderMs)));
-        return;
-    }
-
-    // ---- Phase::stepStart --------------------------------------------------------------------
-    // Parameters first, so the note sounds with the step's locked filter already in place. Only
-    // re-send a parameter whose effective value actually changed since it was last applied.
-    for (const auto& pv : casioxw::effectiveParamValues (sequence, currentStep))
-    {
-        const auto key = syncKey (pv.paramId, pv.instance);
-        const auto it = lastApplied.find (key);
-        if (it == lastApplied.end() || it->second != pv.value)
-            applyParam (pv.paramId, pv.instance, pv.value);
-    }
-
-    // Release the previously-SENT note before sounding the next (note-off targets what was sent,
-    // never the possibly-since-edited current step — so an edit mid-play can't orphan a note).
-    if (soundingNote.has_value())
-    {
-        midiIO.sendNoteOff (soundingChannel, *soundingNote);
-        soundingNote.reset();
-    }
-
-    const double stepMs = casioxw::stepIntervalMs (sequence);
-
-    if (const auto event = casioxw::stepEvent (sequence, currentStep))
-    {
-        midiIO.sendNoteOn (event->channel, event->note, event->velocity);
-        soundingNote = event->note;
-        soundingChannel = event->channel;
-
-        const double gateMs = casioxw::stepGateMs (sequence, currentStep);
-        if (gateMs < stepMs - 0.5)   // sub-full gate: schedule a note-off partway through the step
-        {
-            pendingRemainderMs = stepMs - gateMs;
-            phase = Phase::gateEnd;
-            startTimer ((int) std::lround (juce::jmax (1.0, gateMs)));
-            return;
-        }
-        // full-length gate: fall through, note-off handled at the next step boundary
-    }
-
-    // Rest, or a full-length note: advance a whole step.
-    currentStep = (currentStep + 1) % 16;
-    startTimer ((int) std::lround (juce::jmax (1.0, stepMs)));
+    feedLookahead();
 }
 
 void SequencerPanel::resized()
