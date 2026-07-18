@@ -1,5 +1,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "BinaryData.h"
+
 #include "AppVersion.h"
 #include "EditorLookAndFeel.h"
 #include "PCMEnginePanel.h"
@@ -62,6 +64,22 @@ private:
 };
 
 //==============================================================================
+/** Rasterises the embedded xw-p1.svg (BinaryData, see app/resources/) into a square ARGB image
+    for use as the taskbar/window icon -- DocumentWindow::setIcon() is what actually sets the
+    X11 _NET_WM_ICON property Linux window managers/taskbars read. */
+static juce::Image loadAppIconImage()
+{
+    auto svg = juce::XmlDocument::parse (juce::String (BinaryData::xwp1_svg, (size_t) BinaryData::xwp1_svgSize));
+    std::unique_ptr<juce::Drawable> drawable = juce::Drawable::createFromSVG (*svg);
+
+    constexpr int kIconSize = 256;
+    juce::Image icon (juce::Image::ARGB, kIconSize, kIconSize, true);
+    juce::Graphics g (icon);
+    drawable->drawWithin (g, icon.getBounds().toFloat(), juce::RectanglePlacement::centred, 1.0f);
+    return icon;
+}
+
+//==============================================================================
 class CasioXWEditorApplication : public juce::JUCEApplication
 {
 public:
@@ -93,6 +111,7 @@ public:
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
+            setIcon (loadAppIconImage());
 
             auto* content = new MainContentComponent();
             const int contentW = content->getWidth();

@@ -1,5 +1,11 @@
 # CasioXWEditor — JUCE standalone GUI application.
 
+# App icon (taskbar/window/dock) embedded as binary data so no runtime file path is needed.
+juce_add_binary_data(CasioXWEditorIcon
+    SOURCES
+        resources/xw-p1.svg
+)
+
 juce_add_gui_app(CasioXWEditor
     PRODUCT_NAME   "Casio XW-P1 Editor"
     COMPANY_NAME   "CasioXW"
@@ -34,6 +40,7 @@ target_compile_definitions(CasioXWEditor PRIVATE
 
 target_link_libraries(CasioXWEditor PRIVATE
     casioxw_core
+    CasioXWEditorIcon
     juce::juce_gui_basics
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
