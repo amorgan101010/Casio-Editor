@@ -7,8 +7,10 @@ juce_add_console_app(gui-preview
 
 target_sources(gui-preview PRIVATE
     Main.cpp
+    ../../app/EditorLookAndFeel.cpp
     ../../app/ParamControl.cpp
     ../../app/SoloSynthPanel.cpp
+    ../../app/SequencerPanel.cpp
     ../../app/EnvelopeDisplay.cpp
 )
 

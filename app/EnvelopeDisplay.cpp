@@ -1,16 +1,19 @@
+#include "EditorLookAndFeel.h"
 #include "EnvelopeDisplay.h"
 
 namespace
 {
     // Colour sequence lifted straight from franky's reference/lua/017_ENVpaint.lua drawENV()
     // calls (drawENV(gobj, os, line, startColour, endColour) per segment) — same visual language
-    // as the parameter's own hardware editor, not an arbitrary new palette.
+    // as the parameter's own hardware editor, not an arbitrary new palette. Left untouched by the
+    // Solarized retint: these are hardware-accurate, not a stylistic choice.
     const juce::Colour kYellow ((juce::uint8) 0xff, (juce::uint8) 0xff, (juce::uint8) 0x00);
     const juce::Colour kRed    ((juce::uint8) 0xff, (juce::uint8) 0x00, (juce::uint8) 0x00);
     const juce::Colour kOrange ((juce::uint8) 0xf9, (juce::uint8) 0xa6, (juce::uint8) 0x02);
     const juce::Colour kGreen  ((juce::uint8) 0x00, (juce::uint8) 0xff, (juce::uint8) 0x00);
-    const juce::Colour kBg     (0xff111133);
-    const juce::Colour kZeroLine ((juce::uint8) 0x66, (juce::uint8) 0x66, (juce::uint8) 0xff);
+    // Bg/zero-line DO follow the app palette — this is chrome, not part of the Lua's own drawing.
+    const juce::Colour kBg     = EditorColours::chassisBg;
+    const juce::Colour kZeroLine = EditorColours::cyan;
 
     // Fixed visual width (in the same "time units" as the 0..127 time params) given to the
     // sustain hold segment, which has no time value of its own — it's held indefinitely while a

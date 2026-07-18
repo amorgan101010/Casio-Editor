@@ -1,6 +1,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "AppVersion.h"
+#include "EditorLookAndFeel.h"
 #include "SequencerPanel.h"
 #include "SoloSynthPanel.h"
 #include "casioxw/MidiIO.h"
@@ -30,8 +31,10 @@ public:
         const int contentW = juce::jmax (soloSynthPanel.getWidth(), sequencerPanel.getWidth());
         const int contentH = juce::jmax (soloSynthPanel.getHeight(), sequencerPanel.getHeight());
 
-        tabs.addTab ("Solo Synth", juce::Colours::darkgrey, &soloSynthPanel, false);
-        tabs.addTab ("Sequencer", juce::Colours::darkgrey, &sequencerPanel, false);
+        // TabbedComponent's colour arg only matters for its OWN default tab-content-area fill;
+        // EditorLookAndFeel::drawTabButton/drawTabbedButtonBarBackground own the visible tab bar.
+        tabs.addTab ("Solo Synth", EditorColours::chassisBg, &soloSynthPanel, false);
+        tabs.addTab ("Sequencer", EditorColours::chassisBg, &sequencerPanel, false);
         addAndMakeVisible (tabs);
         // + actual tab-bar depth (not a hardcoded 30) so the shown tab gets its full height.
         setSize (contentW, contentH + tabs.getTabBarDepth());
@@ -62,10 +65,15 @@ public:
 
     void initialise (const juce::String&) override
     {
+        juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
         mainWindow.reset (new MainWindow ("Casio XW-P1 Editor  v" + getApplicationVersion()));
     }
 
-    void shutdown() override { mainWindow = nullptr; }
+    void shutdown() override
+    {
+        mainWindow = nullptr;
+        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+    }
 
     void systemRequestedQuit() override { quit(); }
 
@@ -75,7 +83,7 @@ public:
     public:
         explicit MainWindow (juce::String name)
             : DocumentWindow (name,
-                              juce::Colours::darkgrey,
+                              EditorColours::chassisBg,
                               DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
@@ -106,6 +114,7 @@ public:
     };
 
 private:
+    EditorLookAndFeel lookAndFeel;   // declared before mainWindow: must outlive every widget it themes
     std::unique_ptr<MainWindow> mainWindow;
 };
 

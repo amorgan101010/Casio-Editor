@@ -9,6 +9,7 @@ juce_add_gui_app(CasioXWEditor
 
 target_sources(CasioXWEditor PRIVATE
     Main.cpp
+    EditorLookAndFeel.cpp
     ParamControl.cpp
     SoloSynthPanel.cpp
     EnvelopeDisplay.cpp

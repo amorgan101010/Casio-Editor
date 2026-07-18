@@ -1,4 +1,5 @@
 #include "SoloSynthPanel.h"
+#include "EditorLookAndFeel.h"
 
 namespace
 {
@@ -74,10 +75,12 @@ namespace
         void paint (juce::Graphics& g) override
         {
             auto bounds = getLocalBounds();
-            g.setColour (juce::Colours::white);
-            g.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
-            g.drawText (label, bounds.removeFromTop (getHeight() - 4), juce::Justification::centredLeft);
-            g.setColour (juce::Colours::grey);
+            g.setColour (EditorColours::textHeader);
+            juce::Font font (juce::FontOptions (14.0f, juce::Font::bold));
+            font.setExtraKerningFactor (0.04f);
+            g.setFont (font);
+            g.drawText (label.toUpperCase(), bounds.removeFromTop (getHeight() - 4), juce::Justification::centredLeft);
+            g.setColour (EditorColours::border);
             g.fillRect (0, getHeight() - 2, getWidth(), 1);
         }
 
@@ -141,6 +144,27 @@ SoloSynthPanel::SoloSynthPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
 SoloSynthPanel::~SoloSynthPanel()
 {
     stopTimer();
+}
+
+void SoloSynthPanel::paint (juce::Graphics& g)
+{
+    g.fillAll (EditorColours::chassisBg);
+
+    // Device/nav rows read as one raised control-strip card sitting on the chassis, echoing the
+    // sequencer's own card-per-section language instead of controls floating loose on bare bg.
+    // Anchored to blockCombo, not instanceCombo/groupCombo -- those two are conditionally hidden
+    // per block and only get setBounds() in resized() while visible, so on a block with neither
+    // shown (or as the very first block laid out, before either has ever been positioned) their
+    // bounds are stale or zero. blockCombo is always visible and always laid out on the same row.
+    const int navBottom = blockCombo.getBottom();
+    if (navBottom > 0)
+    {
+        auto card = juce::Rectangle<int> (0, 0, getWidth(), navBottom + kMargin).toFloat().reduced (2.0f);
+        g.setColour (EditorColours::panelBg);
+        g.fillRoundedRectangle (card, 4.0f);
+        g.setColour (EditorColours::border.withAlpha (0.5f));
+        g.drawRoundedRectangle (card, 4.0f, 1.0f);
+    }
 }
 
 //==============================================================================
