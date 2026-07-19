@@ -210,6 +210,13 @@ void HexLayerPanel::rebuildParamControls()
 
         for (const auto* p : bucket)
         {
+            // Pitch Lock only exists on Layers 2/4/6 (manual: "Pitch Lock (Layers 2, 4, and 6
+            // only)" -- turning it on for the even layer copies the odd layer's pitch onto it).
+            // Layers 1/3/5 have nothing to lock TO, so skip the control entirely rather than show
+            // a toggle with no effect -- see gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE.
+            if (p->id == "hexPitchLock" && (currentInstance % 2) != 0)
+                continue;
+
             auto ctrl = std::make_unique<ParamControl> (model, *p, currentInstance);
             const juce::String paramId = ctrl->paramId();
             const int instance = ctrl->instanceNumber();

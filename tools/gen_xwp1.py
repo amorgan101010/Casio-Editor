@@ -549,11 +549,19 @@ print(f"Drawbar Organ params: {len(organ_params)} (hand-authored, unverified aga
 # generated JSON). Owner identified Pitch Cent as the synth's own "Fine Tune" control -- wanted
 # for a future pass, see the project memory note captured 2026-07-19.
 #
-# Pitch Lock (26.1 ID 0014) was ALSO removed 2026-07-19 after being hand-authored and shipped:
-# owner hardware-tested it and confirmed no effect on pitch bend/transpose, and could not find a
-# corresponding setting anywhere in the synth's own Hex Layer menu. It was already the weakest
-# address inference in this section (see the old HEXLAYER_GLOBAL_PARAMS comment, now removed with
-# it) -- dropped rather than kept as a guessed, apparently-inert control.
+# Pitch Lock (26.1 ID 0014) was removed 2026-07-19 (thought inert), then RE-ADDED 2026-07-19 same
+# day after the owner re-read the manual and found the actual scope: "Pitch Lock (Layers 2, 4, and
+# 6 only). When this setting is turned on for Layer 2, the Layer 2 pitch is changed to the same
+# pitch as Layer 1 so both pitches are the same. The same is true for Layers 3/4 and 5/6." The
+# ORIGINAL removed version was Global/1-instance (HEXLAYER_GLOBAL_PARAMS, ai=2) -- a single value
+# covering the whole Hex Layer engine. That is now understood to be the wrong SCOPE, not just a
+# wrong address: this is a per-layer setting that only exists on the even layer of each pair, not
+# a hex-layer-wide toggle. A global write landing on the wrong scope is fully consistent with the
+# owner's original "no effect, no matching menu setting" result -- the control likely does exist,
+# just not where the first attempt looked. Re-added below in HEXLAYER_LAYER_PARAMS-adjacent code
+# (see hexPitchLockEntry) as a per-layer param, UI-gated to layers 2/4/6 only in
+# app/HexLayerPanel.cpp (see gen note there) since 26.1's per-layer block only makes semantic sense
+# for the even layers -- layers 1/3/5 have nothing to lock TO themselves.
 #
 # ENCODING NOTES:
 # - Most params are plain 'nf' (0-127) or 'cf' (-64..+63, wire=value+64, matches the PDF's
@@ -576,12 +584,16 @@ print(f"Drawbar Organ params: {len(organ_params)} (hand-authored, unverified aga
 #   byte (PROTOCOL.md line 111: "ai / array index"), confirmed by 3 independent hardware-verified
 #   precedents in this repo (tssOSCPlfo2D/tssOSCAlfo2D/tssFLTFlfo2D, all manual "Array 02" -> ai=1,
 #   see OVR above) -- the rule is ai = Array-1, not specific to those collision cases. Every param
-#   remaining in this section has manual Array=01 (-> ai=0). (The one exception, Pitch Lock's
-#   "Array 03" -> ai=2, was removed 2026-07-19 -- owner hardware-tested it as having no effect on
-#   pitch bend/transpose and found no corresponding setting in the synth's own Hex Layer menu; see
-#   the SCOPE note above. Its ai=2 was the one case in this section where the Array->ai rule was
-#   applied without an independent id-collision to cross-check it against -- unlike this rule's 3
-#   other precedents, which all resolve real collisions.)
+#   in this section except Pitch Lock has manual Array=01 (-> ai=0). Pitch Lock (id 0014, "Array
+#   03") is the ONE param in this section where that rule does NOT hold, HARDWARE-CONFIRMED
+#   2026-07-19: ai=2 (the literal Array-1 application, first shipped in the initial re-add) read
+#   back the wrong value against a real XW-P1 with Pitch Lock audibly on; a midi-probe sweep of
+#   ai=0/1/2/3 found only ai=0 reads correctly (see HEXLAYER_PITCH_LOCK_NOTE below for the full
+#   probe transcript/reasoning). So Pitch Lock uses ai=0, same as every OTHER per-layer param in
+#   this section -- "Array 03" in the manual apparently does NOT map to this address's ai byte the
+#   way it does for the LFO-depth collision precedents (possibly PDF table noise specific to this
+#   one row, or "Array" meaning something unrelated to addressing for a single-bit toggle -- not
+#   resolved, and not worth resolving further now that the empirically-correct address is known).
 # - Detune Number (0013) is the only param in section 26.1 whose PDF Block column reads the fixed
 #   "00000000" instead of "up-arrow" (= 2-0:Layer Number, same as every param above it) -- i.e. it
 #   is HEX-LAYER-WIDE (one value covering all 6 layers), not per-layer. Section 26.2's entire LFO
@@ -590,6 +602,30 @@ print(f"Drawbar Organ params: {len(organ_params)} (hand-authored, unverified aga
 #   are taken literally from the PDF table (not inferred) but are surprising enough to flag rather
 #   than bury -- see the section note below.
 HEXLAYER_LAYER_LABELS = [f"Layer {i}" for i in range(1, 7)]
+
+HEXLAYER_PITCH_LOCK_NOTE = (
+    "id 0014, PDF p72 sec 26.1 'Array 03'. Manual (owner re-read 2026-07-19): 'Pitch Lock "
+    "(Layers 2, 4, and 6 only). When this setting is turned on for Layer 2, the Layer 2 pitch is "
+    "changed to the same pitch as Layer 1 so both pitches are the same. The same is true for "
+    "Layers 3 and 4, and Layers 5 and 6.' So this control only exists/applies on the EVEN layer of "
+    "each pair -- app/HexLayerPanel.cpp hides it for layers 1/3/5 rather than showing a control "
+    "with no target. REMOVED 2026-07-19 after an initial hardware test (as a Global/1-instance "
+    "param) found no effect and no matching synth-menu setting, then RE-ADDED same day once the "
+    "owner found the real per-layer scope in the manual (the setting lives in each even layer's "
+    "OWN menu page -- the original 'no corresponding setting' finding was from checking Layer 1's "
+    "menu, which correctly has none). ADDRESS: ai=0, HARDWARE-CONFIRMED 2026-07-19 via "
+    "tools/midi-probe against a real XW-P1 with a Hex patch (Layer 2 tuned a fifth above Layer 1, "
+    "Pitch Lock audibly on) -- 'midi-probe get hexPitchLock 2' read back value=1 (correct) only at "
+    "ai=0; ai=1 and the originally-guessed ai=2 both read back 0 (wrong), ai=3 got what looks like "
+    "a NAK reply. A reference read (hexPitchKey[2], the same patch's +7-semitone Pitch Key offset) "
+    "confirmed Layer 2 SysEx reads work correctly in general, isolating the bug to this one "
+    "param's ai byte rather than a section-wide read problem. So the PDF's 'Array 03' does NOT "
+    "follow the Array-1->ai rule that holds for this section's other Array-tagged param (see the "
+    "Array->ai mapping note above HEXLAYER_LAYER_LABELS) -- ai=0 here, same as every OTHER per-layer "
+    "param in section 26.1, not ai=2. Both directions hardware-confirmed 2026-07-19: owner toggled "
+    "Pitch Lock ON/OFF for Layer 2 from the app itself (ai=0) and heard the synth follow, matching "
+    "the earlier read-direction confirmation."
+)
 
 # Split Ui Number (id 0002) -- per-layer PCM wave# picker, ADDED 2026-07-19 per owner request
 # (previously excluded, see the removed SCOPE note below and project memory). midi-spec.md line
@@ -627,14 +663,10 @@ HEXLAYER_LAYER_PARAMS = [
 
 # Hex-Layer-wide params (block fixed 00000000, instanceCount=1). Same tuple shape.
 #
-# Pitch Lock (id 0x14) was REMOVED 2026-07-19 (owner hardware test): confirmed to have no effect
-# on pitch bend or transpose, and the owner could not find a corresponding setting anywhere in the
-# synth's own Hex Layer menu. Its address was always the weakest inference in this section (the
-# PDF marks it 'Array 03' where every sibling is 'Array 01', and the ai=2 reading applied here was
-# pattern-matched from OTHER params' id-collision cases -- Pitch Lock's id isn't shared with
-# anything, so there was no independent way to confirm it). Given the owner's negative test result,
-# dropped rather than kept as a guessed, apparently-inert control. Revisit if a real corresponding
-# synth-menu setting is ever identified.
+# Pitch Lock (id 0x14) does NOT live here -- see hexPitchLockEntry below, built alongside
+# HEXLAYER_LAYER_PARAMS instead, since the manual (owner re-read 2026-07-19) describes it as a
+# per-layer setting scoped to layers 2/4/6, not a hex-layer-wide value. See the SCOPE comment
+# above this section for the full removed-then-re-added history.
 HEXLAYER_GLOBAL_PARAMS = [
     # id,             name,           hex id, vt,  range,   default, group,    ui,      enum, ai
     ("hexDetuneNumber", "Detune Number", 0x13, "nf", (0, 31), 0, "General", "slider", None, 0),
@@ -683,6 +715,34 @@ def build_hexlayer_params():
         if pid == "hexTouchSenseOfs":
             entry["note"] = TOUCH_SENSE_OFS_NOTE
         out.append(entry)
+
+    # Pitch Lock (id 0x14) -- hand-built (needs a non-zero ai, doesn't fit the plain tuple table's
+    # implicit ai=0). RE-ADDED 2026-07-19, see the SCOPE comment above HEXLAYER_LAYER_LABELS for
+    # the removed-then-re-added history and the ai=2 vs "3-element array" alternative-reading
+    # discussion. Same block/instances shape as its per-layer siblings (Layer 1..6) -- the manual
+    # scopes the SETTING to layers 2/4/6 only, not the address layout, so this entry still declares
+    # 6 instances; app/HexLayerPanel.cpp is what hides layers 1/3/5's control.
+    pitch_lock_entry = {
+        "id": "hexPitchLock",
+        "name": "Pitch Lock",
+        "block": "Layer",
+        "group": "General",
+        "address": {"ct": 0x08, "id": 0x14, "ai": 0, "an": 0},
+        "vt": "nf",
+        "range": {"min": 0, "max": 1},
+        "default": 0,
+        "unit": "",
+        "ui": {"control": "toggle"},
+        "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": False,
+            "labels": HEXLAYER_LAYER_LABELS,
+        },
+        "note": HEXLAYER_PITCH_LOCK_NOTE,
+    }
+    out.append(pitch_lock_entry)
 
     # Split Ui Number / Wave -- hand-built (needs the 'wf' perOsc shape, doesn't fit the plain
     # tuple table above). Per-layer like its siblings: same block/instances shape, instance 1-6
@@ -818,10 +878,16 @@ HEXLAYER_SECTION_NOTE = (
     "sub-range, not the full library. SCOPE: still excludes Pitch Cent (id 0005 -- a "
     "genuinely different sign+11-bit-fraction bit-packed encoding with no existing vt and no Lua "
     "source to cross-check; owner identified this as the synth's own 'Fine Tune' control and wants "
-    "it implemented too, tracked separately). Pitch Lock (id 0014) was hand-authored and shipped, then REMOVED "
-    "2026-07-19 after owner hardware testing found no effect on pitch bend/transpose and no "
-    "corresponding setting in the synth's own Hex Layer menu -- see HEXLAYER_GLOBAL_PARAMS' "
-    "comment above. NOT YET HARDWARE-VERIFIED for the remaining params (owner has not run a full "
+    "it implemented too, tracked separately). Pitch Lock (id 0014) was hand-authored and shipped, "
+    "REMOVED 2026-07-19 after an initial hardware test (as a Global/1-instance value) found no "
+    "effect and no matching synth-menu setting, then RE-ADDED the same day once the owner found "
+    "the real manual scope: a per-layer setting present only on layers 2, 4 and 6, where turning "
+    "it on for the even layer copies the odd layer's pitch onto it (Layer2<-Layer1, Layer4<-Layer3, "
+    "Layer6<-Layer5). The original negative test is consistent with the FIRST version targeting the "
+    "wrong scope (hex-layer-wide instead of per-layer), not with the control being fictitious -- "
+    "see HEXLAYER_PITCH_LOCK_NOTE for the full re-add rationale, the still-unresolved ai=2 address "
+    "question, and the correct hardware test procedure. NOT YET HARDWARE-VERIFIED for the "
+    "remaining params (owner has not run a full "
     "live round-trip on this section) -- given the organPosition precedent (a SysEx write that "
     "landed and persisted but did not reach the running voice, needing an NRPN live-fader path "
     "instead, see drawbarOrgan's section note), a cat=0x08 write here may face the same issue "
