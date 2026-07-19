@@ -42,6 +42,14 @@ namespace
     constexpr double kStartPrimeFloorMs  = 1500.0;
     constexpr double kScheduleSampleRate = 1000.0;
 
+    // A row-transition param establish (queueDiffEstablish) can land at the EXACT same instant as
+    // the new row's first note-on -- firing a SysEx burst simultaneously with a note is what
+    // dropped the note on real hardware (same class of bug SequencerPanel's play() comment
+    // describes for song start). Scheduling the burst this far ahead of the note gives the synth's
+    // receiver a moment to process it first. Provisional/owner-tunable, like the other feeder
+    // constants above -- this machine has no hardware to verify the exact minimum against.
+    constexpr double kParamEstablishLeadMs = 20.0;
+
     juce::String defaultDrumsDataFormat()   { return "casioxw-drum-sequence"; }
     juce::String defaultPcmDataFormat()     { return "casioxw-pcm-tracks"; }
     juce::String defaultSetDataFormat()     { return "casioxw-sequence-set-ref"; }
@@ -591,7 +599,11 @@ void ArrangerPanel::resetCurrentRuntimeToBase()
 void ArrangerPanel::queueDiffEstablish (juce::MidiBuffer& buffer, const casioxw::Sequence& seq,
                                        int stepIndex, double timeMs)
 {
-    const int samplePos = (int) std::llround (timeMs);
+    // Deliberately allowed to go negative relative to timeMs -- transportStartMs already carries
+    // its own kStartLeadMs buffer ahead of wall-clock "now" (see play()), so pulling a row's param
+    // establish this far ahead of ITS note-on is still comfortably in the future in absolute terms,
+    // even for the very first step of the whole song (timeMs == 0).
+    const int samplePos = (int) std::llround (timeMs - kParamEstablishLeadMs);
     for (const auto& lp : seq.lockable)
     {
         const auto value = casioxw::effectiveParamValue (seq, stepIndex, lp.paramId, lp.instance);
