@@ -12,6 +12,7 @@ add_executable(casioxw_tests
     NoteNamesTests.cpp
     SequenceTests.cpp
     SchedulerTests.cpp
+    SongTests.cpp
 )
 
 target_link_libraries(casioxw_tests PRIVATE
