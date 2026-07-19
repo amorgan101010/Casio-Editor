@@ -22,6 +22,7 @@ target_sources(CasioXWEditor PRIVATE
     EnvelopeDisplay.cpp
     SequencerPanel.cpp
     PCMEnginePanel.cpp
+    OrganPanel.cpp
 )
 
 # Absolute path to the params map so the app finds it regardless of the working directory it's

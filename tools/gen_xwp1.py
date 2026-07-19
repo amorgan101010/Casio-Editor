@@ -152,7 +152,7 @@ OVR = {
 # core/include/casioxw/ParamModel.h (isEnvelopeGroup() was deleted; no group is
 # ever named "X Envelope" any more).
 # ---------------------------------------------------------------------------
-GROUP_ORDER = ["General", "Pitch", "Filter", "Amp", "PWM",
+GROUP_ORDER = ["Drawbars", "Percussion", "General", "Pitch", "Filter", "Amp", "PWM",
                "External Input", "External Trigger", "Pitch Shifter", "LFO",
                "Envelope", "Vibrato"]
 
@@ -391,6 +391,117 @@ def build_melody_params():
 melody_params = build_melody_params()
 print(f"PCM/Melody params: {len(melody_params)} (hand-authored, unverified against hardware)")
 
+# ---------------------------------------------------------------------------
+# 4c. Drawbar Organ params -- HAND-AUTHORED, not mined from Lua.
+#
+# franky's CTRLR panel DOES have an organ controller (022_XWOrgan.lua), but unlike
+# 019_ToneSoloSynth.lua it never calls sendXWSX -- every organ control there goes out live as
+# NRPN/CC (g_orgModMidi in 011_initTables.lua: MSB=0x40 NRPN for drawbars/percussion/click/type,
+# plain CC for vibrato/rotary/general). So there is no SysEx tone-edit-buffer source to mine for
+# this domain, the same situation pcmMelody was in. Every field below is transcribed directly
+# from XWP1_midi_EN.pdf section 25 "Drawbar" (printed p71-72), category 07H, XW-P1-only --
+# reference/midi-spec.md section 5.6.
+#
+# HARDWARE-VERIFIED 2026-07-18 (owner + midi-probe on a real XW-P1, see .wolf/cerebrum.md
+# addendum 31 for the full story): category/address (ct=0x07, ai=0/an=0, block byte @ address
+# offset 10) and the plain 'nf' (direct, non-inverted) wire encoding are BOTH CONFIRMED CORRECT --
+# GET/SET round-trips cleanly on every one of the 9 block-byte positions. What was WRONG was the
+# assumed drawbar ORDER: this is NOT the harmonic order (16',5-1/3',8',4',2-2/3',2',1-3/5',
+# 1-1/3',1') the Lua's NRPN table uses -- a "ladder test" (owner set each physical drawbar to a
+# distinct recognizable value, then every one of the 9 SysEx block bytes was read back and
+# matched against the known ladder) proved the SysEx "Select Bar" index instead groups drawbars
+# by TYPE: the 5 octave bars first (16',8',4',2',1' at block bytes 0-4), then the 4 non-octave
+# "mutation"/quint-tierce bars (5 1/3',2 2/3',1 3/5',1 1/3' at block bytes 5-8). See
+# ORGAN_DRAWBAR_LABELS below (now in this confirmed order) and app/OrganPanel.cpp's
+# kSysExInstanceToNrpnLsb (translates a SysEx instance to the DIFFERENT NRPN LSB order needed for
+# writes, since the two transports number the same 9 drawbars differently).
+#
+# Also hardware-confirmed: a SysEx SET to organPosition lands and persists in the saved tone (it
+# survives save+reload) but does NOT reach the running voice in real time -- the drawbar additive
+# table apparently only gets recomputed on tone load, not on a bare parameter write. Every OTHER
+# organPosition-adjacent control (Percussion/Click/Rotary Type/Vibrato) DOES apply live through
+# this same SysEx path; only Position itself needs the separate NRPN live-fader path
+# (app/OrganPanel.cpp's sendDrawbarNrpn) to be audible while editing.
+# Order = the SysEx "Select Bar" index (hardware-confirmed 2026-07-18 via ladder test): octave
+# bars first (16',8',4',2',1'), then non-octave "mutation" bars (5 1/3',2 2/3',1 3/5',1 1/3') --
+# NOT the harmonic order the NRPN performance path uses. See the ORGAN_PARAMS comment above.
+ORGAN_DRAWBAR_LABELS = ["16'", "8'", "4'", "2'", "1'", "5 1/3'", "2 2/3'", "1 3/5'", "1 1/3'"]
+
+ORGAN_PARAMS = [
+    # id,                  manual name,             hex id, vt,   range,     default, group,        ui,       enum
+    ("organPosition",      "Drawbar Position",      0x00, "nf", (0, 8),   0,   "Drawbars",   "slider", None),
+    ("organPercussion",    "Percussion",            0x01, "nf", (0, 3),   0,   "Percussion", "combo",  "organPercussionMode"),
+    ("organPercDecayTime", "Percussion Decay Time", 0x02, "nf", (0, 127), 0,   "Percussion", "slider", None),
+    ("organKeyonClick",    "Key-On Click",          0x03, "nf", (0, 1),   0,   "Percussion", "toggle", None),
+    ("organKeyoffClick",   "Key-Off Click",         0x04, "nf", (0, 1),   0,   "Percussion", "toggle", None),
+    # OWNER-VERIFIED ON HARDWARE 2026-07-18: this is a rotary-speaker/vibrato character switch
+    # (Sine vs Vintage), not a general organ-type selector, and belongs with the Vibrato group --
+    # the manual's own "Type"/section-25 placement was misleading here (see the note below).
+    ("organRotaryType",    "Rotary Type",           0x05, "nf", (0, 1),   0,   "Vibrato",    "combo",  "organRotaryType"),
+    ("organVibratoRate",   "Vibrato Rate",          0x06, "nf", (0, 127), 0,   "Vibrato",    "slider", None),
+    ("organVibratoDepth",  "Vibrato Depth",         0x07, "nf", (0, 127), 0,   "Vibrato",    "slider", None),
+]
+
+ORGAN_ROTARY_TYPE_NOTE = (
+    "OWNER-VERIFIED ON HARDWARE 2026-07-18: the manual's section 25 calls this 'Type' with values "
+    "'Normal'/'Vintage' and groups it as a general organ parameter, but on the real XW-P1 it is a "
+    "rotary-speaker/vibrato character switch (values Sine/Vintage), grouped with Vibrato -- "
+    "renamed organType -> organRotaryType and moved out of General accordingly. Address (ct=0x07, "
+    "id=0x05) and encoding (nf, 0-1) were already correct; only the manual's own name/grouping/enum "
+    "labels were wrong."
+)
+
+ORGAN_POSITION_NOTE = (
+    "HARDWARE-VERIFIED 2026-07-18 (owner + midi-probe on a real XW-P1, see .wolf/cerebrum.md "
+    "addendum 31). Address (ct=0x07, id=0x00, block byte @ offset 10) and encoding (plain 'nf', "
+    "0-8 direct) are both confirmed correct via GET/SET round-trip on every one of the 9 block "
+    "bytes. The drawbar ORDER is confirmed via a ladder test (each physical bar set to a distinct "
+    "value, then every block byte read back and matched): it groups by type -- 5 octave bars "
+    "(16',8',4',2',1') at block bytes 0-4, then 4 non-octave 'mutation' bars (5 1/3',2 2/3', "
+    "1 3/5',1 1/3') at block bytes 5-8 -- NOT the harmonic order the NRPN performance path uses "
+    "(see ORGAN_DRAWBAR_LABELS above). ALSO CONFIRMED: a SysEx write here lands and persists into "
+    "the saved tone (survives save+reload) but does not reach the running voice in real time -- "
+    "the drawbar additive table only recomputes on tone load. app/OrganPanel.cpp therefore writes "
+    "Position via the separate NRPN live-fader path (sendDrawbarNrpn) for audible feedback while "
+    "editing, translating each SysEx instance to its NRPN LSB via kSysExInstanceToNrpnLsb; this "
+    "SysEx path remains authoritative for reads (Sync) only."
+)
+
+def build_organ_params():
+    out = []
+    for pid, name, idhex, vt, rng, default, group, ui, enum in ORGAN_PARAMS:
+        is_position = pid == "organPosition"
+        entry = {
+            "id": pid,
+            "name": name,
+            "block": "DrawbarOrgan",
+            "group": group,
+            "address": {"ct": 0x07, "id": idhex, "ai": 0, "an": 0},
+            "vt": vt,
+            "range": {"min": rng[0], "max": rng[1]},
+            "default": default,
+            "unit": "",
+            "ui": {"control": ui},
+            "instances": {
+                "count": 9 if is_position else 1,
+                "blkByteOffset": 6,
+                "addressByteIndex": 10,
+                "idSuffix": False,
+                "labels": ORGAN_DRAWBAR_LABELS if is_position else ["Organ"],
+            },
+        }
+        if enum:
+            entry["ui"]["enum"] = enum
+        if is_position:
+            entry["note"] = ORGAN_POSITION_NOTE
+        if pid == "organRotaryType":
+            entry["note"] = ORGAN_ROTARY_TYPE_NOTE
+        out.append(entry)
+    return out
+
+organ_params = build_organ_params()
+print(f"Drawbar Organ params: {len(organ_params)} (hand-authored, unverified against hardware)")
+
 # Address collision detection (same 18-byte address for >1 param within same instance)
 def addr_key(e):
     return (e["address"]["ct"], e["address"]["id"], e["address"]["ai"], e["address"]["an"])
@@ -437,6 +548,15 @@ enums = {
     # Distinct from soloSynth's 8-value lfoWave enum -- Melody's is its own, smaller list.
     "melodyVibratoType": [{"value":0,"label":"Sine"},{"value":1,"label":"Triangle"},
                             {"value":2,"label":"Saw"},{"value":3,"label":"Square"}],
+    # Drawbar Organ Percussion mode (midi-spec.md section 5.6 / PDF p71-72 sec 25):
+    # 0=off,1=2nd,2=3rd,3=2nd+3rd. Collapses franky's live-path two separate booleans
+    # (orgTWperc2/orgTWperc3) into the one enum column the manual's SysEx table documents.
+    "organPercussionMode": [{"value":0,"label":"Off"},{"value":1,"label":"2nd"},
+                              {"value":2,"label":"3rd"},{"value":3,"label":"2nd + 3rd"}],
+    # Drawbar Organ Rotary Type -- OWNER-VERIFIED ON HARDWARE 2026-07-18: a rotary-speaker/vibrato
+    # character switch, values Sine/Vintage (NOT "Normal"/"Vintage" as the manual's section 25
+    # table names it -- see organRotaryType's own note).
+    "organRotaryType": [{"value":0,"label":"Sine"},{"value":1,"label":"Vintage"}],
 }
 
 # ---------------------------------------------------------------------------
@@ -510,6 +630,24 @@ doc = {
               "hardware-verified (see pcmVolume's own note). Ranges/defaults of the cf params remain "
               "unconfirmed for exact bounds; do not treat the whole section as soloSynth-grade yet.",
       "params": melody_params
+    },
+    "drawbarOrgan": {
+      "category": "0x07",
+      "status": "complete",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 25 'Drawbar' (printed p71-72), "
+              "category 07H (XW-P1 only) -- franky's CTRLR panel has an organ controller "
+              "(022_XWOrgan.lua) but it drives everything live via NRPN/CC "
+              "(g_orgModMidi/011_initTables.lua), never SysEx, so there is no tone-edit-buffer "
+              "Lua source to mine here, same situation as pcmMelody. addr/vt follow the general "
+              "SX frame field layout (midi-spec.md section 2) that soloSynth and pcmMelody both "
+              "already match, so encode()/decode() need no codec changes. HARDWARE-VERIFIED "
+              "2026-07-18 (owner + midi-probe on a real XW-P1): every param round-trips "
+              "correctly. organPosition (the drawbars) needed one real fix -- see its own "
+              "param-level note -- its 9-instance ORDER was wrong (assumed harmonic, actually "
+              "grouped by octave-vs-mutation type) and its writes needed rerouting to the NRPN "
+              "live-fader path since the SysEx edit-buffer write doesn't reach the running voice "
+              "in real time. Every other param in this section applies live via SysEx as-is.",
+      "params": organ_params
     },
     "mixer":       {"status":"stub","params":[]},
     "performance": {"category":"0x02","status":"stub","params":[]},

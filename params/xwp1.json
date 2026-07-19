@@ -10242,9 +10242,39 @@
         "value": 3,
         "label": "Square"
       }
+    ],
+    "organPercussionMode": [
+      {
+        "value": 0,
+        "label": "Off"
+      },
+      {
+        "value": 1,
+        "label": "2nd"
+      },
+      {
+        "value": 2,
+        "label": "3rd"
+      },
+      {
+        "value": 3,
+        "label": "2nd + 3rd"
+      }
+    ],
+    "organRotaryType": [
+      {
+        "value": 0,
+        "label": "Sine"
+      },
+      {
+        "value": 1,
+        "label": "Vintage"
+      }
     ]
   },
   "groupOrder": [
+    "Drawbars",
+    "Percussion",
     "General",
     "Pitch",
     "Filter",
@@ -13967,6 +13997,273 @@
             ]
           },
           "note": "midi-spec.md/PDF p70 sec 23: the manual's own hex Min-Def-Max column for Touch Sense (00-7F-7F) is IDENTICAL to Volume's row directly above it, but Touch Sense's described effective range is signed (-64..+63, matching the cf-encoded params above it) while Volume's is unsigned 0-127 -- the two rows cannot both be literally correct under one encoding. Encoded here as cf (consistent with every other -64..+63 param in this block); default taken from the effective-range description (0, centered) rather than the hex column's 0x7F (which would decode to +63 under cf and makes no sense as a centered default). Likely a copy-paste artifact in the manual's own table. Needs hardware read-back to confirm."
+        }
+      ]
+    },
+    "drawbarOrgan": {
+      "category": "0x07",
+      "status": "complete",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 25 'Drawbar' (printed p71-72), category 07H (XW-P1 only) -- franky's CTRLR panel has an organ controller (022_XWOrgan.lua) but it drives everything live via NRPN/CC (g_orgModMidi/011_initTables.lua), never SysEx, so there is no tone-edit-buffer Lua source to mine here, same situation as pcmMelody. addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth and pcmMelody both already match, so encode()/decode() need no codec changes. HARDWARE-VERIFIED 2026-07-18 (owner + midi-probe on a real XW-P1): every param round-trips correctly. organPosition (the drawbars) needed one real fix -- see its own param-level note -- its 9-instance ORDER was wrong (assumed harmonic, actually grouped by octave-vs-mutation type) and its writes needed rerouting to the NRPN live-fader path since the SysEx edit-buffer write doesn't reach the running voice in real time. Every other param in this section applies live via SysEx as-is.",
+      "params": [
+        {
+          "id": "organPosition",
+          "name": "Drawbar Position",
+          "block": "DrawbarOrgan",
+          "group": "Drawbars",
+          "address": {
+            "ct": 7,
+            "id": 0,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 8
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 9,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "16'",
+              "8'",
+              "4'",
+              "2'",
+              "1'",
+              "5 1/3'",
+              "2 2/3'",
+              "1 3/5'",
+              "1 1/3'"
+            ]
+          },
+          "note": "HARDWARE-VERIFIED 2026-07-18 (owner + midi-probe on a real XW-P1, see .wolf/cerebrum.md addendum 31). Address (ct=0x07, id=0x00, block byte @ offset 10) and encoding (plain 'nf', 0-8 direct) are both confirmed correct via GET/SET round-trip on every one of the 9 block bytes. The drawbar ORDER is confirmed via a ladder test (each physical bar set to a distinct value, then every block byte read back and matched): it groups by type -- 5 octave bars (16',8',4',2',1') at block bytes 0-4, then 4 non-octave 'mutation' bars (5 1/3',2 2/3', 1 3/5',1 1/3') at block bytes 5-8 -- NOT the harmonic order the NRPN performance path uses (see ORGAN_DRAWBAR_LABELS above). ALSO CONFIRMED: a SysEx write here lands and persists into the saved tone (survives save+reload) but does not reach the running voice in real time -- the drawbar additive table only recomputes on tone load. app/OrganPanel.cpp therefore writes Position via the separate NRPN live-fader path (sendDrawbarNrpn) for audible feedback while editing, translating each SysEx instance to its NRPN LSB via kSysExInstanceToNrpnLsb; this SysEx path remains authoritative for reads (Sync) only."
+        },
+        {
+          "id": "organPercussion",
+          "name": "Percussion",
+          "block": "DrawbarOrgan",
+          "group": "Percussion",
+          "address": {
+            "ct": 7,
+            "id": 1,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 3
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "combo",
+            "enum": "organPercussionMode"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organPercDecayTime",
+          "name": "Percussion Decay Time",
+          "block": "DrawbarOrgan",
+          "group": "Percussion",
+          "address": {
+            "ct": 7,
+            "id": 2,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organKeyonClick",
+          "name": "Key-On Click",
+          "block": "DrawbarOrgan",
+          "group": "Percussion",
+          "address": {
+            "ct": 7,
+            "id": 3,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 1
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "toggle"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organKeyoffClick",
+          "name": "Key-Off Click",
+          "block": "DrawbarOrgan",
+          "group": "Percussion",
+          "address": {
+            "ct": 7,
+            "id": 4,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 1
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "toggle"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organRotaryType",
+          "name": "Rotary Type",
+          "block": "DrawbarOrgan",
+          "group": "Vibrato",
+          "address": {
+            "ct": 7,
+            "id": 5,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 1
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "combo",
+            "enum": "organRotaryType"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          },
+          "note": "OWNER-VERIFIED ON HARDWARE 2026-07-18: the manual's section 25 calls this 'Type' with values 'Normal'/'Vintage' and groups it as a general organ parameter, but on the real XW-P1 it is a rotary-speaker/vibrato character switch (values Sine/Vintage), grouped with Vibrato -- renamed organType -> organRotaryType and moved out of General accordingly. Address (ct=0x07, id=0x05) and encoding (nf, 0-1) were already correct; only the manual's own name/grouping/enum labels were wrong."
+        },
+        {
+          "id": "organVibratoRate",
+          "name": "Vibrato Rate",
+          "block": "DrawbarOrgan",
+          "group": "Vibrato",
+          "address": {
+            "ct": 7,
+            "id": 6,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organVibratoDepth",
+          "name": "Vibrato Depth",
+          "block": "DrawbarOrgan",
+          "group": "Vibrato",
+          "address": {
+            "ct": 7,
+            "id": 7,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
         }
       ]
     },

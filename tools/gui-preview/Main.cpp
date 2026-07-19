@@ -11,6 +11,7 @@
 #include "BinaryData.h"
 
 #include "../../app/EditorLookAndFeel.h"
+#include "../../app/OrganPanel.h"
 #include "../../app/PCMEnginePanel.h"
 #include "../../app/ParamControl.h"
 #include "../../app/SequencerPanel.h"
@@ -141,6 +142,23 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
+    if (mode == "organ")
+    {
+        if (argc < 3)
+        {
+            std::fprintf (stderr, "organ requires: <outPath.png>\n");
+            return 1;
+        }
+        auto model = casioxw::ParamModel::fromFile (jsonPath);
+        casioxw::SysExCodec codec (std::move (model));
+        casioxw::MidiIO midiIO;
+        OrganPanel panel (codec, midiIO);
+        const bool ok = saveSnapshot (panel, juce::File (argv[2]));
+        std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
+                     argv[2], panel.getWidth(), panel.getHeight());
+        return ok ? 0 : 1;
+    }
+
     if (mode == "sequencer" || mode == "sequencer-demo" || mode == "sequencer-pcm-demo")
     {
         if (argc < 3)
@@ -175,6 +193,6 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-pcm-roundtrip)\n", mode.toRawUTF8());
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-pcm-roundtrip)\n", mode.toRawUTF8());
     return 1;
 }
