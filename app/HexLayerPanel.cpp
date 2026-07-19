@@ -37,14 +37,14 @@ namespace
     juce::String shortNameFor (const juce::String& paramId)
     {
         static const std::map<juce::String, juce::String> kNames = {
-            { "hexPanOffset", "PAN" }, { "hexPitchKey", "KEY" },
+            { "hexPanOffset", "PAN" }, { "hexPitchKey", "P.KEY" },
             { "hexAmpAttackOfs", "ATK" }, { "hexAmpDecayOfs", "DCY" },
             { "hexAmpSustainOfs", "SUS" }, { "hexAmpReleaseOfs", "REL" },
             { "hexVolumeOfs", "VOL" }, { "hexCutoffOfs", "CUT" },
-            { "hexTouchSenseOfs", "TS" }, { "hexReverbSendOfs", "REV" },
-            { "hexChorusSendOfs", "CHO" }, { "hexKeyRangeLow", "KLO" },
-            { "hexKeyRangeHigh", "KHI" }, { "hexVelRangeLow", "VLO" },
-            { "hexVelRangeHigh", "VHI" },
+            { "hexTouchSenseOfs", "TOUCH" }, { "hexReverbSendOfs", "REV" },
+            { "hexChorusSendOfs", "CHO" }, { "hexKeyRangeLow", "KEY.LO" },
+            { "hexKeyRangeHigh", "KEY.HI" }, { "hexVelRangeLow", "VEL.LO" },
+            { "hexVelRangeHigh", "VEL.HI" },
             { "hexDetuneNumber", "DET" },
             { "hexPitchLfoRate", "P.RATE" }, { "hexPitchAutoDelay", "P.DLY" },
             { "hexPitchAutoRise", "P.RISE" }, { "hexPitchAutoDepth", "P.ADEP" },
@@ -84,13 +84,23 @@ namespace
 
     Dumb like ParamControl: knows nothing about SysEx/MidiIO. The owning panel wires
     onValueChanged to build+send an edit and calls setValueFromSync() to push a synced value in
-    without firing it. */
-class HexLayerPanel::MiniKnob : public juce::Component
+    without firing it.
+
+    The 3-4 char caption is necessarily terse (CUT, TS, VLO, ...) -- MiniKnob is a
+    juce::SettableTooltipClient carrying the param's real display name ("Cutoff Offset", "Velocity
+    Range Low", ...) as its tooltip, set on both itself AND the inner `knob` (a hover anywhere in
+    the cell, dial included, should resolve the abbreviation) -- owner feedback: "we need
+    descriptive tooltips on hover for these shortened param names". */
+class HexLayerPanel::MiniKnob : public juce::Component,
+                                public juce::SettableTooltipClient
 {
 public:
-    MiniKnob (juce::String paramIdIn, int instanceIn, int rangeMin, int rangeMax, juce::String shortNameIn)
+    MiniKnob (juce::String paramIdIn, int instanceIn, int rangeMin, int rangeMax,
+              juce::String shortNameIn, const juce::String& fullNameIn)
         : paramId (std::move (paramIdIn)), instance (instanceIn), shortName (std::move (shortNameIn))
     {
+        setTooltip (fullNameIn);
+        knob.setTooltip (fullNameIn);
         knob.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         knob.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         knob.setRange ((double) rangeMin, (double) rangeMax, 1.0);
@@ -440,7 +450,7 @@ void HexLayerPanel::buildLayerGrid()
             }
             else
             {
-                auto knob = std::make_unique<MiniKnob> (p.id, instance, p.range.min, p.range.max, shortNameFor (p.id));
+                auto knob = std::make_unique<MiniKnob> (p.id, instance, p.range.min, p.range.max, shortNameFor (p.id), p.name);
                 const juce::String paramId = knob->getParamId();
                 const int inst = knob->getInstance();
                 knob->onValueChanged = [this, paramId, inst] (int value)
@@ -487,7 +497,7 @@ void HexLayerPanel::buildGlobalSection()
         }
         else
         {
-            auto knob = std::make_unique<MiniKnob> (p.id, 1, p.range.min, p.range.max, shortNameFor (p.id));
+            auto knob = std::make_unique<MiniKnob> (p.id, 1, p.range.min, p.range.max, shortNameFor (p.id), p.name);
             const juce::String paramId = knob->getParamId();
             knob->onValueChanged = [this, paramId] (int value)
             {
