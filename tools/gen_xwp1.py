@@ -622,8 +622,9 @@ HEXLAYER_PITCH_LOCK_NOTE = (
     "param's ai byte rather than a section-wide read problem. So the PDF's 'Array 03' does NOT "
     "follow the Array-1->ai rule that holds for this section's other Array-tagged param (see the "
     "Array->ai mapping note above HEXLAYER_LAYER_LABELS) -- ai=0 here, same as every OTHER per-layer "
-    "param in section 26.1, not ai=2. Only the read direction has been hardware-verified so far; "
-    "SET (toggling Pitch Lock from the app and hearing the hardware follow) is still owner-pending."
+    "param in section 26.1, not ai=2. Both directions hardware-confirmed 2026-07-19: owner toggled "
+    "Pitch Lock ON/OFF for Layer 2 from the app itself (ai=0) and heard the synth follow, matching "
+    "the earlier read-direction confirmation."
 )
 
 # Split Ui Number (id 0002) -- per-layer PCM wave# picker, ADDED 2026-07-19 per owner request
