@@ -53,9 +53,11 @@ namespace
 }
 
 //==============================================================================
-/** One hex layer's card in the 2x3 grid: a bold "LAYER N" title, then On/Off + Wave (+ Pitch Lock
-    on even layers) as full-width Default-mode ParamControl rows, then every other Layer param as
-    a compact ParamControl::RenderMode::Knob tiled in a wrapping grid. Purely a layout shell -- it
+/** One hex layer's card in the 2x3 grid: a bold "LAYER N" title, then On/Off + Pitch Lock sharing
+    ONE row (left/right half each -- Pitch Lock is blank on odd layers, but the row is always
+    there, so every card's header is the same height and the knob grids below line up across all
+    6 cards, not just within a card-row), then a full-width Wave row, then every other Layer param
+    as a compact ParamControl::RenderMode::Knob tiled in a grid. Purely a layout shell -- it
     neither owns nor constructs the ParamControls (HexLayerPanel::controls does, same as every
     other panel's pattern), just parents + positions the ones handed to it via setRows(). */
 class HexLayerPanel::LayerCard : public juce::Component
@@ -64,8 +66,10 @@ public:
     // Knob cells stay at ParamControl's own standard Knob-mode size (must match ParamControl.cpp's
     // kCompactCellWidth/kKnobHeight, the same "grid just tiles the control's own fixed size"
     // convention OrganPanel's drawbar grid and SoloSynthPanel's knob grid already use) -- see the
-    // class doc's note on why these are NOT shrunk to pack more per card.
-    static constexpr int kKnobCols = 4;
+    // class doc's note on why these are NOT shrunk to pack more per card. kKnobCols=5 exactly fits
+    // the 15 numeric Layer params in 3 rows (owner feedback: fewer/wider knob rows per card, once
+    // a 2-cards-per-row grid freed up the width for it -- see HexLayerPanel::layoutLayerGrid()).
+    static constexpr int kKnobCols = 5;
     static constexpr int kKnobCellWidth = 100;
     static constexpr int kKnobCellHeight = 110;
     static constexpr int kTitleHeight = 20;
@@ -94,16 +98,15 @@ public:
     }
 
     /** Total height this card needs at its fixed content width -- used by HexLayerPanel to pick
-        one uniform grid-cell height for the whole 2x3 layout (even-layer cards are taller, since
-        they carry the extra Pitch Lock row; odd-layer cards just get a little unused space at the
-        bottom, same simplification OrganPanel's fixed-size drawbar grid already accepts). */
+        one uniform grid-cell height for the whole 2x3 layout. Identical for every card now (the
+        On/Off + Pitch Lock row is always present, just half-empty on odd layers) -- this is the
+        whole point of combining them onto one row, so knob grids line up across all 6 cards. */
     int contentHeight() const
     {
         const int knobRows = knobs.empty() ? 0 : (((int) knobs.size() + kKnobCols - 1) / kKnobCols);
         int h = kPad + kTitleHeight;
-        if (onoff != nullptr) h += onoff->getHeight() + kRowGapV;
-        if (wave  != nullptr) h += wave->getHeight()  + kRowGapV;
-        if (lock  != nullptr) h += lock->getHeight()  + kRowGapV;
+        h += onoff->getHeight() + kRowGapV;             // On/Off + Pitch Lock, shared row
+        if (wave != nullptr) h += wave->getHeight() + kRowGapV;
         h += knobRows * kKnobCellHeight;
         h += kPad;
         return h;
@@ -132,9 +135,13 @@ public:
         auto b = getLocalBounds().reduced (kPad);
         b.removeFromTop (kTitleHeight);
 
-        if (onoff != nullptr) { onoff->setBounds (b.removeFromTop (onoff->getHeight())); b.removeFromTop (kRowGapV); }
-        if (wave  != nullptr) { wave->setBounds  (b.removeFromTop (wave->getHeight()));  b.removeFromTop (kRowGapV); }
-        if (lock  != nullptr) { lock->setBounds  (b.removeFromTop (lock->getHeight()));  b.removeFromTop (kRowGapV); }
+        auto headerRow = b.removeFromTop (onoff->getHeight());
+        onoff->setBounds (headerRow.removeFromLeft (headerRow.getWidth() / 2));
+        if (lock != nullptr)
+            lock->setBounds (headerRow);
+        b.removeFromTop (kRowGapV);
+
+        if (wave != nullptr) { wave->setBounds (b.removeFromTop (wave->getHeight())); b.removeFromTop (kRowGapV); }
 
         int col = 0;
         int rowY = b.getY();
@@ -393,7 +400,13 @@ int HexLayerPanel::layoutLayerGrid (int width)
     for (auto& card : layerCards)
         cellH = juce::jmax (cellH, card->contentHeight());
 
-    const int cols = juce::jmax (1, width / cellW);
+    // 2 wide x 3 tall, fixed (owner's explicit layout, not a responsive wrap): layerCards is built
+    // in instance order 1..6, so 2 columns naturally pairs (1,2)/(3,4)/(5,6) -- the exact pairing
+    // Pitch Lock needs (Layer 2 locks to 1, 4 to 3, 6 to 5), each odd/even pair sitting side by
+    // side rather than scattered across an unrelated wrap. Still falls back to 1 column if the
+    // window is too narrow for 2 (avoids a horizontal scrollbar), same floor-of-1 every other
+    // wrapping grid in this codebase (OrganPanel/SoloSynthPanel) already applies.
+    const int cols = juce::jmin (2, juce::jmax (1, width / cellW));
     int col = 0;
     int rowY = 0;
     for (auto& card : layerCards)

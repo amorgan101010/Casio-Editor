@@ -32,21 +32,30 @@
 
     REDESIGNED 2026-07-19 (owner brief): the "Layer" block used to be a one-instance-at-a-time view
     (six pages behind an instance combo), the same per-layer paging pain the physical synth has.
-    It's now a single 2x3 grid of LayerCard components -- all 6 layers visible at once, no
+    It's now a single grid of LayerCard components, 2 wide x 3 tall (a fixed layout, not a
+    responsive wrap -- see layoutLayerGrid()'s own comment) -- all 6 layers visible at once, no
     instance nav at all (the instance combo/label were removed; Global's instanceCount is always 1
-    so it never needed one anyway). Each card is a compact clone of the old full-width row list:
-    On/Off + Wave (+ Pitch Lock on even layers) as Default-mode ParamControl rows on top, then
-    every remaining Layer param as a ParamControl::RenderMode::Knob -- the owner's explicit choice
-    (offered against the sequencer's screen-cell p-lock knobs, picked "matches the rest of the
-    editor's normal control chrome" instead) -- tiled in a wrapping grid, same cellWidth/cellHeight-
-    tiling convention OrganPanel's drawbar grid and SoloSynthPanel's OSC knob grid already use.
+    so it never needed one anyway). The grid is deliberately 2-COLUMN, not 3: layerCards is built
+    in instance order 1..6, so 2 columns pairs (Layer 1, Layer 2) / (3, 4) / (5, 6) side by side --
+    exactly the pairing Pitch Lock needs (Layer 2 locks to 1, 4 to 3, 6 to 5), per owner feedback
+    after the first version (which wrapped to 3-wide, an unrelated grouping) landed.
+    Each card is a compact clone of the old full-width row list: On/Off + Pitch Lock share ONE row
+    (left/right half each, Pitch Lock blank on odd layers -- owner feedback: this keeps every
+    card's header the same height, so the knob grids below line up across ALL 6 cards, not just
+    within a card-row) + a full-width Wave row, then every remaining Layer param as a
+    ParamControl::RenderMode::Knob -- the owner's explicit choice (offered against the sequencer's
+    screen-cell p-lock knobs, picked "matches the rest of the editor's normal control chrome"
+    instead) -- tiled in a 5-column grid (owner feedback: fewer/wider knob rows per card, once the
+    2-wide card layout freed up width to do it), same cellWidth/cellHeight-tiling convention
+    OrganPanel's drawbar grid and SoloSynthPanel's OSC knob grid already use.
     Knob cells intentionally stay at ParamControl's standard 100x110 size, NOT shrunk to fit more
     per row -- SequencerPanel's per-step knobs were once smaller ("tiny dots", owner screenshot)
     and were enlarged to their current size for readability/grabbability; repeating that mistake
     here to cram more per card was rejected in favour of using the width the app already has
-    (Sequencer's own tab is ~1490px wide, comfortably fitting 3 cards per row at the standard knob
-    size) and letting the existing vertical-scrolling paramViewport absorb the remaining two rows
-    of cards, rather than shrinking the widget that was already corrected once for this reason.
+    (Sequencer's own tab is ~1490px wide, comfortably fitting a 2-wide card grid at the wider
+    5-knob-column size) and letting the existing vertical-scrolling paramViewport absorb the 3
+    rows of card pairs, rather than shrinking the widget that was already corrected once for this
+    reason.
     Global (the shared Pitch/Amp LFO pair + Detune, one instance, not part of the per-layer paging
     pain to begin with) is UNCHANGED: same flat group-header + full-width-row list behind the block
     combo. No per-card group headers (General/Amp/Filter/Effects/Range) -- all 6 cards repeat the
