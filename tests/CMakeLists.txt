@@ -8,6 +8,7 @@ add_executable(casioxw_tests
     ParamModelTests.cpp
     PcmMelodyTests.cpp
     OrganTests.cpp
+    HexLayerTests.cpp
     NoteNamesTests.cpp
     SequenceTests.cpp
     SchedulerTests.cpp

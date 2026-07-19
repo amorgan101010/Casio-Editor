@@ -15,6 +15,7 @@ target_sources(gui-preview PRIVATE
     ../../app/EnvelopeDisplay.cpp
     ../../app/PCMEnginePanel.cpp
     ../../app/OrganPanel.cpp
+    ../../app/HexLayerPanel.cpp
 )
 
 target_include_directories(gui-preview PRIVATE

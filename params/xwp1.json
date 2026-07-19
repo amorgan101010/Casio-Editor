@@ -10270,15 +10270,47 @@
         "value": 1,
         "label": "Vintage"
       }
+    ],
+    "hexLayerLfoWave": [
+      {
+        "value": 0,
+        "label": "Sine"
+      },
+      {
+        "value": 1,
+        "label": "Triangle"
+      },
+      {
+        "value": 2,
+        "label": "Saw Up"
+      },
+      {
+        "value": 3,
+        "label": "Saw Down"
+      },
+      {
+        "value": 4,
+        "label": "Pulse 1:3"
+      },
+      {
+        "value": 5,
+        "label": "Pulse 2:2"
+      },
+      {
+        "value": 6,
+        "label": "Pulse 3:1"
+      }
     ]
   },
   "groupOrder": [
     "Drawbars",
     "Percussion",
     "General",
+    "Range",
     "Pitch",
     "Filter",
     "Amp",
+    "Effects",
     "PWM",
     "External Input",
     "External Trigger",
@@ -13677,8 +13709,1068 @@
     },
     "hexLayer": {
       "category": "0x08",
-      "status": "stub",
-      "params": []
+      "status": "complete",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 26 'Hex Layer Parameter' (printed p72-73), category 08H (XW-P1 only) -- franky's CTRLR panel has a Hex Layer controller (020_ToneHexLayer.lua) but it drives everything live via NRPN (sendHEXParam/g_mixModMidi['mixHEX'], MSB=0x3e), never SysEx, and only for the small per-layer-level + all-layer-cutoff/detune/attack/release mixer subset -- NOT this section's full per-layer offset/LFO param set. So there is no tone-edit-buffer Lua source to mine here, same situation pcmMelody/drawbarOrgan were in. addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth/pcmMelody/drawbarOrgan already match; SysExCodec needed zero changes, same as every other hand-authored section -- the 8-bit '-128..+127' offset params reuse the EXISTING 'cF' vt (2-byte, MIDI-safe), NOT a new one. [bug-198, 2026-07-19] A first pass invented a broken single-byte 'cf256' (wire=value+128 in one raw byte, illegal per MIDI's high-bit-clear rule for SysEx data bytes) -- owner hardware testing caught it immediately (every affected param synced back as -128 regardless of the real value); fixed by switching those params to 'cF', which already encodes this exact -128..+128 shape correctly (2 bytes, lo7/hi7 split). SCOPE: excludes Split Ui Number (per-layer PCM wave# picker, id 0002 -- out of scope, same 'not a wave browser' call PCMEnginePanel made for tone/patch selection; owner has asked for wave picking here and in the PCM editor as a follow-up) and Pitch Cent (id 0005 -- a genuinely different sign+11-bit-fraction bit-packed encoding with no existing vt and no Lua source to cross-check; owner identified this as the synth's own 'Fine Tune' control and wants it implemented too). Pitch Lock (id 0014) was hand-authored and shipped, then REMOVED 2026-07-19 after owner hardware testing found no effect on pitch bend/transpose and no corresponding setting in the synth's own Hex Layer menu -- see HEXLAYER_GLOBAL_PARAMS' comment above. NOT YET HARDWARE-VERIFIED for the remaining params (owner has not run a full live round-trip on this section) -- given the organPosition precedent (a SysEx write that landed and persisted but did not reach the running voice, needing an NRPN live-fader path instead, see drawbarOrgan's section note), a cat=0x08 write here may face the same issue since the Lua's own live path is NRPN (mixHEX), not SysEx -- budget a midi-probe read/write/audible check before trusting this panel's Sync/edit path, and if writes prove SysEx-inert, the known fallback is the same NRPN-fader pattern app/OrganPanel.cpp already established (sendDrawbarNrpn) rather than a new mechanism. Detune Number (hex-layer-wide, not per-layer) and the entire LFO section (also hex-layer-wide, one shared Pitch/Amp LFO pair for all 6 layers) are taken literally from the PDF's Block column -- see HEXLAYER_LFO_NOTE for the specific caveat.",
+      "params": [
+        {
+          "id": "hexOnoff",
+          "name": "Layer On/Off",
+          "block": "Layer",
+          "group": "General",
+          "address": {
+            "ct": 8,
+            "id": 0,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 1
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "toggle"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexPanOffset",
+          "name": "Pan Offset",
+          "block": "Layer",
+          "group": "General",
+          "address": {
+            "ct": 8,
+            "id": 3,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexPitchKey",
+          "name": "Pitch Key",
+          "block": "Layer",
+          "group": "General",
+          "address": {
+            "ct": 8,
+            "id": 4,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexAmpAttackOfs",
+          "name": "Amp Attack Rate Offset",
+          "block": "Layer",
+          "group": "Amp",
+          "address": {
+            "ct": 8,
+            "id": 6,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexAmpDecayOfs",
+          "name": "Amp Decay Rate Offset",
+          "block": "Layer",
+          "group": "Amp",
+          "address": {
+            "ct": 8,
+            "id": 7,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexAmpSustainOfs",
+          "name": "Amp Sustain Level Offset",
+          "block": "Layer",
+          "group": "Amp",
+          "address": {
+            "ct": 8,
+            "id": 8,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexAmpReleaseOfs",
+          "name": "Amp Release Rate Offset",
+          "block": "Layer",
+          "group": "Amp",
+          "address": {
+            "ct": 8,
+            "id": 9,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexVolumeOfs",
+          "name": "Volume Offset",
+          "block": "Layer",
+          "group": "Amp",
+          "address": {
+            "ct": 8,
+            "id": 10,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexCutoffOfs",
+          "name": "Cutoff Offset",
+          "block": "Layer",
+          "group": "Filter",
+          "address": {
+            "ct": 8,
+            "id": 11,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexTouchSenseOfs",
+          "name": "Touch Sense Offset",
+          "block": "Layer",
+          "group": "Filter",
+          "address": {
+            "ct": 8,
+            "id": 12,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          },
+          "note": "midi-spec.md/PDF p72 sec 26.1: same manual inconsistency PCM's Touch Sense had (see pcmMelody's TOUCH_SENSE_NOTE) -- the hex Min-Def-Max column shows a non-centered default (00-BF-FF) while every sibling offset param in this block is centered (00-80-FF, default 0x80). Encoded as cF (consistent with its siblings) with default 0 (centered), not the hex column's literal 0xBF. Needs hardware read-back to confirm."
+        },
+        {
+          "id": "hexReverbSendOfs",
+          "name": "Reverb Send Offset",
+          "block": "Layer",
+          "group": "Effects",
+          "address": {
+            "ct": 8,
+            "id": 13,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexChorusSendOfs",
+          "name": "Chorus Send Offset",
+          "block": "Layer",
+          "group": "Effects",
+          "address": {
+            "ct": 8,
+            "id": 14,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexKeyRangeLow",
+          "name": "Key Range Low",
+          "block": "Layer",
+          "group": "Range",
+          "address": {
+            "ct": 8,
+            "id": 15,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexKeyRangeHigh",
+          "name": "Key Range High",
+          "block": "Layer",
+          "group": "Range",
+          "address": {
+            "ct": 8,
+            "id": 16,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 127,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexVelRangeLow",
+          "name": "Velocity Range Low",
+          "block": "Layer",
+          "group": "Range",
+          "address": {
+            "ct": 8,
+            "id": 17,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexVelRangeHigh",
+          "name": "Velocity Range High",
+          "block": "Layer",
+          "group": "Range",
+          "address": {
+            "ct": 8,
+            "id": 18,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 127,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          }
+        },
+        {
+          "id": "hexDetuneNumber",
+          "name": "Detune Number",
+          "block": "Global",
+          "group": "General",
+          "address": {
+            "ct": 8,
+            "id": 19,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 31
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          }
+        },
+        {
+          "id": "hexPitchLfoWave",
+          "name": "Pitch LFO Wave Type",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 21,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 6
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "combo",
+            "enum": "hexLayerLfoWave"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexPitchLfoRate",
+          "name": "Pitch LFO Rate",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 22,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 64,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexPitchAutoDelay",
+          "name": "Pitch Auto Delay",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 23,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexPitchAutoRise",
+          "name": "Pitch Auto Rise",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 24,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexPitchAutoDepth",
+          "name": "Pitch Auto Depth",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 25,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexPitchModDepth",
+          "name": "Pitch Mod Depth",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 26,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexPitchAfterDepth",
+          "name": "Pitch After Depth",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 27,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexAmpLfoWave",
+          "name": "Amp LFO Wave Type",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 28,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 6
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "combo",
+            "enum": "hexLayerLfoWave"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexAmpLfoRate",
+          "name": "Amp LFO Rate",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 29,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 64,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexAmpAutoDelay",
+          "name": "Amp LFO Auto Delay",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 30,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexAmpAutoRise",
+          "name": "Amp LFO Auto Rise",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 31,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexAmpAutoDepth",
+          "name": "Amp LFO Auto Depth",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 32,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cF",
+          "range": {
+            "min": -128,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexAmpModDepth",
+          "name": "Amp LFO Mod Depth",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 33,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        },
+        {
+          "id": "hexAmpAfterDepth",
+          "name": "Amp LFO After Depth",
+          "block": "Global",
+          "group": "LFO",
+          "address": {
+            "ct": 8,
+            "id": 34,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "cf",
+          "range": {
+            "min": -64,
+            "max": 63
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 0,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Hex Layer"
+            ]
+          },
+          "note": "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number above), not inferred, but flagged here because it is architecturally surprising and unverified against real hardware."
+        }
+      ]
     },
     "pcmMelody": {
       "category": "0x05",
