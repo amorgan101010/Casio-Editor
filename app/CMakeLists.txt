@@ -17,6 +17,7 @@ target_sources(CasioXWEditor PRIVATE
     Main.cpp
     EditorLookAndFeel.cpp
     ParamControl.cpp
+    WavePicker.cpp
     ParamPageDisplay.cpp
     SoloSynthPanel.cpp
     EnvelopeDisplay.cpp

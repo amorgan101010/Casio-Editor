@@ -11,6 +11,23 @@ OUT = os.environ.get("XWP1_OUT", os.path.join(_REPO, "params", "xwp1.json"))
 # ---------------------------------------------------------------------------
 # 1. Parse wave enums from 012_initWaves.lua
 # ---------------------------------------------------------------------------
+def fix_mojibake(s):
+    # A handful of wave names (e.g. "70's Organ") carry a curly apostrophe that was already
+    # double-UTF-8-encoded in the source Lua file itself (upstream corruption from however
+    # franky's CTRLR panel binary was originally extracted/re-saved, not something gen_xwp1.py's
+    # own utf-8 read introduces -- confirmed by checking the raw bytes in 012_initWaves.lua
+    # directly: b'\xc3\xa2\xc2\x80\xc2\x99' where a plain UTF-8 apostrophe would be b'\xe2\x80\x99').
+    # Telltale sign: C1 control-range codepoints (U+0080-U+009F) that can't legitimately appear in
+    # a wave name -- decoding those bytes as Latin-1 and re-encoding as UTF-8 recovers the
+    # original text. Falls back to the untouched string if that round-trip isn't valid (i.e. this
+    # string was never actually mis-encoded), rather than risk corrupting something else.
+    if not any (0x80 <= ord (c) <= 0x9F for c in s):
+        return s
+    try:
+        return s.encode ("latin-1").decode ("utf-8")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        return s
+
 def extract_wavelist(text, name):
     start = text.index(name)
     q = text.index('"', start) + 1
@@ -22,7 +39,7 @@ def extract_wavelist(text, name):
     for p in parts:
         m = re.match(r'\s*(\d+)\.(.*)$', p)
         assert m, f"bad wave entry: {p!r}"
-        entries.append((int(m.group(1)), m.group(2).strip()))
+        entries.append((int(m.group(1)), fix_mojibake (m.group(2).strip())))
     # verify contiguous from 0
     nums = [n for n, _ in entries]
     assert nums == list(range(0, len(nums))), f"{name} not contiguous: {nums[:5]}..max{max(nums)} len{len(nums)}"
@@ -33,6 +50,12 @@ syn_waves = extract_wavelist(waves, "g_tssSYNwave.P1")
 pcm_waves = extract_wavelist(waves, "g_tssPCMwave.P1")
 print(f"SYN waves: {len(syn_waves)} (0..{len(syn_waves)-1})")
 print(f"PCM waves: {len(pcm_waves)} (0..{len(pcm_waves)-1})")
+
+# Hex Layer's Split Ui Number only exposes PCM Wave # 0326-1114 (midi-spec.md line 548), a
+# narrower sub-range of the full 0326-2483 PCM library Solo Synth OSC3/4 use -- pre-sliced here
+# (indices 0-788, same waveBaseOffset=326) so its combo can't offer an out-of-range selection.
+hex_layer_waves = pcm_waves[:789]
+print(f"Hex Layer waves (Split Ui Number sub-range): {len(hex_layer_waves)} (0..{len(hex_layer_waves)-1})")
 
 # ---------------------------------------------------------------------------
 # 2. Parse the solo-synth parameter blocks from 011_initTables.lua
@@ -515,18 +538,16 @@ print(f"Drawbar Organ params: {len(organ_params)} (hand-authored, unverified aga
 # XWP1_midi_EN.pdf section 26 "Hex Layer Parameter" (printed p72-73), category 08H, XW-P1-only --
 # reference/midi-spec.md section 5.7.
 #
-# SCOPE: only the 16 per-layer offset params (26.1 IDs 0000/0003/0004/0006-0012) + Detune Number
-# (26.1 ID 0013) + all 14 LFO params (26.2 IDs 0015-0022) are included.
-# Deliberately EXCLUDED, same "not a wave browser" call PCMEnginePanel made for tone/patch
-# selection: Split Ui Number (id 0002, a per-layer PCM wave# picker -- out of scope, would need
-# a wave browser UI, not just a fader) and Pitch Cent (id 0005, a genuinely different bit-packed
+# SCOPE: the 16 per-layer offset params (26.1 IDs 0000/0003/0004/0006-0012) + Split Ui Number
+# (26.1 ID 0002, ADDED 2026-07-19, see HEXLAYER_WAVE_NUMBER_ID above) + Detune Number (26.1 ID
+# 0013) + all 14 LFO params (26.2 IDs 0015-0022) are included.
+# Still deliberately EXCLUDED: Pitch Cent (id 0005, a genuinely different bit-packed
 # sign+11-bit-fraction encoding -- "S------.- -------- S:sign bit -------.c cccccccc c:cent =
 # 100/512-cent resolution" per the PDF -- not a linear signed value like every other param here;
-# no existing vt fits it and no Lua source exists to cross-check a guess against). Both can be
-# added later behind their own vt/UI work; this is a scope call, not an oversight (see the
-# hexLayer section note below for the equivalent statement in the generated JSON). Owner also
-# identified Pitch Cent (id 0005, still excluded here) as the synth's own "Fine Tune" control --
-# wanted for a future pass, see the project memory note captured 2026-07-19.
+# no existing vt fits it and no Lua source exists to cross-check a guess against). This is a scope
+# call, not an oversight (see the hexLayer section note below for the equivalent statement in the
+# generated JSON). Owner identified Pitch Cent as the synth's own "Fine Tune" control -- wanted
+# for a future pass, see the project memory note captured 2026-07-19.
 #
 # Pitch Lock (26.1 ID 0014) was ALSO removed 2026-07-19 after being hand-authored and shipped:
 # owner hardware-tested it and confirmed no effect on pitch bend/transpose, and could not find a
@@ -569,6 +590,19 @@ print(f"Drawbar Organ params: {len(organ_params)} (hand-authored, unverified aga
 #   are taken literally from the PDF table (not inferred) but are surprising enough to flag rather
 #   than bury -- see the section note below.
 HEXLAYER_LAYER_LABELS = [f"Layer {i}" for i in range(1, 7)]
+
+# Split Ui Number (id 0002) -- per-layer PCM wave# picker, ADDED 2026-07-19 per owner request
+# (previously excluded, see the removed SCOPE note below and project memory). midi-spec.md line
+# 548 / PDF p72: "PCM Wave # 0326-1114" -- the SAME g_tssPCMwave.P1 library Solo Synth's OSC3/4
+# wave picker already uses (waveBaseOffset=326, same as OSC3/4 -- see OVR's wf perOsc table
+# above), but Hex Layer only exposes a NARROWER sub-range of it (indices 0-788 of that library,
+# not the full 0-2157) -- so this reuses the 'wf' vt/codec path unchanged (zero core changes,
+# same as every other hand-authored section) but backs it with a purpose-built 'hexLayerWaves'
+# enum (pcm_waves[:789], built below) instead of the full 'soloPcmWaves', so the combo can't
+# offer selections outside the documented range (ComboEnumPerOsc renders every entry of whatever
+# enum resolveEnumName() returns; maxPerOsc is descriptive-only and not enforced anywhere in the
+# current codec/UI, so the enum's own length is the actual range guard here).
+HEXLAYER_WAVE_NUMBER_ID = "hexWaveNumber"
 
 # Per-layer params (block "2-0:Layer Number", instanceCount=6). id, name, hex id, vt, range,
 # default, group, ui, enum.
@@ -649,6 +683,43 @@ def build_hexlayer_params():
         if pid == "hexTouchSenseOfs":
             entry["note"] = TOUCH_SENSE_OFS_NOTE
         out.append(entry)
+
+    # Split Ui Number / Wave -- hand-built (needs the 'wf' perOsc shape, doesn't fit the plain
+    # tuple table above). Per-layer like its siblings: same block/instances shape, instance 1-6
+    # keys the perOsc maps exactly like a solo-synth oscillator number does.
+    wave_entry = {
+        "id": HEXLAYER_WAVE_NUMBER_ID,
+        "name": "Wave",
+        "block": "Layer",
+        "group": "General",
+        "address": {"ct": 0x08, "id": 0x02, "ai": 0, "an": 0},
+        "vt": "wf",
+        "range": {"min": 0, "max": len(hex_layer_waves) - 1},
+        "default": 0,
+        "unit": "",
+        "ui": {"control": "combo", "enumPerOsc": True},
+        "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": False,
+            "labels": HEXLAYER_LAYER_LABELS,
+        },
+        "perOsc": {
+            "waveBaseOffset": {str(i): 326 for i in range(1, 7)},
+            "enumPerOsc": {str(i): "hexLayerWaves" for i in range(1, 7)},
+            "maxPerOsc": {str(i): len(hex_layer_waves) - 1 for i in range(1, 7)},
+        },
+        "note": ("Manual name is 'Split Ui Number' (PDF p72 sec 26.1 ID 0002); displayed as "
+                 "'Wave' to match the project's existing wave-picker naming (Solo Synth's OSC "
+                 "Wave Number). midi-spec.md line 548: PCM Wave # 0326-1114, the same "
+                 "g_tssPCMwave.P1 library Solo Synth OSC3/4 use (waveBaseOffset=326) but a "
+                 "narrower sub-range (indices 0-788 of that library) -- 'hexLayerWaves' below is "
+                 "that same library pre-sliced to just those 789 entries so the UI can't offer an "
+                 "out-of-range selection. NOT YET HARDWARE-VERIFIED, same caveat as the rest of "
+                 "this section."),
+    }
+    out.append(wave_entry)
 
     for pid, name, idhex, vt, rng, default, group, ui, enum, ai in HEXLAYER_GLOBAL_PARAMS:
         entry = {
@@ -740,12 +811,14 @@ HEXLAYER_SECTION_NOTE = (
     "caught it immediately (every affected param synced back as -128 regardless of the real "
     "value); fixed by switching those params to 'cF', which already encodes this exact -128..+128 "
     "shape correctly (2 bytes, lo7/hi7 split). "
-    "SCOPE: excludes Split Ui Number (per-layer PCM wave# picker, id 0002 -- out of scope, same "
-    "'not a wave browser' call PCMEnginePanel made for tone/patch selection; owner has asked for "
-    "wave picking here and in the PCM editor as a follow-up) and Pitch Cent (id 0005 -- a "
+    "Split Ui Number (id 0002, per-layer PCM wave# picker) was ADDED 2026-07-19 per owner request "
+    "as 'hexWaveNumber'/'Wave' -- reuses the existing 'wf' vt/codec path (same mechanism as Solo "
+    "Synth's OSC3/4 wave picker, waveBaseOffset=326) backed by a purpose-built 'hexLayerWaves' "
+    "enum (pcm_waves[:789]) so the UI only offers the manual-documented PCM Wave # 0326-1114 "
+    "sub-range, not the full library. SCOPE: still excludes Pitch Cent (id 0005 -- a "
     "genuinely different sign+11-bit-fraction bit-packed encoding with no existing vt and no Lua "
     "source to cross-check; owner identified this as the synth's own 'Fine Tune' control and wants "
-    "it implemented too). Pitch Lock (id 0014) was hand-authored and shipped, then REMOVED "
+    "it implemented too, tracked separately). Pitch Lock (id 0014) was hand-authored and shipped, then REMOVED "
     "2026-07-19 after owner hardware testing found no effect on pitch bend/transpose and no "
     "corresponding setting in the synth's own Hex Layer menu -- see HEXLAYER_GLOBAL_PARAMS' "
     "comment above. NOT YET HARDWARE-VERIFIED for the remaining params (owner has not run a full "
@@ -786,6 +859,7 @@ print(f"Address collisions: {collisions}")
 enums = {
     "soloSynthWaves": syn_waves,
     "soloPcmWaves": pcm_waves,
+    "hexLayerWaves": hex_layer_waves,
     "filterType": [{"value":0,"label":"LPF"},{"value":1,"label":"BPF"},{"value":2,"label":"HPF"}],
     "filterGain": [{"value":0,"label":"Flat"},{"value":1,"label":"-3dB"},{"value":2,"label":"-6dB"},
                     {"value":3,"label":"-12dB"},{"value":4,"label":"-18dB"}],

@@ -139,18 +139,37 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
         case ControlKind::ComboEnum:
         case ControlKind::ComboEnumPerOsc:
         {
-            combo = std::make_unique<juce::ComboBox>();
             const juce::String enumName = casioxw::resolveEnumName (info, instance);
-            if (const auto* entries = model.enumValues (enumName))
-                for (const auto& e : *entries)
-                    combo->addItem (e.label, e.value + 1);   // JUCE ids are 1-based; 0 is illegal
-            combo->onChange = [this]
+            const auto* entries = model.enumValues (enumName);
+
+            // Wave-number params (vt=="wf") back their combo with the full wave library --
+            // hundreds of entries (Hex Layer's Wave, 789) into the low thousands (Solo Synth's
+            // PCM wave picker, 2158) -- where juce::ComboBox's PopupMenu-backed dropdown freezes
+            // the message thread on open (see WavePicker.h's doc comment / .wolf/buglog.json).
+            // Every other enum in this app tops out around 19 entries, where plain ComboBox is
+            // genuinely fine -- so the switch is keyed on vt=="wf" (the one class of param whose
+            // enum can legitimately be this large), not a size threshold.
+            if (info.vt == "wf")
             {
-                const int id = combo->getSelectedId();
-                if (id > 0)
-                    notify (id - 1);
-            };
-            addAndMakeVisible (*combo);
+                wavePicker = std::make_unique<WavePicker>();
+                wavePicker->setEntries (entries);
+                wavePicker->onValueChanged = [this] (int value) { notify (value); };
+                addAndMakeVisible (*wavePicker);
+            }
+            else
+            {
+                combo = std::make_unique<juce::ComboBox>();
+                if (entries != nullptr)
+                    for (const auto& e : *entries)
+                        combo->addItem (e.label, e.value + 1);   // JUCE ids are 1-based; 0 illegal
+                combo->onChange = [this]
+                {
+                    const int id = combo->getSelectedId();
+                    if (id > 0)
+                        notify (id - 1);
+                };
+                addAndMakeVisible (*combo);
+            }
             break;
         }
 
@@ -266,8 +285,11 @@ void ParamControl::setValueFromSync (int value)
             // state). Without this, setSelectedId() on an out-of-range id silently selects
             // nothing (JUCE combo id 0 = no selection), leaving the combo looking broken/blank
             // with no indication why. Clamping to the nearest real entry keeps the display honest
-            // (shows a plausible value) rather than mysterious.
-            if (combo != nullptr && combo->getNumItems() > 0)
+            // (shows a plausible value) rather than mysterious. WavePicker applies the same clamp
+            // internally (setSelectedValue).
+            if (wavePicker != nullptr)
+                wavePicker->setSelectedValue (value, juce::dontSendNotification);
+            else if (combo != nullptr && combo->getNumItems() > 0)
                 combo->setSelectedId (juce::jlimit (0, combo->getNumItems() - 1, value) + 1,
                                       juce::dontSendNotification);
             break;
@@ -320,6 +342,8 @@ void ParamControl::resized()
         toggle->setBounds (bounds.removeFromLeft (60));
     else if (combo != nullptr)
         combo->setBounds (bounds);
+    else if (wavePicker != nullptr)
+        wavePicker->setBounds (bounds);
     else if (slider != nullptr)
         slider->setBounds (bounds);
 }
