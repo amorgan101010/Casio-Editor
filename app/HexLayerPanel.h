@@ -6,6 +6,7 @@
 #include "casioxw/MidiIO.h"
 #include "casioxw/SysExCodec.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <vector>
@@ -30,37 +31,24 @@
     entirely on odd layer cards (1/3/5) -- there's nothing for those layers to lock TO. See
     gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE for the still-open ai=2 address question.
 
-    REDESIGNED 2026-07-19 (owner brief): the "Layer" block used to be a one-instance-at-a-time view
-    (six pages behind an instance combo), the same per-layer paging pain the physical synth has.
-    It's now a single grid of LayerCard components, 2 wide x 3 tall (a fixed layout, not a
-    responsive wrap -- see layoutLayerGrid()'s own comment) -- all 6 layers visible at once, no
-    instance nav at all (the instance combo/label were removed; Global's instanceCount is always 1
-    so it never needed one anyway). The grid is deliberately 2-COLUMN, not 3: layerCards is built
-    in instance order 1..6, so 2 columns pairs (Layer 1, Layer 2) / (3, 4) / (5, 6) side by side --
-    exactly the pairing Pitch Lock needs (Layer 2 locks to 1, 4 to 3, 6 to 5), per owner feedback
-    after the first version (which wrapped to 3-wide, an unrelated grouping) landed.
-    Each card is a compact clone of the old full-width row list: On/Off + Pitch Lock share ONE row
-    (left/right half each, Pitch Lock blank on odd layers -- owner feedback: this keeps every
-    card's header the same height, so the knob grids below line up across ALL 6 cards, not just
-    within a card-row) + a full-width Wave row, then every remaining Layer param as a
-    ParamControl::RenderMode::Knob -- the owner's explicit choice (offered against the sequencer's
-    screen-cell p-lock knobs, picked "matches the rest of the editor's normal control chrome"
-    instead) -- tiled in a 5-column grid (owner feedback: fewer/wider knob rows per card, once the
-    2-wide card layout freed up width to do it), same cellWidth/cellHeight-tiling convention
-    OrganPanel's drawbar grid and SoloSynthPanel's OSC knob grid already use.
-    Knob cells intentionally stay at ParamControl's standard 100x110 size, NOT shrunk to fit more
-    per row -- SequencerPanel's per-step knobs were once smaller ("tiny dots", owner screenshot)
-    and were enlarged to their current size for readability/grabbability; repeating that mistake
-    here to cram more per card was rejected in favour of using the width the app already has
-    (Sequencer's own tab is ~1490px wide, comfortably fitting a 2-wide card grid at the wider
-    5-knob-column size) and letting the existing vertical-scrolling paramViewport absorb the 3
-    rows of card pairs, rather than shrinking the widget that was already corrected once for this
-    reason.
-    Global (the shared Pitch/Amp LFO pair + Detune, one instance, not part of the per-layer paging
-    pain to begin with) is UNCHANGED: same flat group-header + full-width-row list behind the block
-    combo. No per-card group headers (General/Amp/Filter/Effects/Range) -- all 6 cards repeat the
+    REDESIGNED 2026-07-19 (owner brief + two follow-up passes): the "Layer" block used to be a
+    one-instance-at-a-time view (six pages behind an instance combo), the same per-layer paging
+    pain the physical synth has. It's now ONE continuous page, no block combo at all -- a 2-wide x
+    3-tall grid of LayerCard components (all 6 layers, paired 1&2/3&4/5&6 to match Pitch Lock's own
+    relationship) followed by a single full-width GlobalSection carrying the shared Pitch/Amp LFO
+    pair + Detune. See buildLayerGrid()/buildGlobalSection()/layoutContent()'s own comments for the
+    layout mechanics, and MiniKnob's doc comment for why the numeric params render on a bespoke
+    compact knob widget rather than ParamControl::RenderMode::Knob (that widget's fixed ~50px of
+    internal label/textbox overhead can't produce a legible dial at the cell size this layout
+    needs -- see MiniKnob's comment for the full reasoning and the sequencer-step-knob precedent it
+    matches instead).
+
+    On/Off + Pitch Lock share ONE row per card (left/right half each, Pitch Lock blank-but-same-
+    height on odd layers) so every card's header is identical height and the knob grids below line
+    up across all 6 cards. Wave stays a full-width ParamControl row (needs WavePicker, not a knob).
+    No per-card group headers (General/Amp/Filter/Effects/Range) -- all 6 cards repeat the
     identical param set/order, so the layout is learned once rather than paying for 5 sub-headers
-    times 6 cards; see buildLayerGrid()'s own comment for the same tradeoff stated inline.
+    times 6 cards.
 
     PROVENANCE / TRUST NOTE (read before treating this like soloSynth): hexLayer's
     params/xwp1.json entries are hand-transcribed from XWP1_midi_EN.pdf section 26 (printed
@@ -78,8 +66,10 @@
 
     Reuses the shared casioxw::MidiIO connection opened from the Solo Synth tab -- like
     PCMEnginePanel/OrganPanel/SequencerPanel, this panel has no device combo/Connect button of its
-    own, only a status label and a Sync button. Every param is a data-driven ParamControl (see
-    ParamControl.h), matching the app's "no per-param hand-authored widget" convention. */
+    own, only a status label and a Sync button. Every param is data-driven (ParamControl for
+    toggle/combo, MiniKnob for numeric sliders), matching the app's "no per-param hand-authored
+    widget" convention -- MiniKnob is a second reusable renderer for a param, the same relationship
+    ParamPageDisplay::Cell already has to ParamControl elsewhere in this codebase. */
 class HexLayerPanel : public juce::Component,
                       private juce::Timer
 {
@@ -97,54 +87,42 @@ private:
     juce::Label statusLabel;
     juce::TextButton syncButton { "Sync" };
 
-    // ---- Block navigation (Layer grid vs. Global LFO/Detune list) -----------------------------
-    // No instance combo: Global's instanceCount is always 1, and Layer now shows all 6 instances
-    // at once (the LayerCard grid below) instead of one at a time -- there is nothing left for an
-    // instance selector to do.
-    juce::Label blockLabel { {}, "Block:" };
-    juce::ComboBox blockCombo;
-
-    juce::StringArray blockOrder;   // "Layer", "Global"
-    juce::String currentBlock;
-
-    void buildBlockList();
-    void blockSelectionChanged();
-
-    /** Re-run Sync automatically after a block switch, matching PCMEnginePanel/SoloSynthPanel's
-        autoSyncIfConnected() pattern -- but only when both MIDI ends are open. */
-    void autoSyncIfConnected();
-
     // ---- Param display --------------------------------------------------------------------------
+    // One continuous page, no block combo -- Layer's 6 instances (the LayerCard grid) and Global's
+    // 1 instance (GlobalSection) are both always visible, built once in the constructor and never
+    // rebuilt in response to any nav control (there isn't one any more).
     juce::Viewport paramViewport;
     juce::Component paramContainer;
+
+    // Toggle/combo params (On/Off, Pitch Lock, Wave, the 2 LFO Wave Type combos) -- these need
+    // ParamControl's real widgets (ToggleButton/WavePicker/ComboBox), not a knob.
     std::vector<std::unique_ptr<ParamControl>> controls;
-    std::vector<std::unique_ptr<juce::Component>> groupHeaders;   // Global block only
+
+    class MiniKnob;
+    // Every numeric slider param (90 across the 6 LayerCards + 13 in GlobalSection) -- see
+    // MiniKnob's own doc comment for why these are a bespoke widget rather than
+    // ParamControl::RenderMode::Knob.
+    std::vector<std::unique_ptr<MiniKnob>> miniKnobs;
 
     class LayerCard;
-    std::vector<std::unique_ptr<LayerCard>> layerCards;   // Layer block only, 6 of them
+    std::vector<std::unique_ptr<LayerCard>> layerCards;   // 6 of them, instance order 1..6
 
-    // Global block: simple vertical stack of full-width rows -- no knob/fader grid, same as
-    // PCMEnginePanel (one instance, so no repeated-instance-of-one-param case).
-    struct Row
-    {
-        juce::Component* component = nullptr;
-        int height = 0;
-        int gapAfter = 0;
-    };
-    std::vector<Row> rows;
+    class GlobalSection;
+    std::unique_ptr<GlobalSection> globalSection;
 
-    /** Rebuilds `controls` + (`layerCards` or `rows`, per currentBlock). Called whenever the
-        block combo changes. */
-    void rebuildParamControls();
-    void buildLayerGrid();     // currentBlock == "Layer": 6 LayerCards, all instances at once
-    void buildGlobalList();    // currentBlock == "Global": unchanged group-header + row list
+    void buildParamControls();     // builds layerCards + globalSection + wires every control once
+    void buildLayerGrid();         // 6 LayerCards, all instances at once
+    void buildGlobalSection();     // the one shared-LFO/Detune section
 
-    int layoutRows (int width);          // Global: assigns row bounds, returns total content height
-    int layoutLayerGrid (int width);     // Layer: wraps LayerCards, returns total content height
-    void layoutParamContainerWidth();    // shared by rebuildParamControls() and resized()
+    /** Lays out layerCards as a 2-wide grid, then globalSection full-width beneath it. Returns
+        total content height (paramContainer is sized to this). */
+    int layoutContent (int width);
+    void layoutParamContainerWidth();    // shared by buildParamControls() and resized()
 
     // ---- Sync (poll-on-demand, juce::Timer -- never a busy loop; same pattern as PCMEnginePanel) --
-    std::map<juce::String, ParamControl*> outstandingSync;
+    // Value is a type-erased "push this synced value into the widget" callback rather than a
+    // ParamControl* directly, since a sync target may be either a ParamControl or a MiniKnob.
+    std::map<juce::String, std::function<void (int)>> outstandingSync;
     juce::uint32 syncStartedMs = 0;
 
     void syncButtonClicked();
