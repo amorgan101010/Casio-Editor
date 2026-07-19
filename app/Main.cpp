@@ -4,6 +4,7 @@
 
 #include "AppVersion.h"
 #include "EditorLookAndFeel.h"
+#include "HexLayerPanel.h"
 #include "OrganPanel.h"
 #include "PCMEnginePanel.h"
 #include "SequencerPanel.h"
@@ -17,11 +18,12 @@
     replaces the Chunk 4 PlaceholderComponent — this is the first real editor UI. Sequencer MVP
     adds a second tab that shares the same MidiIO as the Solo Synth panel (one output port —
     Connect on either tab opens it for both); the PCM Engine tab (category 0x05 "Melody", see
-    app/PCMEnginePanel.h) and the Organ tab (category 0x07 "Drawbar", see app/OrganPanel.h) are
-    further siblings on the same shared MidiIO, with no device combo of their own — same pattern
-    SequencerPanel already established. codec/midiIO must outlive every panel (SoloSynthPanel/
-    PCMEnginePanel/OrganPanel and ParamControl keep references into codec.model()), so they are
-    declared before the panels in this class and never moved/copied afterwards. */
+    app/PCMEnginePanel.h), the Organ tab (category 0x07 "Drawbar", see app/OrganPanel.h), and the
+    Hex Layer tab (category 0x08 "Hex Layer", see app/HexLayerPanel.h) are further siblings on the
+    same shared MidiIO, with no device combo of their own — same pattern SequencerPanel already
+    established. codec/midiIO must outlive every panel (SoloSynthPanel/PCMEnginePanel/OrganPanel/
+    HexLayerPanel and ParamControl keep references into codec.model()), so they are declared
+    before the panels in this class and never moved/copied afterwards. */
 class MainContentComponent : public juce::Component
 {
 public:
@@ -30,6 +32,7 @@ public:
           soloSynthPanel (codec, midiIO),
           pcmEnginePanel (codec, midiIO),
           organPanel (codec, midiIO),
+          hexLayerPanel (codec, midiIO),
           sequencerPanel (codec, midiIO)
     {
         // Capture the panels' natural sizes BEFORE tabbing them. addTab() reparents each panel into
@@ -37,16 +40,21 @@ public:
         // here -- so reading getWidth()/getHeight() afterwards yields 0. Reading it after was the
         // real cause of the window opening at 0x30 / tiny (bug-071, pinned by the launch diagnostic);
         // the panels' own constructors have already set these to the real values.
-        const int contentW = juce::jmax (soloSynthPanel.getWidth(), pcmEnginePanel.getWidth(),
-                                          organPanel.getWidth(), sequencerPanel.getWidth());
-        const int contentH = juce::jmax (soloSynthPanel.getHeight(), pcmEnginePanel.getHeight(),
-                                          organPanel.getHeight(), sequencerPanel.getHeight());
+        // juce::jmax has no 5-arg overload (only 2/3/4-arg templates, see .wolf/cerebrum.md
+        // bug-119) -- nest two 4-arg calls rather than an initializer-list form that doesn't exist.
+        const int contentW = juce::jmax (juce::jmax (soloSynthPanel.getWidth(), pcmEnginePanel.getWidth(),
+                                                       organPanel.getWidth(), hexLayerPanel.getWidth()),
+                                          sequencerPanel.getWidth());
+        const int contentH = juce::jmax (juce::jmax (soloSynthPanel.getHeight(), pcmEnginePanel.getHeight(),
+                                                       organPanel.getHeight(), hexLayerPanel.getHeight()),
+                                          sequencerPanel.getHeight());
 
         // TabbedComponent's colour arg only matters for its OWN default tab-content-area fill;
         // EditorLookAndFeel::drawTabButton/drawTabbedButtonBarBackground own the visible tab bar.
         tabs.addTab ("Solo Synth", EditorColours::chassisBg, &soloSynthPanel, false);
         tabs.addTab ("PCM Engine", EditorColours::chassisBg, &pcmEnginePanel, false);
         tabs.addTab ("Organ", EditorColours::chassisBg, &organPanel, false);
+        tabs.addTab ("Hex Layer", EditorColours::chassisBg, &hexLayerPanel, false);
         tabs.addTab ("Sequencer", EditorColours::chassisBg, &sequencerPanel, false);
         addAndMakeVisible (tabs);
         // + actual tab-bar depth (not a hardcoded 30) so the shown tab gets its full height.
@@ -64,6 +72,7 @@ private:
     SoloSynthPanel soloSynthPanel;
     PCMEnginePanel pcmEnginePanel;
     OrganPanel organPanel;
+    HexLayerPanel hexLayerPanel;
     SequencerPanel sequencerPanel;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
 

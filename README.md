@@ -2,16 +2,16 @@
 
 Linux-native JUCE editor for the Casio XW-P1 synth, with:
 
-- a data-driven Solo Synth editor (SysEx encode/decode, sync, grouped UI),
-- a 16-step sequencer with per-step parameter locks,
+- data-driven tone editors for Solo Synth, PCM (Melody) Engine, Drawbar Organ, and Hex Layer (SysEx encode/decode, sync, grouped UI),
+- a 16-step sequencer with per-step parameter locks, drum tracks, and independent PCM melodic tracks,
 - a headless core (`casioxw_core`) designed for deterministic unit tests.
 
 ## Current status
 
-- App version: `0.7.0-sequencer` (source: `app/AppVersion.h`)
+- App version: `0.19.0` (source: `app/AppVersion.h`)
 - Core version: `0.1.0` (source: `core/include/casioxw/CoreVersion.h`)
 - CI: build + test on every push/PR to `main`
-- Test suite: Catch2 via CTest (core codec/model/MIDI/sequencer coverage)
+- Test suite: Catch2 via CTest (core codec/model/MIDI/sequencer coverage), 92/92 test cases passing
 
 ## Versioning rule
 
@@ -28,13 +28,47 @@ Linux-native JUCE editor for the Casio XW-P1 synth, with:
 - Grouped parameter layout + envelope visualization
 - Connect/sync flow against real MIDI devices
 
+### PCM (Melody) Engine editor
+
+- Category `0x05` tone editor (Attack/Release/Cutoff, Vibrato, Octave Shift, Touch Sense)
+- Reuses the shared MIDI connection opened from the Solo Synth tab
+- Hardware-verified addressing, including the corrected Volume register (Tone `0x03`/`0x08`,
+  not the Melody-category address the manual's own table lists)
+
+### Drawbar Organ editor
+
+- Category `0x07` tone editor: 9-drawbar bank (harmonic display order, hardware-confirmed SysEx
+  instance mapping), Percussion, Key-on/off Click, Rotary Type, Vibrato Rate/Depth
+- Drawbar fader writes go out via the synth's live NRPN performance-fader path (the SysEx
+  edit-buffer write persists but doesn't reach the running voice in real time); every other organ
+  control writes and reads live via SysEx
+- Inverted vertical fader (down = loudest, matching the hardware drawbar convention)
+
+### Hex Layer editor
+
+- Category `0x08` tone editor (XW-P1 only): a Block/Layer navigator (Layer 1-6, plus a
+  hex-layer-wide "Global" block) over 31 params -- per-layer Pan/Pitch/Amp/Filter/Effects/Range
+  offsets, plus Detune Number and a shared Pitch/Amp LFO pair
+- Pitch Lock was shipped and then removed after hardware testing found no effect on pitch
+  bend/transpose and no corresponding setting in the synth's own menu
+- NOT YET hardware-verified -- no Lua SysEx source exists for this domain (franky's panel drives
+  Hex Layer live via NRPN, not SysEx), so budget a read/write/audible check before trusting it the
+  way Solo Synth is trusted; see `params/xwp1.json`'s `hexLayer` section note for the full caveat
+
 ### Sequencer
 
 - 16-step note sequencer with gate, velocity, rate, shift, and randomize
-- Per-step parameter locks (Elektron-style workflow)
-- Save/load sequence JSON (`.xwseq`)
-- Look-ahead scheduling with timestamped MIDI output
-- Parameter transport: NRPN-first where mapped, SysEx fallback
+- Per-step parameter locks (Elektron-style workflow) for Solo Synth params, edited through a
+  pageable hardware-LCD-style parameter window (`ParamPageDisplay`)
+- Drum Tracks: 5 independent channel-voice lanes (Performance parts 8-12) with their own step
+  triggers, mute, channel, and p-lockable velocity
+- PCM Tracks: 4 independent melodic lanes (Bass/Solo 1/Solo 2/Chords, Performance parts 13-16),
+  each with its own note/gate/velocity p-lock page
+- Save/load sequence JSON (`.xwseq`) as a solo sequence, a drum sequence, or a combined sequence set
+- Look-ahead scheduling with timestamped MIDI output and a deep start-of-playback prime to avoid
+  tempo lurch
+- Parameter transport: SysEx (`SysExCodec`), per-vt encoded — the earlier NRPN-shortcut transport
+  was found to corrupt signed/scaled values and was reverted
 
 ### Core library (`casioxw_core`)
 
@@ -97,10 +131,11 @@ ctest --test-dir build --output-on-failure
 
 In the app:
 
-1. Pick MIDI input/output ports,
+1. Pick MIDI input/output ports on the Solo Synth tab,
 2. Connect,
-3. Use the Solo Synth tab for tone editing/sync,
-4. Use the Sequencer tab for playback and p-lock sequencing.
+3. Use the Solo Synth / PCM Engine / Organ / Hex Layer tabs for tone editing/sync (PCM Engine,
+   Organ, and Hex Layer reuse the Solo Synth tab's connection),
+4. Use the Sequencer tab for playback and p-lock sequencing across the synth, drum, and PCM tracks.
 
 ## Notes
 

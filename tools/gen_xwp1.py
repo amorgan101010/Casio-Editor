@@ -152,7 +152,7 @@ OVR = {
 # core/include/casioxw/ParamModel.h (isEnvelopeGroup() was deleted; no group is
 # ever named "X Envelope" any more).
 # ---------------------------------------------------------------------------
-GROUP_ORDER = ["Drawbars", "Percussion", "General", "Pitch", "Filter", "Amp", "PWM",
+GROUP_ORDER = ["Drawbars", "Percussion", "General", "Range", "Pitch", "Filter", "Amp", "Effects", "PWM",
                "External Input", "External Trigger", "Pitch Shifter", "LFO",
                "Envelope", "Vibrato"]
 
@@ -502,6 +502,265 @@ def build_organ_params():
 organ_params = build_organ_params()
 print(f"Drawbar Organ params: {len(organ_params)} (hand-authored, unverified against hardware)")
 
+# ---------------------------------------------------------------------------
+# 4d. Hex Layer params -- HAND-AUTHORED, not mined from Lua.
+#
+# franky's CTRLR panel DOES have a Hex Layer controller (020_ToneHexLayer.lua) but -- read in
+# full this session -- it drives everything live via NRPN (sendHEXParam -> sendNRNP, MSB=0x3e
+# fixed per g_mixModMidi["mixHEX"]["mixMSBid"] in 011_initTables.lua:491-505), never SysEx, and
+# only for a SMALL "mixer" subset (per-layer level mixHEX1lvl..6lvl + all-layer
+# cutoff/detune/attack/release) -- NOT the full per-layer offset/LFO param set this section
+# covers. So there is no tone-edit-buffer Lua source for THIS domain either, same situation
+# pcmMelody/drawbarOrgan were in. Every field below is transcribed directly from
+# XWP1_midi_EN.pdf section 26 "Hex Layer Parameter" (printed p72-73), category 08H, XW-P1-only --
+# reference/midi-spec.md section 5.7.
+#
+# SCOPE: only the 16 per-layer offset params (26.1 IDs 0000/0003/0004/0006-0012) + Detune Number
+# (26.1 ID 0013) + all 14 LFO params (26.2 IDs 0015-0022) are included.
+# Deliberately EXCLUDED, same "not a wave browser" call PCMEnginePanel made for tone/patch
+# selection: Split Ui Number (id 0002, a per-layer PCM wave# picker -- out of scope, would need
+# a wave browser UI, not just a fader) and Pitch Cent (id 0005, a genuinely different bit-packed
+# sign+11-bit-fraction encoding -- "S------.- -------- S:sign bit -------.c cccccccc c:cent =
+# 100/512-cent resolution" per the PDF -- not a linear signed value like every other param here;
+# no existing vt fits it and no Lua source exists to cross-check a guess against). Both can be
+# added later behind their own vt/UI work; this is a scope call, not an oversight (see the
+# hexLayer section note below for the equivalent statement in the generated JSON). Owner also
+# identified Pitch Cent (id 0005, still excluded here) as the synth's own "Fine Tune" control --
+# wanted for a future pass, see the project memory note captured 2026-07-19.
+#
+# Pitch Lock (26.1 ID 0014) was ALSO removed 2026-07-19 after being hand-authored and shipped:
+# owner hardware-tested it and confirmed no effect on pitch bend/transpose, and could not find a
+# corresponding setting anywhere in the synth's own Hex Layer menu. It was already the weakest
+# address inference in this section (see the old HEXLAYER_GLOBAL_PARAMS comment, now removed with
+# it) -- dropped rather than kept as a guessed, apparently-inert control.
+#
+# ENCODING NOTES:
+# - Most params are plain 'nf' (0-127) or 'cf' (-64..+63, wire=value+64, matches the PDF's
+#   "00-40-7F" hex range exactly). The 8-bit "-128..+127" offset params (Amp Attack/Decay/Sustain/
+#   Release Rate Offset, Volume/Cutoff/Touch Sense/Reverb Send/Chorus Send Offset, plus the two LFO
+#   Auto Depth params) reuse the EXISTING 'cF' vt (already used by soloSynth, golden-tested), NOT a
+#   new single-byte vt. [FIXED 2026-07-19, bug-198] A first pass invented a one-byte 'cf256'
+#   (wire=value+128 in a single raw byte) -- broken because MIDI SysEx data bytes must have the
+#   high bit clear (0-127 only); half of cf256's range (every UI value >= 0) produced an illegal
+#   byte >=0x80, corrupting the frame. The PDF's "Size 8" column means 8 BITS OF RANGE (256 values),
+#   which categorically cannot fit in one 7-bit-safe MIDI byte -- it needs 2 bytes on the wire, and
+#   'cF' already does exactly that (wire=value+128 split lo7/hi7, same formula, MIDI-safe). Owner
+#   hardware test caught this: every cf256 param synced back as -128 regardless of what was set
+#   (decode's b0 defaulting to 0 when the malformed frame's value bytes never arrived intact).
+# - Touch Sense Offset (id 000C) has the SAME manual inconsistency PCM's Touch Sense had (see
+#   pcmMelody's TOUCH_SENSE_NOTE): hex Min-Def-Max column shows a non-centered default (00-BF-FF)
+#   while the effective range is signed like its siblings. Resolved the same way: default=0
+#   (centered), not the literal hex column.
+# - Array->ai mapping: the PDF's "Array" column is franky's own vocabulary for the address 'ai'
+#   byte (PROTOCOL.md line 111: "ai / array index"), confirmed by 3 independent hardware-verified
+#   precedents in this repo (tssOSCPlfo2D/tssOSCAlfo2D/tssFLTFlfo2D, all manual "Array 02" -> ai=1,
+#   see OVR above) -- the rule is ai = Array-1, not specific to those collision cases. Every param
+#   remaining in this section has manual Array=01 (-> ai=0). (The one exception, Pitch Lock's
+#   "Array 03" -> ai=2, was removed 2026-07-19 -- owner hardware-tested it as having no effect on
+#   pitch bend/transpose and found no corresponding setting in the synth's own Hex Layer menu; see
+#   the SCOPE note above. Its ai=2 was the one case in this section where the Array->ai rule was
+#   applied without an independent id-collision to cross-check it against -- unlike this rule's 3
+#   other precedents, which all resolve real collisions.)
+# - Detune Number (0013) is the only param in section 26.1 whose PDF Block column reads the fixed
+#   "00000000" instead of "up-arrow" (= 2-0:Layer Number, same as every param above it) -- i.e. it
+#   is HEX-LAYER-WIDE (one value covering all 6 layers), not per-layer. Section 26.2's entire LFO
+#   block (0015-0022, 14 params) is ALSO documented as fixed Block 00000000 -- one shared Pitch/
+#   Amp LFO pair for the whole Hex Layer engine, not six independent per-layer LFOs. Both readings
+#   are taken literally from the PDF table (not inferred) but are surprising enough to flag rather
+#   than bury -- see the section note below.
+HEXLAYER_LAYER_LABELS = [f"Layer {i}" for i in range(1, 7)]
+
+# Per-layer params (block "2-0:Layer Number", instanceCount=6). id, name, hex id, vt, range,
+# default, group, ui, enum.
+HEXLAYER_LAYER_PARAMS = [
+    ("hexOnoff",         "Layer On/Off",        0x00, "nf",    (0, 1),      0,   "General", "toggle", None),
+    ("hexPanOffset",     "Pan Offset",          0x03, "cf",    (-64, 63),   0,   "General", "slider", None),
+    ("hexPitchKey",      "Pitch Key",           0x04, "cf",    (-64, 63),   0,   "General", "slider", None),
+    ("hexAmpAttackOfs",  "Amp Attack Rate Offset",  0x06, "cF", (-128, 127), 0, "Amp",   "slider", None),
+    ("hexAmpDecayOfs",   "Amp Decay Rate Offset",   0x07, "cF", (-128, 127), 0, "Amp",   "slider", None),
+    ("hexAmpSustainOfs", "Amp Sustain Level Offset",0x08, "cF", (-128, 127), 0, "Amp",   "slider", None),
+    ("hexAmpReleaseOfs", "Amp Release Rate Offset", 0x09, "cF", (-128, 127), 0, "Amp",   "slider", None),
+    ("hexVolumeOfs",     "Volume Offset",       0x0A, "cF", (-128, 127), 0,   "Amp",     "slider", None),
+    ("hexCutoffOfs",     "Cutoff Offset",       0x0B, "cF", (-128, 127), 0,   "Filter",  "slider", None),
+    ("hexTouchSenseOfs", "Touch Sense Offset",  0x0C, "cF", (-128, 127), 0,   "Filter",  "slider", None),
+    ("hexReverbSendOfs", "Reverb Send Offset",  0x0D, "cF", (-128, 127), 0,   "Effects", "slider", None),
+    ("hexChorusSendOfs", "Chorus Send Offset",  0x0E, "cF", (-128, 127), 0,   "Effects", "slider", None),
+    ("hexKeyRangeLow",   "Key Range Low",       0x0F, "nf",    (0, 127),    0,   "Range",   "slider", None),
+    ("hexKeyRangeHigh",  "Key Range High",      0x10, "nf",    (0, 127),    127, "Range",   "slider", None),
+    ("hexVelRangeLow",   "Velocity Range Low",  0x11, "nf",    (0, 127),    0,   "Range",   "slider", None),
+    ("hexVelRangeHigh",  "Velocity Range High", 0x12, "nf",    (0, 127),    127, "Range",   "slider", None),
+]
+
+# Hex-Layer-wide params (block fixed 00000000, instanceCount=1). Same tuple shape.
+#
+# Pitch Lock (id 0x14) was REMOVED 2026-07-19 (owner hardware test): confirmed to have no effect
+# on pitch bend or transpose, and the owner could not find a corresponding setting anywhere in the
+# synth's own Hex Layer menu. Its address was always the weakest inference in this section (the
+# PDF marks it 'Array 03' where every sibling is 'Array 01', and the ai=2 reading applied here was
+# pattern-matched from OTHER params' id-collision cases -- Pitch Lock's id isn't shared with
+# anything, so there was no independent way to confirm it). Given the owner's negative test result,
+# dropped rather than kept as a guessed, apparently-inert control. Revisit if a real corresponding
+# synth-menu setting is ever identified.
+HEXLAYER_GLOBAL_PARAMS = [
+    # id,             name,           hex id, vt,  range,   default, group,    ui,      enum, ai
+    ("hexDetuneNumber", "Detune Number", 0x13, "nf", (0, 31), 0, "General", "slider", None, 0),
+]
+
+HEXLAYER_LFO_NOTE = (
+    "Block is fixed (00000000) for the ENTIRE LFO section (PDF sec 26.2 p72-73, IDs 0015-0022): "
+    "one shared Pitch LFO + Amp LFO pair for the whole 6-layer Hex Layer engine, not six "
+    "independent per-layer LFOs -- taken literally from the PDF table (same as Detune Number "
+    "above), not inferred, but flagged here because it is architecturally surprising and "
+    "unverified against real hardware."
+)
+
+TOUCH_SENSE_OFS_NOTE = (
+    "midi-spec.md/PDF p72 sec 26.1: same manual inconsistency PCM's Touch Sense had (see "
+    "pcmMelody's TOUCH_SENSE_NOTE) -- the hex Min-Def-Max column shows a non-centered default "
+    "(00-BF-FF) while every sibling offset param in this block is centered (00-80-FF, default "
+    "0x80). Encoded as cF (consistent with its siblings) with default 0 (centered), not the "
+    "hex column's literal 0xBF. Needs hardware read-back to confirm."
+)
+
+def build_hexlayer_params():
+    out = []
+    for pid, name, idhex, vt, rng, default, group, ui, enum in HEXLAYER_LAYER_PARAMS:
+        entry = {
+            "id": pid,
+            "name": name,
+            "block": "Layer",
+            "group": group,
+            "address": {"ct": 0x08, "id": idhex, "ai": 0, "an": 0},
+            "vt": vt,
+            "range": {"min": rng[0], "max": rng[1]},
+            "default": default,
+            "unit": "",
+            "ui": {"control": ui},
+            "instances": {
+                "count": 6,
+                "blkByteOffset": 6,
+                "addressByteIndex": 10,
+                "idSuffix": False,
+                "labels": HEXLAYER_LAYER_LABELS,
+            },
+        }
+        if enum:
+            entry["ui"]["enum"] = enum
+        if pid == "hexTouchSenseOfs":
+            entry["note"] = TOUCH_SENSE_OFS_NOTE
+        out.append(entry)
+
+    for pid, name, idhex, vt, rng, default, group, ui, enum, ai in HEXLAYER_GLOBAL_PARAMS:
+        entry = {
+            "id": pid,
+            "name": name,
+            "block": "Global",
+            "group": group,
+            "address": {"ct": 0x08, "id": idhex, "ai": ai, "an": 0},
+            "vt": vt,
+            "range": {"min": rng[0], "max": rng[1]},
+            "default": default,
+            "unit": "",
+            "ui": {"control": ui},
+            "instances": {
+                "count": 1,
+                "blkByteOffset": 0,
+                "addressByteIndex": 10,
+                "idSuffix": False,
+                "labels": ["Hex Layer"],
+            },
+        }
+        if enum:
+            entry["ui"]["enum"] = enum
+        out.append(entry)
+
+    for pid, name, idhex, vt, rng, default in HEXLAYER_LFO_PARAMS:
+        entry = {
+            "id": pid,
+            "name": name,
+            "block": "Global",
+            "group": "LFO",
+            "address": {"ct": 0x08, "id": idhex, "ai": 0, "an": 0},
+            "vt": vt,
+            "range": {"min": rng[0], "max": rng[1]},
+            "default": default,
+            "unit": "",
+            "ui": {"control": "combo" if vt == "hexLfoWaveEnum" else "slider"},
+            "instances": {
+                "count": 1,
+                "blkByteOffset": 0,
+                "addressByteIndex": 10,
+                "idSuffix": False,
+                "labels": ["Hex Layer"],
+            },
+            "note": HEXLAYER_LFO_NOTE,
+        }
+        if vt == "hexLfoWaveEnum":
+            entry["vt"] = "nf"
+            entry["ui"]["enum"] = "hexLayerLfoWave"
+        out.append(entry)
+
+    return out
+
+# LFO params (26.2): id, name, hex id, vt ('hexLfoWaveEnum' is a marker, resolved to nf+enum
+# above, not a real vt), range, default.
+HEXLAYER_LFO_PARAMS = [
+    ("hexPitchLfoWave",     "Pitch LFO Wave Type",   0x15, "hexLfoWaveEnum", (0, 6),      0),
+    ("hexPitchLfoRate",     "Pitch LFO Rate",        0x16, "nf",             (0, 127),    64),
+    ("hexPitchAutoDelay",   "Pitch Auto Delay",      0x17, "nf",             (0, 127),    0),
+    ("hexPitchAutoRise",    "Pitch Auto Rise",       0x18, "nf",             (0, 127),    0),
+    ("hexPitchAutoDepth",   "Pitch Auto Depth",      0x19, "cF",             (-128, 127), 0),
+    ("hexPitchModDepth",    "Pitch Mod Depth",       0x1A, "cf",             (-64, 63),   0),
+    ("hexPitchAfterDepth",  "Pitch After Depth",     0x1B, "cf",             (-64, 63),   0),
+    ("hexAmpLfoWave",       "Amp LFO Wave Type",     0x1C, "hexLfoWaveEnum", (0, 6),      0),
+    ("hexAmpLfoRate",       "Amp LFO Rate",          0x1D, "nf",             (0, 127),    64),
+    ("hexAmpAutoDelay",     "Amp LFO Auto Delay",    0x1E, "nf",             (0, 127),    0),
+    ("hexAmpAutoRise",      "Amp LFO Auto Rise",     0x1F, "nf",             (0, 127),    0),
+    ("hexAmpAutoDepth",     "Amp LFO Auto Depth",    0x20, "cF",             (-128, 127), 0),
+    ("hexAmpModDepth",      "Amp LFO Mod Depth",     0x21, "cf",             (-64, 63),   0),
+    ("hexAmpAfterDepth",    "Amp LFO After Depth",   0x22, "cf",             (-64, 63),   0),
+]
+
+hexlayer_params = build_hexlayer_params()
+print(f"Hex Layer params: {len(hexlayer_params)} (hand-authored, unverified against hardware)")
+
+HEXLAYER_SECTION_NOTE = (
+    "HAND-AUTHORED from XWP1_midi_EN.pdf section 26 'Hex Layer Parameter' (printed p72-73), "
+    "category 08H (XW-P1 only) -- franky's CTRLR panel has a Hex Layer controller "
+    "(020_ToneHexLayer.lua) but it drives everything live via NRPN (sendHEXParam/g_mixModMidi"
+    "['mixHEX'], MSB=0x3e), never SysEx, and only for the small per-layer-level + all-layer-"
+    "cutoff/detune/attack/release mixer subset -- NOT this section's full per-layer offset/LFO "
+    "param set. So there is no tone-edit-buffer Lua source to mine here, same situation "
+    "pcmMelody/drawbarOrgan were in. addr/vt follow the general SX frame field layout "
+    "(midi-spec.md section 2) that soloSynth/pcmMelody/drawbarOrgan already match; SysExCodec "
+    "needed zero changes, same as every other hand-authored section -- the 8-bit '-128..+127' "
+    "offset params reuse the EXISTING 'cF' vt (2-byte, MIDI-safe), NOT a new one. [bug-198, "
+    "2026-07-19] A first pass invented a broken single-byte 'cf256' (wire=value+128 in one raw "
+    "byte, illegal per MIDI's high-bit-clear rule for SysEx data bytes) -- owner hardware testing "
+    "caught it immediately (every affected param synced back as -128 regardless of the real "
+    "value); fixed by switching those params to 'cF', which already encodes this exact -128..+128 "
+    "shape correctly (2 bytes, lo7/hi7 split). "
+    "SCOPE: excludes Split Ui Number (per-layer PCM wave# picker, id 0002 -- out of scope, same "
+    "'not a wave browser' call PCMEnginePanel made for tone/patch selection; owner has asked for "
+    "wave picking here and in the PCM editor as a follow-up) and Pitch Cent (id 0005 -- a "
+    "genuinely different sign+11-bit-fraction bit-packed encoding with no existing vt and no Lua "
+    "source to cross-check; owner identified this as the synth's own 'Fine Tune' control and wants "
+    "it implemented too). Pitch Lock (id 0014) was hand-authored and shipped, then REMOVED "
+    "2026-07-19 after owner hardware testing found no effect on pitch bend/transpose and no "
+    "corresponding setting in the synth's own Hex Layer menu -- see HEXLAYER_GLOBAL_PARAMS' "
+    "comment above. NOT YET HARDWARE-VERIFIED for the remaining params (owner has not run a full "
+    "live round-trip on this section) -- given the organPosition precedent (a SysEx write that "
+    "landed and persisted but did not reach the running voice, needing an NRPN live-fader path "
+    "instead, see drawbarOrgan's section note), a cat=0x08 write here may face the same issue "
+    "since the Lua's own live path is NRPN (mixHEX), not SysEx -- budget a midi-probe read/write/"
+    "audible check before trusting this panel's Sync/edit path, and if writes prove SysEx-inert, "
+    "the known fallback is the same NRPN-fader pattern app/OrganPanel.cpp already established "
+    "(sendDrawbarNrpn) rather than a new mechanism. Detune Number (hex-layer-wide, not per-layer) "
+    "and the entire LFO section (also hex-layer-wide, one shared Pitch/Amp LFO pair for all 6 "
+    "layers) are taken literally from the PDF's Block column -- see HEXLAYER_LFO_NOTE for the "
+    "specific caveat."
+)
+
 # Address collision detection (same 18-byte address for >1 param within same instance)
 def addr_key(e):
     return (e["address"]["ct"], e["address"]["id"], e["address"]["ai"], e["address"]["an"])
@@ -557,6 +816,13 @@ enums = {
     # character switch, values Sine/Vintage (NOT "Normal"/"Vintage" as the manual's section 25
     # table names it -- see organRotaryType's own note).
     "organRotaryType": [{"value":0,"label":"Sine"},{"value":1,"label":"Vintage"}],
+    # Hex Layer LFO Wave Type (PDF sec 26.2 p72-73): 7 values, 0-6, no "Random" -- distinct from
+    # soloSynth's 8-value lfoWave enum (which adds Random at 7). Backs BOTH Pitch LFO Wave Type
+    # and Amp LFO Wave Type (same list, per the PDF).
+    "hexLayerLfoWave": [{"value":0,"label":"Sine"},{"value":1,"label":"Triangle"},
+                          {"value":2,"label":"Saw Up"},{"value":3,"label":"Saw Down"},
+                          {"value":4,"label":"Pulse 1:3"},{"value":5,"label":"Pulse 2:2"},
+                          {"value":6,"label":"Pulse 3:1"}],
 }
 
 # ---------------------------------------------------------------------------
@@ -613,7 +879,12 @@ doc = {
       "note": "Nine hardware blocks (midi-spec p73): 6 OSC (Synth1/Synth2/PCM1/PCM2/EXT/Noise), LFO1, LFO2, Total Filter. In the Lua these are 5 param groups; OSC=6 instances, PWM=2, LFO=2, Etc/TotalFilter=1. Oscillator/Filter/Amp sub-blocks are ×5 in the manual (Noise excluded) but the Lua generates all 6 uniformly; codec should generate all 6 and the UI may disable inapplicable instances.",
       "params": solo_params
     },
-    "hexLayer":    {"category":"0x08","status":"stub","params":[]},
+    "hexLayer":    {
+      "category": "0x08",
+      "status": "complete",
+      "note": HEXLAYER_SECTION_NOTE,
+      "params": hexlayer_params
+    },
     "pcmMelody":   {
       "category": "0x05",
       "status": "complete",
