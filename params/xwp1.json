@@ -1620,11 +1620,11 @@
       },
       {
         "value": 62,
-        "label": "60âs EP-1"
+        "label": "60’s EP-1"
       },
       {
         "value": 63,
-        "label": "60âs EP-2"
+        "label": "60’s EP-2"
       },
       {
         "value": 64,
@@ -1860,7 +1860,7 @@
       },
       {
         "value": 122,
-        "label": "70âs Organ"
+        "label": "70’s Organ"
       },
       {
         "value": 123,
@@ -1884,11 +1884,11 @@
       },
       {
         "value": 128,
-        "label": "8âOrgan-A"
+        "label": "8’Organ-A"
       },
       {
         "value": 129,
-        "label": "8âOrgan-B"
+        "label": "8’Organ-B"
       },
       {
         "value": 130,
@@ -2052,7 +2052,7 @@
       },
       {
         "value": 170,
-        "label": "70âs Syn-Str"
+        "label": "70’s Syn-Str"
       },
       {
         "value": 171,
@@ -10003,6 +10003,3164 @@
         "label": "#SH BASS 9\\"
       }
     ],
+    "hexLayerWaves": [
+      {
+        "value": 0,
+        "label": "St.GrPno-Lt1"
+      },
+      {
+        "value": 1,
+        "label": "St.GrPno-Lt2"
+      },
+      {
+        "value": 2,
+        "label": "St.GrPno-Lt3"
+      },
+      {
+        "value": 3,
+        "label": "St.GrPno-Rt1"
+      },
+      {
+        "value": 4,
+        "label": "St.GrPno-Rt2"
+      },
+      {
+        "value": 5,
+        "label": "St.GrPno-Rt3"
+      },
+      {
+        "value": 6,
+        "label": "St.BrPno-Lt1"
+      },
+      {
+        "value": 7,
+        "label": "St.BrPno-Lt2"
+      },
+      {
+        "value": 8,
+        "label": "St.BrPno-Lt3"
+      },
+      {
+        "value": 9,
+        "label": "St.BrPno-Rt1"
+      },
+      {
+        "value": 10,
+        "label": "St.BrPno-Rt2"
+      },
+      {
+        "value": 11,
+        "label": "St.BrPno-Rt3"
+      },
+      {
+        "value": 12,
+        "label": "ClascPno-Lt1"
+      },
+      {
+        "value": 13,
+        "label": "ClascPno-Lt2"
+      },
+      {
+        "value": 14,
+        "label": "ClascPno-Lt3"
+      },
+      {
+        "value": 15,
+        "label": "ClascPno-Rt1"
+      },
+      {
+        "value": 16,
+        "label": "ClascPno-Rt2"
+      },
+      {
+        "value": 17,
+        "label": "ClascPno-Rt3"
+      },
+      {
+        "value": 18,
+        "label": "Rock Pno-Lt"
+      },
+      {
+        "value": 19,
+        "label": "Rock Pno-Rt"
+      },
+      {
+        "value": 20,
+        "label": "MdernPno-Pn1"
+      },
+      {
+        "value": 21,
+        "label": "MdernPno-Pn2"
+      },
+      {
+        "value": 22,
+        "label": "MdernPno-Pn3"
+      },
+      {
+        "value": 23,
+        "label": "MdernPno-EP"
+      },
+      {
+        "value": 24,
+        "label": "Dance Piano"
+      },
+      {
+        "value": 25,
+        "label": "StrPiano-Pn1"
+      },
+      {
+        "value": 26,
+        "label": "StrPiano-Pn2"
+      },
+      {
+        "value": 27,
+        "label": "StrPiano-Pn3"
+      },
+      {
+        "value": 28,
+        "label": "StrPiano-Str"
+      },
+      {
+        "value": 29,
+        "label": "PianoPad-Pn1"
+      },
+      {
+        "value": 30,
+        "label": "PianoPad-Pn2"
+      },
+      {
+        "value": 31,
+        "label": "PianoPad-Pn3"
+      },
+      {
+        "value": 32,
+        "label": "PianoPad-Pad"
+      },
+      {
+        "value": 33,
+        "label": "GM Piano 1-1"
+      },
+      {
+        "value": 34,
+        "label": "GM Piano 1-2"
+      },
+      {
+        "value": 35,
+        "label": "GM Piano 1-3"
+      },
+      {
+        "value": 36,
+        "label": "GM Piano 2-1"
+      },
+      {
+        "value": 37,
+        "label": "GM Piano 2-2"
+      },
+      {
+        "value": 38,
+        "label": "GM Piano 2-3"
+      },
+      {
+        "value": 39,
+        "label": "HnkyTonk-Lt1"
+      },
+      {
+        "value": 40,
+        "label": "HnkyTonk-Lt2"
+      },
+      {
+        "value": 41,
+        "label": "HnkyTonk-Lt3"
+      },
+      {
+        "value": 42,
+        "label": "HnkyTonk-Rt1"
+      },
+      {
+        "value": 43,
+        "label": "HnkyTonk-Rt2"
+      },
+      {
+        "value": 44,
+        "label": "HnkyTonk-Rt3"
+      },
+      {
+        "value": 45,
+        "label": "GM HnkyT-A1"
+      },
+      {
+        "value": 46,
+        "label": "GM HnkyT-A2"
+      },
+      {
+        "value": 47,
+        "label": "GM HnkyT-A3"
+      },
+      {
+        "value": 48,
+        "label": "GM HnkyT-B1"
+      },
+      {
+        "value": 49,
+        "label": "GM HnkyT-B2"
+      },
+      {
+        "value": 50,
+        "label": "GM HnkyT-B3"
+      },
+      {
+        "value": 51,
+        "label": "E.Grand-A"
+      },
+      {
+        "value": 52,
+        "label": "E.Grand-B"
+      },
+      {
+        "value": 53,
+        "label": "E.Grand 80"
+      },
+      {
+        "value": 54,
+        "label": "GM Piano 3"
+      },
+      {
+        "value": 55,
+        "label": "Harpsichord"
+      },
+      {
+        "value": 56,
+        "label": "CouplHps-A"
+      },
+      {
+        "value": 57,
+        "label": "CouplHps-B"
+      },
+      {
+        "value": 58,
+        "label": "GM Harpsi."
+      },
+      {
+        "value": 59,
+        "label": "Elec.Piano-1"
+      },
+      {
+        "value": 60,
+        "label": "Elec.Piano-2"
+      },
+      {
+        "value": 61,
+        "label": "FM E.Piano"
+      },
+      {
+        "value": 62,
+        "label": "60’s EP-1"
+      },
+      {
+        "value": 63,
+        "label": "60’s EP-2"
+      },
+      {
+        "value": 64,
+        "label": "Dyno EP1-1"
+      },
+      {
+        "value": 65,
+        "label": "Dyno EP1-2"
+      },
+      {
+        "value": 66,
+        "label": "Dyno EP2-A1"
+      },
+      {
+        "value": 67,
+        "label": "Dyno EP2-B1"
+      },
+      {
+        "value": 68,
+        "label": "Dyno EP2-A2"
+      },
+      {
+        "value": 69,
+        "label": "Dyno EP2-B2"
+      },
+      {
+        "value": 70,
+        "label": "MellowEP-A"
+      },
+      {
+        "value": 71,
+        "label": "MellowEP-B"
+      },
+      {
+        "value": 72,
+        "label": "Pop EP-A"
+      },
+      {
+        "value": 73,
+        "label": "Pop EP-B"
+      },
+      {
+        "value": 74,
+        "label": "Chorus EP"
+      },
+      {
+        "value": 75,
+        "label": "Trem.EP1-1"
+      },
+      {
+        "value": 76,
+        "label": "Trem.EP1-2"
+      },
+      {
+        "value": 77,
+        "label": "Trem.EP2-1"
+      },
+      {
+        "value": 78,
+        "label": "Trem.EP2-2"
+      },
+      {
+        "value": 79,
+        "label": "ModernEP-A"
+      },
+      {
+        "value": 80,
+        "label": "ModernEP-B1"
+      },
+      {
+        "value": 81,
+        "label": "ModernEP-B2"
+      },
+      {
+        "value": 82,
+        "label": "SynStrEP-EP1"
+      },
+      {
+        "value": 83,
+        "label": "SynStrEP-EP2"
+      },
+      {
+        "value": 84,
+        "label": "SynStrEP-Str"
+      },
+      {
+        "value": 85,
+        "label": "GM E.Pno1-1"
+      },
+      {
+        "value": 86,
+        "label": "GM E.Pno1-2"
+      },
+      {
+        "value": 87,
+        "label": "GM E.Piano 2"
+      },
+      {
+        "value": 88,
+        "label": "VintageClavi"
+      },
+      {
+        "value": 89,
+        "label": "Clavi"
+      },
+      {
+        "value": 90,
+        "label": "Wah Clavi"
+      },
+      {
+        "value": 91,
+        "label": "Dist.Clavi"
+      },
+      {
+        "value": 92,
+        "label": "GM Clavi"
+      },
+      {
+        "value": 93,
+        "label": "Vibraphone"
+      },
+      {
+        "value": 94,
+        "label": "TremoloVibes"
+      },
+      {
+        "value": 95,
+        "label": "Marimba"
+      },
+      {
+        "value": 96,
+        "label": "Glockenspiel"
+      },
+      {
+        "value": 97,
+        "label": "Music Box-A"
+      },
+      {
+        "value": 98,
+        "label": "Music Box-B"
+      },
+      {
+        "value": 99,
+        "label": "Tubular Bell\\"
+      },
+      {
+        "value": 100,
+        "label": "Dulcimer-A"
+      },
+      {
+        "value": 101,
+        "label": "Dulcimer-B"
+      },
+      {
+        "value": 102,
+        "label": "GM Celesta"
+      },
+      {
+        "value": 103,
+        "label": "GM Glocken."
+      },
+      {
+        "value": 104,
+        "label": "GM MusicB-A"
+      },
+      {
+        "value": 105,
+        "label": "GM MusicB-B"
+      },
+      {
+        "value": 106,
+        "label": "GM Vibraphon"
+      },
+      {
+        "value": 107,
+        "label": "GM Marimba"
+      },
+      {
+        "value": 108,
+        "label": "GM Xylophone"
+      },
+      {
+        "value": 109,
+        "label": "GM TublarBel"
+      },
+      {
+        "value": 110,
+        "label": "GM Dulcimr-A"
+      },
+      {
+        "value": 111,
+        "label": "GM Dulcimr-B"
+      },
+      {
+        "value": 112,
+        "label": "DrawbarOrg 1"
+      },
+      {
+        "value": 113,
+        "label": "DrawbarOrg 2"
+      },
+      {
+        "value": 114,
+        "label": "Perc.Organ-A"
+      },
+      {
+        "value": 115,
+        "label": "Perc.Organ-B"
+      },
+      {
+        "value": 116,
+        "label": "Elec.Organ"
+      },
+      {
+        "value": 117,
+        "label": "Jazz Organ-A"
+      },
+      {
+        "value": 118,
+        "label": "Jazz Organ-B"
+      },
+      {
+        "value": 119,
+        "label": "Rock Organ-A"
+      },
+      {
+        "value": 120,
+        "label": "Rock Organ-B"
+      },
+      {
+        "value": 121,
+        "label": "Dist.RockOrg"
+      },
+      {
+        "value": 122,
+        "label": "70’s Organ"
+      },
+      {
+        "value": 123,
+        "label": "Full Drawbar"
+      },
+      {
+        "value": 124,
+        "label": "Rotary Organ"
+      },
+      {
+        "value": 125,
+        "label": "TremoloOrgan"
+      },
+      {
+        "value": 126,
+        "label": "ClickOrg-A"
+      },
+      {
+        "value": 127,
+        "label": "ClickOrg-B"
+      },
+      {
+        "value": 128,
+        "label": "8’Organ-A"
+      },
+      {
+        "value": 129,
+        "label": "8’Organ-B"
+      },
+      {
+        "value": 130,
+        "label": "ChrchOrg-A"
+      },
+      {
+        "value": 131,
+        "label": "ChrchOrg-B"
+      },
+      {
+        "value": 132,
+        "label": "ChaplOrg-A"
+      },
+      {
+        "value": 133,
+        "label": "ChaplOrg-B"
+      },
+      {
+        "value": 134,
+        "label": "Pipe Organ-A"
+      },
+      {
+        "value": 135,
+        "label": "Pipe Organ-B"
+      },
+      {
+        "value": 136,
+        "label": "Theater-A"
+      },
+      {
+        "value": 137,
+        "label": "Theater-B"
+      },
+      {
+        "value": 138,
+        "label": "Reed Organ"
+      },
+      {
+        "value": 139,
+        "label": "Accordion-A"
+      },
+      {
+        "value": 140,
+        "label": "Accordion-B"
+      },
+      {
+        "value": 141,
+        "label": "Harmonica"
+      },
+      {
+        "value": 142,
+        "label": "GM Organ 1"
+      },
+      {
+        "value": 143,
+        "label": "GM Organ 2-A"
+      },
+      {
+        "value": 144,
+        "label": "GM Organ 2-B"
+      },
+      {
+        "value": 145,
+        "label": "GM Organ 3-A"
+      },
+      {
+        "value": 146,
+        "label": "GM Organ 3-B"
+      },
+      {
+        "value": 147,
+        "label": "GM PipeOrg-A"
+      },
+      {
+        "value": 148,
+        "label": "GM PipeOrg-B"
+      },
+      {
+        "value": 149,
+        "label": "GM ReedOrgan"
+      },
+      {
+        "value": 150,
+        "label": "GM Acordon-A"
+      },
+      {
+        "value": 151,
+        "label": "GM Acordon-B"
+      },
+      {
+        "value": 152,
+        "label": "GM Harmonica"
+      },
+      {
+        "value": 153,
+        "label": "GM Bndneon-A"
+      },
+      {
+        "value": 154,
+        "label": "GM Bndneon-B"
+      },
+      {
+        "value": 155,
+        "label": "St.Str 1-Lt"
+      },
+      {
+        "value": 156,
+        "label": "St.Str 1-Rt"
+      },
+      {
+        "value": 157,
+        "label": "St.Str 2-Lt"
+      },
+      {
+        "value": 158,
+        "label": "St.Str 2-Rt"
+      },
+      {
+        "value": 159,
+        "label": "Strings"
+      },
+      {
+        "value": 160,
+        "label": "StrEnsemble1"
+      },
+      {
+        "value": 161,
+        "label": "StrEnsemble2"
+      },
+      {
+        "value": 162,
+        "label": "BriteStrings"
+      },
+      {
+        "value": 163,
+        "label": "Slow Strings"
+      },
+      {
+        "value": 164,
+        "label": "Wide Str-Lt"
+      },
+      {
+        "value": 165,
+        "label": "Wide Str-Rt"
+      },
+      {
+        "value": 166,
+        "label": "Chamber-A"
+      },
+      {
+        "value": 167,
+        "label": "Chamber-B"
+      },
+      {
+        "value": 168,
+        "label": "Syn-Strings1"
+      },
+      {
+        "value": 169,
+        "label": "Syn-Strings2"
+      },
+      {
+        "value": 170,
+        "label": "70’s Syn-Str"
+      },
+      {
+        "value": 171,
+        "label": "Fast Syn-Str"
+      },
+      {
+        "value": 172,
+        "label": "Slow Syn-Str"
+      },
+      {
+        "value": 173,
+        "label": "PhaserSynStr"
+      },
+      {
+        "value": 174,
+        "label": "Cho.Syn-Str"
+      },
+      {
+        "value": 175,
+        "label": "Violin"
+      },
+      {
+        "value": 176,
+        "label": "Harp"
+      },
+      {
+        "value": 177,
+        "label": "Choir Aahs"
+      },
+      {
+        "value": 178,
+        "label": "StrVoice-Cho"
+      },
+      {
+        "value": 179,
+        "label": "StrVoice-Str"
+      },
+      {
+        "value": 180,
+        "label": "Voice Doo"
+      },
+      {
+        "value": 181,
+        "label": "Synth-Voice1"
+      },
+      {
+        "value": 182,
+        "label": "Synth-Voice2"
+      },
+      {
+        "value": 183,
+        "label": "Voi.Ens.-Voi"
+      },
+      {
+        "value": 184,
+        "label": "Voi.Ens.-Str"
+      },
+      {
+        "value": 185,
+        "label": "Orch.Hit 1-A"
+      },
+      {
+        "value": 186,
+        "label": "Orch.Hit 1-B"
+      },
+      {
+        "value": 187,
+        "label": "Orch.Hit 2-A"
+      },
+      {
+        "value": 188,
+        "label": "Orch.Hit 2-B"
+      },
+      {
+        "value": 189,
+        "label": "GM Violin"
+      },
+      {
+        "value": 190,
+        "label": "GM Viola"
+      },
+      {
+        "value": 191,
+        "label": "GM Cello"
+      },
+      {
+        "value": 192,
+        "label": "GM Contrabas"
+      },
+      {
+        "value": 193,
+        "label": "GM Trem.Str."
+      },
+      {
+        "value": 194,
+        "label": "GM Pizzicato"
+      },
+      {
+        "value": 195,
+        "label": "GM Harp"
+      },
+      {
+        "value": 196,
+        "label": "GM Timpani"
+      },
+      {
+        "value": 197,
+        "label": "GM Strings 1"
+      },
+      {
+        "value": 198,
+        "label": "GM Strings 2"
+      },
+      {
+        "value": 199,
+        "label": "GM SynthStr1\\"
+      },
+      {
+        "value": 200,
+        "label": "GM SynthStr2"
+      },
+      {
+        "value": 201,
+        "label": "GM ChoirAahs"
+      },
+      {
+        "value": 202,
+        "label": "GM Voice Doo"
+      },
+      {
+        "value": 203,
+        "label": "GM Syn-Voice"
+      },
+      {
+        "value": 204,
+        "label": "GM OrchHit-A"
+      },
+      {
+        "value": 205,
+        "label": "GM OrchHit-B"
+      },
+      {
+        "value": 206,
+        "label": "Trumpet"
+      },
+      {
+        "value": 207,
+        "label": "Mute Trumpet"
+      },
+      {
+        "value": 208,
+        "label": "Trombone"
+      },
+      {
+        "value": 209,
+        "label": "Tuba"
+      },
+      {
+        "value": 210,
+        "label": "Fr.Horn-A"
+      },
+      {
+        "value": 211,
+        "label": "Fr.Horn-B"
+      },
+      {
+        "value": 212,
+        "label": "St.Brass-Lt"
+      },
+      {
+        "value": 213,
+        "label": "St.Brass-Rt"
+      },
+      {
+        "value": 214,
+        "label": "Brass-A"
+      },
+      {
+        "value": 215,
+        "label": "Brass-B"
+      },
+      {
+        "value": 216,
+        "label": "BrasSect-A"
+      },
+      {
+        "value": 217,
+        "label": "BrasSect-B"
+      },
+      {
+        "value": 218,
+        "label": "Syn-Brs1-A"
+      },
+      {
+        "value": 219,
+        "label": "Syn-Brs1-B"
+      },
+      {
+        "value": 220,
+        "label": "Synth-Brass2"
+      },
+      {
+        "value": 221,
+        "label": "WarmSyBr-A"
+      },
+      {
+        "value": 222,
+        "label": "WarmSyBr-B"
+      },
+      {
+        "value": 223,
+        "label": "80sSyBrs-A"
+      },
+      {
+        "value": 224,
+        "label": "80sSyBrs-B"
+      },
+      {
+        "value": 225,
+        "label": "A.Syn-Brass"
+      },
+      {
+        "value": 226,
+        "label": "TrnceBrs-A"
+      },
+      {
+        "value": 227,
+        "label": "TrnceBrs-B"
+      },
+      {
+        "value": 228,
+        "label": "GM Trumpet"
+      },
+      {
+        "value": 229,
+        "label": "GM Trombone"
+      },
+      {
+        "value": 230,
+        "label": "GM Tuba"
+      },
+      {
+        "value": 231,
+        "label": "GM MtTrumpet"
+      },
+      {
+        "value": 232,
+        "label": "GM Fr.Horn-A"
+      },
+      {
+        "value": 233,
+        "label": "GM Fr.Horn-B"
+      },
+      {
+        "value": 234,
+        "label": "GM Brass-A"
+      },
+      {
+        "value": 235,
+        "label": "GM Brass-B"
+      },
+      {
+        "value": 236,
+        "label": "GM SynBrs1-A"
+      },
+      {
+        "value": 237,
+        "label": "GM SynBrs1-B"
+      },
+      {
+        "value": 238,
+        "label": "GM SynBrs2-A"
+      },
+      {
+        "value": 239,
+        "label": "GM SynBrs2-B"
+      },
+      {
+        "value": 240,
+        "label": "Alto Sax"
+      },
+      {
+        "value": 241,
+        "label": "BrtyASax-A1"
+      },
+      {
+        "value": 242,
+        "label": "BrtyASax-A2"
+      },
+      {
+        "value": 243,
+        "label": "BrtyASax-Nz"
+      },
+      {
+        "value": 244,
+        "label": "Tenor Sax"
+      },
+      {
+        "value": 245,
+        "label": "BrtyTSax-A1"
+      },
+      {
+        "value": 246,
+        "label": "BrtyTSax-A2"
+      },
+      {
+        "value": 247,
+        "label": "BrtyTSax-Nz"
+      },
+      {
+        "value": 248,
+        "label": "Soprano Sax"
+      },
+      {
+        "value": 249,
+        "label": "Baritone Sax"
+      },
+      {
+        "value": 250,
+        "label": "Hard A.Sax-A"
+      },
+      {
+        "value": 251,
+        "label": "Hard A.Sax-B"
+      },
+      {
+        "value": 252,
+        "label": "T.Saxys-A"
+      },
+      {
+        "value": 253,
+        "label": "T.Saxys-B"
+      },
+      {
+        "value": 254,
+        "label": "A.Saxys-A"
+      },
+      {
+        "value": 255,
+        "label": "A.Saxys-B"
+      },
+      {
+        "value": 256,
+        "label": "Clarinet"
+      },
+      {
+        "value": 257,
+        "label": "Oboe"
+      },
+      {
+        "value": 258,
+        "label": "Bassoon"
+      },
+      {
+        "value": 259,
+        "label": "GM Sop.Sax"
+      },
+      {
+        "value": 260,
+        "label": "GM Alto Sax"
+      },
+      {
+        "value": 261,
+        "label": "GM Tenor Sax"
+      },
+      {
+        "value": 262,
+        "label": "GM Bar.Sax"
+      },
+      {
+        "value": 263,
+        "label": "GM Oboe"
+      },
+      {
+        "value": 264,
+        "label": "GM Eng.Horn"
+      },
+      {
+        "value": 265,
+        "label": "GM Bassoon"
+      },
+      {
+        "value": 266,
+        "label": "GM Clarinet"
+      },
+      {
+        "value": 267,
+        "label": "Flute"
+      },
+      {
+        "value": 268,
+        "label": "Piccolo-A"
+      },
+      {
+        "value": 269,
+        "label": "Piccolo-B"
+      },
+      {
+        "value": 270,
+        "label": "Recorder"
+      },
+      {
+        "value": 271,
+        "label": "Pan Flute"
+      },
+      {
+        "value": 272,
+        "label": "BotlBlow-A"
+      },
+      {
+        "value": 273,
+        "label": "BotlBlow-B"
+      },
+      {
+        "value": 274,
+        "label": "Whistle"
+      },
+      {
+        "value": 275,
+        "label": "Ocarina"
+      },
+      {
+        "value": 276,
+        "label": "Shakuhachi-A"
+      },
+      {
+        "value": 277,
+        "label": "Shakuhachi-B"
+      },
+      {
+        "value": 278,
+        "label": "GM Piccolo"
+      },
+      {
+        "value": 279,
+        "label": "GM Flute"
+      },
+      {
+        "value": 280,
+        "label": "GM Recorder"
+      },
+      {
+        "value": 281,
+        "label": "GM Pan Flute"
+      },
+      {
+        "value": 282,
+        "label": "GM BotlBlw-A"
+      },
+      {
+        "value": 283,
+        "label": "GM BotlBlw-B"
+      },
+      {
+        "value": 284,
+        "label": "GM Shkhchi-A"
+      },
+      {
+        "value": 285,
+        "label": "GM Shkhchi-B"
+      },
+      {
+        "value": 286,
+        "label": "GM Whistle"
+      },
+      {
+        "value": 287,
+        "label": "GM Ocarina"
+      },
+      {
+        "value": 288,
+        "label": "Nylon Gt-1"
+      },
+      {
+        "value": 289,
+        "label": "Nylon Gt-2"
+      },
+      {
+        "value": 290,
+        "label": "AmbNylGt-1"
+      },
+      {
+        "value": 291,
+        "label": "AmbNylGt-2"
+      },
+      {
+        "value": 292,
+        "label": "Steel Gt-1"
+      },
+      {
+        "value": 293,
+        "label": "Steel Gt-2"
+      },
+      {
+        "value": 294,
+        "label": "AmbStlGt-1"
+      },
+      {
+        "value": 295,
+        "label": "AmbStlGt-2"
+      },
+      {
+        "value": 296,
+        "label": "12Str.Gt-A"
+      },
+      {
+        "value": 297,
+        "label": "12Str.Gt-B"
+      },
+      {
+        "value": 298,
+        "label": "ChoStlGt-1"
+      },
+      {
+        "value": 299,
+        "label": "ChoStlGt-2\\"
+      },
+      {
+        "value": 300,
+        "label": "Jazz Guitar"
+      },
+      {
+        "value": 301,
+        "label": "CleanGt1-1"
+      },
+      {
+        "value": 302,
+        "label": "CleanGt1-2"
+      },
+      {
+        "value": 303,
+        "label": "CleanGuitar2"
+      },
+      {
+        "value": 304,
+        "label": "ChoClean-1"
+      },
+      {
+        "value": 305,
+        "label": "ChoClean-2"
+      },
+      {
+        "value": 306,
+        "label": "Wah E.Guitar"
+      },
+      {
+        "value": 307,
+        "label": "Mute Gt-1"
+      },
+      {
+        "value": 308,
+        "label": "Mute Gt-2"
+      },
+      {
+        "value": 309,
+        "label": "Mute Ovd Gt"
+      },
+      {
+        "value": 310,
+        "label": "Crunch E.Gt1"
+      },
+      {
+        "value": 311,
+        "label": "Crunch E.Gt2"
+      },
+      {
+        "value": 312,
+        "label": "Overdrive Gt"
+      },
+      {
+        "value": 313,
+        "label": "DistortionGt"
+      },
+      {
+        "value": 314,
+        "label": "More Dist.Gt"
+      },
+      {
+        "value": 315,
+        "label": "Power Gt-A"
+      },
+      {
+        "value": 316,
+        "label": "Power Gt-B"
+      },
+      {
+        "value": 317,
+        "label": "FlangrDistGt"
+      },
+      {
+        "value": 318,
+        "label": "GM Nylon Gt"
+      },
+      {
+        "value": 319,
+        "label": "GM Steel Gt"
+      },
+      {
+        "value": 320,
+        "label": "GM Jazz Gt"
+      },
+      {
+        "value": 321,
+        "label": "GM CleanGt-1"
+      },
+      {
+        "value": 322,
+        "label": "GM CleanGt-2"
+      },
+      {
+        "value": 323,
+        "label": "GM Mute Gt-1"
+      },
+      {
+        "value": 324,
+        "label": "GM Mute Gt-2"
+      },
+      {
+        "value": 325,
+        "label": "GM Overdrv-A"
+      },
+      {
+        "value": 326,
+        "label": "GM Overdrv-B"
+      },
+      {
+        "value": 327,
+        "label": "GM Dist.Gt"
+      },
+      {
+        "value": 328,
+        "label": "GM Gt Harm."
+      },
+      {
+        "value": 329,
+        "label": "AcousticBass"
+      },
+      {
+        "value": 330,
+        "label": "RideBass-Bs"
+      },
+      {
+        "value": 331,
+        "label": "RideBass-Rid"
+      },
+      {
+        "value": 332,
+        "label": "FingrBs1-1"
+      },
+      {
+        "value": 333,
+        "label": "FingrBs1-2"
+      },
+      {
+        "value": 334,
+        "label": "FingerBass 2"
+      },
+      {
+        "value": 335,
+        "label": "MellowF.Bass"
+      },
+      {
+        "value": 336,
+        "label": "Picked Bass"
+      },
+      {
+        "value": 337,
+        "label": "RthmPickBass"
+      },
+      {
+        "value": 338,
+        "label": "Fretless-1"
+      },
+      {
+        "value": 339,
+        "label": "Fretless-2"
+      },
+      {
+        "value": 340,
+        "label": "Slap Bass"
+      },
+      {
+        "value": 341,
+        "label": "Synth-Bass 1"
+      },
+      {
+        "value": 342,
+        "label": "SynBass2-1"
+      },
+      {
+        "value": 343,
+        "label": "SynBass2-2"
+      },
+      {
+        "value": 344,
+        "label": "SynBass3-1"
+      },
+      {
+        "value": 345,
+        "label": "SynBass3-2"
+      },
+      {
+        "value": 346,
+        "label": "SynBass3-3"
+      },
+      {
+        "value": 347,
+        "label": "SynBass3-4"
+      },
+      {
+        "value": 348,
+        "label": "SynBass4-1"
+      },
+      {
+        "value": 349,
+        "label": "SynBass4-2"
+      },
+      {
+        "value": 350,
+        "label": "Synth-Bass 5"
+      },
+      {
+        "value": 351,
+        "label": "Synth-Bass 6"
+      },
+      {
+        "value": 352,
+        "label": "Synth-Bass 7"
+      },
+      {
+        "value": 353,
+        "label": "SawSyBs1-A"
+      },
+      {
+        "value": 354,
+        "label": "SawSyBs1-B"
+      },
+      {
+        "value": 355,
+        "label": "SawSyBs2-1"
+      },
+      {
+        "value": 356,
+        "label": "SawSyBs2-2"
+      },
+      {
+        "value": 357,
+        "label": "SawSyBs2-3"
+      },
+      {
+        "value": 358,
+        "label": "SawSyBs2-4"
+      },
+      {
+        "value": 359,
+        "label": "Sqr Syn-Bass"
+      },
+      {
+        "value": 360,
+        "label": "DigiRockBass"
+      },
+      {
+        "value": 361,
+        "label": "Trance Bass"
+      },
+      {
+        "value": 362,
+        "label": "Bs&Kick-Bs"
+      },
+      {
+        "value": 363,
+        "label": "Bs&Kick-Kck"
+      },
+      {
+        "value": 364,
+        "label": "Vocoder Bass"
+      },
+      {
+        "value": 365,
+        "label": "SoulSyn-Bass"
+      },
+      {
+        "value": 366,
+        "label": "GM AcousBs-1"
+      },
+      {
+        "value": 367,
+        "label": "GM AcousBs-2"
+      },
+      {
+        "value": 368,
+        "label": "GM Fing.Bs-1"
+      },
+      {
+        "value": 369,
+        "label": "GM Fing.Bs-2"
+      },
+      {
+        "value": 370,
+        "label": "GM Pick Bs-1"
+      },
+      {
+        "value": 371,
+        "label": "GM Pick Bs-2"
+      },
+      {
+        "value": 372,
+        "label": "GM FrtlsBs-1"
+      },
+      {
+        "value": 373,
+        "label": "GM FrtlsBs-2"
+      },
+      {
+        "value": 374,
+        "label": "GM SlapBass1"
+      },
+      {
+        "value": 375,
+        "label": "GM SlapBs2-1"
+      },
+      {
+        "value": 376,
+        "label": "GM SlapBs2-2"
+      },
+      {
+        "value": 377,
+        "label": "GM Syn-Bass1"
+      },
+      {
+        "value": 378,
+        "label": "GM Syn-Bass2"
+      },
+      {
+        "value": 379,
+        "label": "SqrLead1-A"
+      },
+      {
+        "value": 380,
+        "label": "SqrLead1-B"
+      },
+      {
+        "value": 381,
+        "label": "SqrLead2-A"
+      },
+      {
+        "value": 382,
+        "label": "SqrLead2-B"
+      },
+      {
+        "value": 383,
+        "label": "Square Lead3"
+      },
+      {
+        "value": 384,
+        "label": "Square Lead4"
+      },
+      {
+        "value": 385,
+        "label": "SqrPlsLd-A"
+      },
+      {
+        "value": 386,
+        "label": "SqrPlsLd-B"
+      },
+      {
+        "value": 387,
+        "label": "Sine Lead"
+      },
+      {
+        "value": 388,
+        "label": "Saw Lead 1-A"
+      },
+      {
+        "value": 389,
+        "label": "Saw Lead 1-B"
+      },
+      {
+        "value": 390,
+        "label": "Saw Lead 2"
+      },
+      {
+        "value": 391,
+        "label": "Saw Lead 3"
+      },
+      {
+        "value": 392,
+        "label": "MlwSawLd-A"
+      },
+      {
+        "value": 393,
+        "label": "MlwSawLd-B"
+      },
+      {
+        "value": 394,
+        "label": "PlsSawLd-A"
+      },
+      {
+        "value": 395,
+        "label": "PlsSawLd-B"
+      },
+      {
+        "value": 396,
+        "label": "SS Lead-A"
+      },
+      {
+        "value": 397,
+        "label": "SS Lead-B"
+      },
+      {
+        "value": 398,
+        "label": "SlwSqrLd-A"
+      },
+      {
+        "value": 399,
+        "label": "SlwSqrLd-B\\"
+      },
+      {
+        "value": 400,
+        "label": "SlwSawLd-A"
+      },
+      {
+        "value": 401,
+        "label": "SlwSawLd-B"
+      },
+      {
+        "value": 402,
+        "label": "Seq.Square-A"
+      },
+      {
+        "value": 403,
+        "label": "Seq.Square-B"
+      },
+      {
+        "value": 404,
+        "label": "Seq.Pulse-A"
+      },
+      {
+        "value": 405,
+        "label": "Seq.Pulse-B"
+      },
+      {
+        "value": 406,
+        "label": "Seq.Sine-A"
+      },
+      {
+        "value": 407,
+        "label": "Seq.Saw1-A"
+      },
+      {
+        "value": 408,
+        "label": "Seq.Saw1-B"
+      },
+      {
+        "value": 409,
+        "label": "Seq.Saw2-A"
+      },
+      {
+        "value": 410,
+        "label": "Seq.Saw2-B"
+      },
+      {
+        "value": 411,
+        "label": "TranceLd-A"
+      },
+      {
+        "value": 412,
+        "label": "TranceLd-B"
+      },
+      {
+        "value": 413,
+        "label": "VA SynthLead"
+      },
+      {
+        "value": 414,
+        "label": "VA Synth 1"
+      },
+      {
+        "value": 415,
+        "label": "VA Synth 2"
+      },
+      {
+        "value": 416,
+        "label": "VA Synth 3"
+      },
+      {
+        "value": 417,
+        "label": "VA Synth 4"
+      },
+      {
+        "value": 418,
+        "label": "VA Synth 5"
+      },
+      {
+        "value": 419,
+        "label": "VA Synth 6"
+      },
+      {
+        "value": 420,
+        "label": "VA Syn-SqBs1"
+      },
+      {
+        "value": 421,
+        "label": "VA Syn-SqBs2"
+      },
+      {
+        "value": 422,
+        "label": "VA Syn-SqBs3"
+      },
+      {
+        "value": 423,
+        "label": "VA Syn-SqBs4"
+      },
+      {
+        "value": 424,
+        "label": "VA Syn-SqBs5"
+      },
+      {
+        "value": 425,
+        "label": "VA Syn-SqBs6"
+      },
+      {
+        "value": 426,
+        "label": "Calliope-A"
+      },
+      {
+        "value": 427,
+        "label": "Calliope-B"
+      },
+      {
+        "value": 428,
+        "label": "Vent Lead-A"
+      },
+      {
+        "value": 429,
+        "label": "Vent Lead-B"
+      },
+      {
+        "value": 430,
+        "label": "Vent Synth-A"
+      },
+      {
+        "value": 431,
+        "label": "Vent Synth-B"
+      },
+      {
+        "value": 432,
+        "label": "Seq.Lead-A"
+      },
+      {
+        "value": 433,
+        "label": "Seq.Lead-B"
+      },
+      {
+        "value": 434,
+        "label": "Drop Lead-A"
+      },
+      {
+        "value": 435,
+        "label": "Drop Lead-B"
+      },
+      {
+        "value": 436,
+        "label": "EP Lead-A"
+      },
+      {
+        "value": 437,
+        "label": "EP Lead-B"
+      },
+      {
+        "value": 438,
+        "label": "Voice Lead-A"
+      },
+      {
+        "value": 439,
+        "label": "Voice Lead-B"
+      },
+      {
+        "value": 440,
+        "label": "Vox Lead-A"
+      },
+      {
+        "value": 441,
+        "label": "Vox Lead-B"
+      },
+      {
+        "value": 442,
+        "label": "PluckLd1-A"
+      },
+      {
+        "value": 443,
+        "label": "PluckLd1-B"
+      },
+      {
+        "value": 444,
+        "label": "PluckLd2-A"
+      },
+      {
+        "value": 445,
+        "label": "PluckLd2-B"
+      },
+      {
+        "value": 446,
+        "label": "Gt SynLd-A"
+      },
+      {
+        "value": 447,
+        "label": "Gt SynLd-B"
+      },
+      {
+        "value": 448,
+        "label": "DblVoiLd-A"
+      },
+      {
+        "value": 449,
+        "label": "DblVoiLd-B"
+      },
+      {
+        "value": 450,
+        "label": "VoiChoLd-A"
+      },
+      {
+        "value": 451,
+        "label": "VoiChoLd-B"
+      },
+      {
+        "value": 452,
+        "label": "SynVoiLd-A"
+      },
+      {
+        "value": 453,
+        "label": "SynVoiLd-B"
+      },
+      {
+        "value": 454,
+        "label": "FifthSaw-A"
+      },
+      {
+        "value": 455,
+        "label": "FifthSaw-B"
+      },
+      {
+        "value": 456,
+        "label": "FifthSqr-A"
+      },
+      {
+        "value": 457,
+        "label": "FifthSqr-B"
+      },
+      {
+        "value": 458,
+        "label": "Fifth Seq.-A"
+      },
+      {
+        "value": 459,
+        "label": "Fifth Seq.-B"
+      },
+      {
+        "value": 460,
+        "label": "SynBs+Ld-A"
+      },
+      {
+        "value": 461,
+        "label": "SynBs+Ld-B"
+      },
+      {
+        "value": 462,
+        "label": "Reed Lead-A"
+      },
+      {
+        "value": 463,
+        "label": "Reed Lead-B"
+      },
+      {
+        "value": 464,
+        "label": "Fret Lead-A"
+      },
+      {
+        "value": 465,
+        "label": "Fret Lead-B"
+      },
+      {
+        "value": 466,
+        "label": "Fantasy 1-A"
+      },
+      {
+        "value": 467,
+        "label": "Fantasy 1-B"
+      },
+      {
+        "value": 468,
+        "label": "Fantasy 2-A"
+      },
+      {
+        "value": 469,
+        "label": "Fantasy 2-B"
+      },
+      {
+        "value": 470,
+        "label": "New Age-A"
+      },
+      {
+        "value": 471,
+        "label": "New Age-B"
+      },
+      {
+        "value": 472,
+        "label": "NewAgePd-A"
+      },
+      {
+        "value": 473,
+        "label": "NewAgePd-B"
+      },
+      {
+        "value": 474,
+        "label": "Warm Vox-A"
+      },
+      {
+        "value": 475,
+        "label": "Warm Vox-B"
+      },
+      {
+        "value": 476,
+        "label": "Thick Pad-A"
+      },
+      {
+        "value": 477,
+        "label": "Thick Pad-B"
+      },
+      {
+        "value": 478,
+        "label": "Warm Pad"
+      },
+      {
+        "value": 479,
+        "label": "Sine Pad-A"
+      },
+      {
+        "value": 480,
+        "label": "Sine Pad-B"
+      },
+      {
+        "value": 481,
+        "label": "Soft Pad-A"
+      },
+      {
+        "value": 482,
+        "label": "Soft Pad-B"
+      },
+      {
+        "value": 483,
+        "label": "Horn Pad-A"
+      },
+      {
+        "value": 484,
+        "label": "Horn Pad-B"
+      },
+      {
+        "value": 485,
+        "label": "OldTpPad-A"
+      },
+      {
+        "value": 486,
+        "label": "OldTpPad-B"
+      },
+      {
+        "value": 487,
+        "label": "PolySyn1-A"
+      },
+      {
+        "value": 488,
+        "label": "PolySyn1-B"
+      },
+      {
+        "value": 489,
+        "label": "PolySyn2-A"
+      },
+      {
+        "value": 490,
+        "label": "PolySyn2-B"
+      },
+      {
+        "value": 491,
+        "label": "PolyPad1-A"
+      },
+      {
+        "value": 492,
+        "label": "PolyPad1-B"
+      },
+      {
+        "value": 493,
+        "label": "PolyPad2-A"
+      },
+      {
+        "value": 494,
+        "label": "PolyPad2-B"
+      },
+      {
+        "value": 495,
+        "label": "Poly Saw-A"
+      },
+      {
+        "value": 496,
+        "label": "Poly Saw-B"
+      },
+      {
+        "value": 497,
+        "label": "Heaven-A"
+      },
+      {
+        "value": 498,
+        "label": "Heaven-B"
+      },
+      {
+        "value": 499,
+        "label": "SpcStrPd-A\\"
+      },
+      {
+        "value": 500,
+        "label": "SpcStrPd-B"
+      },
+      {
+        "value": 501,
+        "label": "ChiffCho-A"
+      },
+      {
+        "value": 502,
+        "label": "ChiffCho-B"
+      },
+      {
+        "value": 503,
+        "label": "Star Voice-A"
+      },
+      {
+        "value": 504,
+        "label": "Star Voice-B"
+      },
+      {
+        "value": 505,
+        "label": "Square Pad-A"
+      },
+      {
+        "value": 506,
+        "label": "Square Pad-B"
+      },
+      {
+        "value": 507,
+        "label": "Glass Pad-A"
+      },
+      {
+        "value": 508,
+        "label": "Glass Pad-B"
+      },
+      {
+        "value": 509,
+        "label": "Bottle Pad-A"
+      },
+      {
+        "value": 510,
+        "label": "Bottle Pad-B"
+      },
+      {
+        "value": 511,
+        "label": "Ethnic Pad-A"
+      },
+      {
+        "value": 512,
+        "label": "Ethnic Pad-B"
+      },
+      {
+        "value": 513,
+        "label": "Metal Pad-A"
+      },
+      {
+        "value": 514,
+        "label": "Metal Pad-B"
+      },
+      {
+        "value": 515,
+        "label": "Halo Pad-A"
+      },
+      {
+        "value": 516,
+        "label": "Halo Pad-B"
+      },
+      {
+        "value": 517,
+        "label": "Chorus Pad-A"
+      },
+      {
+        "value": 518,
+        "label": "Chorus Pad-B"
+      },
+      {
+        "value": 519,
+        "label": "OrgChoPd-A"
+      },
+      {
+        "value": 520,
+        "label": "OrgChoPd-B"
+      },
+      {
+        "value": 521,
+        "label": "SweepCho-A"
+      },
+      {
+        "value": 522,
+        "label": "SweepCho-B"
+      },
+      {
+        "value": 523,
+        "label": "Rain Drop-A"
+      },
+      {
+        "value": 524,
+        "label": "Rain Drop-B"
+      },
+      {
+        "value": 525,
+        "label": "Wood Pad-A"
+      },
+      {
+        "value": 526,
+        "label": "Wood Pad-B"
+      },
+      {
+        "value": 527,
+        "label": "SpaceVoi-A"
+      },
+      {
+        "value": 528,
+        "label": "SpaceVoi-B"
+      },
+      {
+        "value": 529,
+        "label": "SoundTrk-A"
+      },
+      {
+        "value": 530,
+        "label": "SoundTrk-B"
+      },
+      {
+        "value": 531,
+        "label": "XmasBell-A"
+      },
+      {
+        "value": 532,
+        "label": "XmasBell-B"
+      },
+      {
+        "value": 533,
+        "label": "GlockChi-A"
+      },
+      {
+        "value": 534,
+        "label": "GlockChi-B"
+      },
+      {
+        "value": 535,
+        "label": "Vibes Bell-A"
+      },
+      {
+        "value": 536,
+        "label": "Vibes Bell-B"
+      },
+      {
+        "value": 537,
+        "label": "ChorBell-A"
+      },
+      {
+        "value": 538,
+        "label": "ChorBell-B"
+      },
+      {
+        "value": 539,
+        "label": "SyMallet-A"
+      },
+      {
+        "value": 540,
+        "label": "SyMallet-B"
+      },
+      {
+        "value": 541,
+        "label": "CelestPd-A"
+      },
+      {
+        "value": 542,
+        "label": "CelestPd-B"
+      },
+      {
+        "value": 543,
+        "label": "Steel Pad-A"
+      },
+      {
+        "value": 544,
+        "label": "Steel Pad-B"
+      },
+      {
+        "value": 545,
+        "label": "BrtBelPd-A"
+      },
+      {
+        "value": 546,
+        "label": "BrtBelPd-B"
+      },
+      {
+        "value": 547,
+        "label": "Britnes1-A"
+      },
+      {
+        "value": 548,
+        "label": "Britnes1-B"
+      },
+      {
+        "value": 549,
+        "label": "Britnes2-A"
+      },
+      {
+        "value": 550,
+        "label": "Britnes2-B"
+      },
+      {
+        "value": 551,
+        "label": "Echo Drop-A"
+      },
+      {
+        "value": 552,
+        "label": "Echo Drop-B"
+      },
+      {
+        "value": 553,
+        "label": "Poly Drop-A"
+      },
+      {
+        "value": 554,
+        "label": "Poly Drop-B"
+      },
+      {
+        "value": 555,
+        "label": "Star Theme-A"
+      },
+      {
+        "value": 556,
+        "label": "Star Theme-B"
+      },
+      {
+        "value": 557,
+        "label": "Space Pad-A"
+      },
+      {
+        "value": 558,
+        "label": "Space Pad-B"
+      },
+      {
+        "value": 559,
+        "label": "GM SqrLead-1"
+      },
+      {
+        "value": 560,
+        "label": "GM SqrLead-2"
+      },
+      {
+        "value": 561,
+        "label": "GM SawLead-1"
+      },
+      {
+        "value": 562,
+        "label": "GM SawLead-2"
+      },
+      {
+        "value": 563,
+        "label": "GM Caliope-1"
+      },
+      {
+        "value": 564,
+        "label": "GM Caliope-2"
+      },
+      {
+        "value": 565,
+        "label": "GM ChiffLd-1"
+      },
+      {
+        "value": 566,
+        "label": "GM ChiffLd-2"
+      },
+      {
+        "value": 567,
+        "label": "GM Charang-1"
+      },
+      {
+        "value": 568,
+        "label": "GM Charang-2"
+      },
+      {
+        "value": 569,
+        "label": "GM VoiceLd-1"
+      },
+      {
+        "value": 570,
+        "label": "GM VoiceLd-2"
+      },
+      {
+        "value": 571,
+        "label": "GM FifthLd-1"
+      },
+      {
+        "value": 572,
+        "label": "GM FifthLd-2"
+      },
+      {
+        "value": 573,
+        "label": "GM Bs+Lead-1"
+      },
+      {
+        "value": 574,
+        "label": "GM Bs+Lead-2"
+      },
+      {
+        "value": 575,
+        "label": "GM Fantasy-1"
+      },
+      {
+        "value": 576,
+        "label": "GM Fantasy-2"
+      },
+      {
+        "value": 577,
+        "label": "GM Warm Pad"
+      },
+      {
+        "value": 578,
+        "label": "GM PolySyn-1"
+      },
+      {
+        "value": 579,
+        "label": "GM PolySyn-2"
+      },
+      {
+        "value": 580,
+        "label": "GM SpacCho-1"
+      },
+      {
+        "value": 581,
+        "label": "GM SpacCho-2"
+      },
+      {
+        "value": 582,
+        "label": "GM BowGlas-1"
+      },
+      {
+        "value": 583,
+        "label": "GM BowGlas-2"
+      },
+      {
+        "value": 584,
+        "label": "GM MetalPd-1"
+      },
+      {
+        "value": 585,
+        "label": "GM MetalPd-2"
+      },
+      {
+        "value": 586,
+        "label": "GM HaloPad-1"
+      },
+      {
+        "value": 587,
+        "label": "GM HaloPad-2"
+      },
+      {
+        "value": 588,
+        "label": "GM SweepPd-1"
+      },
+      {
+        "value": 589,
+        "label": "GM SweepPd-2"
+      },
+      {
+        "value": 590,
+        "label": "GM RainDrp-1"
+      },
+      {
+        "value": 591,
+        "label": "GM RainDrp-2"
+      },
+      {
+        "value": 592,
+        "label": "GM SoundTr-1"
+      },
+      {
+        "value": 593,
+        "label": "GM SoundTr-2"
+      },
+      {
+        "value": 594,
+        "label": "GM Crystal-1"
+      },
+      {
+        "value": 595,
+        "label": "GM Crystal-2"
+      },
+      {
+        "value": 596,
+        "label": "GM Atmosph-1"
+      },
+      {
+        "value": 597,
+        "label": "GM Atmosph-2"
+      },
+      {
+        "value": 598,
+        "label": "GM Britnes-1"
+      },
+      {
+        "value": 599,
+        "label": "GM Britnes-2\\"
+      },
+      {
+        "value": 600,
+        "label": "GM Goblins-1"
+      },
+      {
+        "value": 601,
+        "label": "GM Goblins-2"
+      },
+      {
+        "value": 602,
+        "label": "GM Echoes-1"
+      },
+      {
+        "value": 603,
+        "label": "GM Echoes-2"
+      },
+      {
+        "value": 604,
+        "label": "GM SF-1"
+      },
+      {
+        "value": 605,
+        "label": "GM SF-2"
+      },
+      {
+        "value": 606,
+        "label": "Er Hu-1"
+      },
+      {
+        "value": 607,
+        "label": "Er Hu-2"
+      },
+      {
+        "value": 608,
+        "label": "Yang Qin"
+      },
+      {
+        "value": 609,
+        "label": "Di Zi"
+      },
+      {
+        "value": 610,
+        "label": "Pi Pa"
+      },
+      {
+        "value": 611,
+        "label": "Sitar"
+      },
+      {
+        "value": 612,
+        "label": "Tanpura"
+      },
+      {
+        "value": 613,
+        "label": "Harmonium-1"
+      },
+      {
+        "value": 614,
+        "label": "Harmonium-2"
+      },
+      {
+        "value": 615,
+        "label": "Santur-1"
+      },
+      {
+        "value": 616,
+        "label": "Santur-2"
+      },
+      {
+        "value": 617,
+        "label": "Kanun"
+      },
+      {
+        "value": 618,
+        "label": "Oud"
+      },
+      {
+        "value": 619,
+        "label": "Saz"
+      },
+      {
+        "value": 620,
+        "label": "Bouzouki"
+      },
+      {
+        "value": 621,
+        "label": "GM Sitar"
+      },
+      {
+        "value": 622,
+        "label": "GM Banjo"
+      },
+      {
+        "value": 623,
+        "label": "GM Shamisen"
+      },
+      {
+        "value": 624,
+        "label": "GM Koto"
+      },
+      {
+        "value": 625,
+        "label": "GM Thumb Pno"
+      },
+      {
+        "value": 626,
+        "label": "GM Bagpipe-1"
+      },
+      {
+        "value": 627,
+        "label": "GM Bagpipe-2"
+      },
+      {
+        "value": 628,
+        "label": "GM Fiddle"
+      },
+      {
+        "value": 629,
+        "label": "GM Shanai"
+      },
+      {
+        "value": 630,
+        "label": "GM TinkleBel"
+      },
+      {
+        "value": 631,
+        "label": "GM Agogo"
+      },
+      {
+        "value": 632,
+        "label": "GM SteelDr-1"
+      },
+      {
+        "value": 633,
+        "label": "GM SteelDr-2"
+      },
+      {
+        "value": 634,
+        "label": "GM WoodBlock"
+      },
+      {
+        "value": 635,
+        "label": "GM Taiko"
+      },
+      {
+        "value": 636,
+        "label": "GM Melo.Tom"
+      },
+      {
+        "value": 637,
+        "label": "GM SynthDrum"
+      },
+      {
+        "value": 638,
+        "label": "GM RevCymbal"
+      },
+      {
+        "value": 639,
+        "label": "GM GtFrNoise"
+      },
+      {
+        "value": 640,
+        "label": "GM BrthNoise"
+      },
+      {
+        "value": 641,
+        "label": "GM Seashor-1"
+      },
+      {
+        "value": 642,
+        "label": "GM Seashor-2"
+      },
+      {
+        "value": 643,
+        "label": "GM Bird-1"
+      },
+      {
+        "value": 644,
+        "label": "GM Bird-2"
+      },
+      {
+        "value": 645,
+        "label": "GM Telephone"
+      },
+      {
+        "value": 646,
+        "label": "GM Helicoptr"
+      },
+      {
+        "value": 647,
+        "label": "GM Aplause-1"
+      },
+      {
+        "value": 648,
+        "label": "GM Aplause-2"
+      },
+      {
+        "value": 649,
+        "label": "GM Gunshot"
+      },
+      {
+        "value": 650,
+        "label": "LAY Saw Lead"
+      },
+      {
+        "value": 651,
+        "label": "LAY Saw Wave"
+      },
+      {
+        "value": 652,
+        "label": "Sy_Sin Wave"
+      },
+      {
+        "value": 653,
+        "label": "Sy_Triangle"
+      },
+      {
+        "value": 654,
+        "label": "Sy_Sawtooth"
+      },
+      {
+        "value": 655,
+        "label": "Sy_ReversSaw"
+      },
+      {
+        "value": 656,
+        "label": "Sy_Square"
+      },
+      {
+        "value": 657,
+        "label": "Sy_MM Triang"
+      },
+      {
+        "value": 658,
+        "label": "Sy_MM Ramp"
+      },
+      {
+        "value": 659,
+        "label": "Sy_MM Saw"
+      },
+      {
+        "value": 660,
+        "label": "Sy_MM Square"
+      },
+      {
+        "value": 661,
+        "label": "Sy_MM WidPls"
+      },
+      {
+        "value": 662,
+        "label": "Sy_MM NrwPls"
+      },
+      {
+        "value": 663,
+        "label": "Sy_MG Sin"
+      },
+      {
+        "value": 664,
+        "label": "Sy_MG Triang"
+      },
+      {
+        "value": 665,
+        "label": "Sy_MG Saw"
+      },
+      {
+        "value": 666,
+        "label": "Sy_MG Square"
+      },
+      {
+        "value": 667,
+        "label": "Sy_MG Pulse1"
+      },
+      {
+        "value": 668,
+        "label": "Sy_MG Pulse2"
+      },
+      {
+        "value": 669,
+        "label": "Sy_AP1 Saw"
+      },
+      {
+        "value": 670,
+        "label": "Sy_AP1 Squar"
+      },
+      {
+        "value": 671,
+        "label": "Sy_AP1 Tri"
+      },
+      {
+        "value": 672,
+        "label": "Sy_AP1 Puls1"
+      },
+      {
+        "value": 673,
+        "label": "Sy_AP1 Puls2"
+      },
+      {
+        "value": 674,
+        "label": "Sy_AP1 Puls3"
+      },
+      {
+        "value": 675,
+        "label": "Sy_AP2 Saw"
+      },
+      {
+        "value": 676,
+        "label": "Sy_AP2 Puls1"
+      },
+      {
+        "value": 677,
+        "label": "Sy_AP2 Puls2"
+      },
+      {
+        "value": 678,
+        "label": "Sy_AP2SycSaw"
+      },
+      {
+        "value": 679,
+        "label": "Sy_AP2SycPls"
+      },
+      {
+        "value": 680,
+        "label": "Sy_OB Saw"
+      },
+      {
+        "value": 681,
+        "label": "Sy_OB Pulse1"
+      },
+      {
+        "value": 682,
+        "label": "Sy_OB Pulse2"
+      },
+      {
+        "value": 683,
+        "label": "Sy_OBSyncSaw"
+      },
+      {
+        "value": 684,
+        "label": "Sy_OBSyncPls"
+      },
+      {
+        "value": 685,
+        "label": "Sy_P5 Triang"
+      },
+      {
+        "value": 686,
+        "label": "Sy_P5 Saw"
+      },
+      {
+        "value": 687,
+        "label": "Sy_P5 Pulse1"
+      },
+      {
+        "value": 688,
+        "label": "Sy_P5 Pulse2"
+      },
+      {
+        "value": 689,
+        "label": "Sy_P5 Pulse3"
+      },
+      {
+        "value": 690,
+        "label": "Sy_P5 Pulse4"
+      },
+      {
+        "value": 691,
+        "label": "Sy_ND Saw"
+      },
+      {
+        "value": 692,
+        "label": "Sy_ND Pulse1"
+      },
+      {
+        "value": 693,
+        "label": "Sy_ND Pulse2"
+      },
+      {
+        "value": 694,
+        "label": "Sy_ND Pulse3"
+      },
+      {
+        "value": 695,
+        "label": "Sy_ND FM"
+      },
+      {
+        "value": 696,
+        "label": "Sy_JP Saw"
+      },
+      {
+        "value": 697,
+        "label": "Sy_JP Square"
+      },
+      {
+        "value": 698,
+        "label": "Sy_JP Pulse"
+      },
+      {
+        "value": 699,
+        "label": "Sy_CZ Saw\\"
+      },
+      {
+        "value": 700,
+        "label": "Sy_CZ Square"
+      },
+      {
+        "value": 701,
+        "label": "Sy_CZ Pulse"
+      },
+      {
+        "value": 702,
+        "label": "Sy_CZ DblSin"
+      },
+      {
+        "value": 703,
+        "label": "Sy_CZ SawPls"
+      },
+      {
+        "value": 704,
+        "label": "Sy_CZ SawRes"
+      },
+      {
+        "value": 705,
+        "label": "Sy_CZ TriRes"
+      },
+      {
+        "value": 706,
+        "label": "Sy_CZ TraRes"
+      },
+      {
+        "value": 707,
+        "label": "Sy_CZ Wave9"
+      },
+      {
+        "value": 708,
+        "label": "Sy_CZ Wave10"
+      },
+      {
+        "value": 709,
+        "label": "Sy_CZ Wave11"
+      },
+      {
+        "value": 710,
+        "label": "Sy_CZ Wave12"
+      },
+      {
+        "value": 711,
+        "label": "Sy_CZ Wave13"
+      },
+      {
+        "value": 712,
+        "label": "Sy_CZ Wave14"
+      },
+      {
+        "value": 713,
+        "label": "Sy_CZ Wave15"
+      },
+      {
+        "value": 714,
+        "label": "Sy_CZ Wave16"
+      },
+      {
+        "value": 715,
+        "label": "Sy_CZ Wave17"
+      },
+      {
+        "value": 716,
+        "label": "Sy_CZ Wave18"
+      },
+      {
+        "value": 717,
+        "label": "Sy_CZ Wave19"
+      },
+      {
+        "value": 718,
+        "label": "Sy_CZ Wave20"
+      },
+      {
+        "value": 719,
+        "label": "Sy_CZ Wave21"
+      },
+      {
+        "value": 720,
+        "label": "Sy_CZ Wave22"
+      },
+      {
+        "value": 721,
+        "label": "Sy_CZ Wave23"
+      },
+      {
+        "value": 722,
+        "label": "Sy_CZ Wave24"
+      },
+      {
+        "value": 723,
+        "label": "Sy_CZ Wave25"
+      },
+      {
+        "value": 724,
+        "label": "Sy_CZ Wave26"
+      },
+      {
+        "value": 725,
+        "label": "Sy_CZ Wave27"
+      },
+      {
+        "value": 726,
+        "label": "Sy_CZ Wave28"
+      },
+      {
+        "value": 727,
+        "label": "Sy_CZ Wave29"
+      },
+      {
+        "value": 728,
+        "label": "Sy_CZ Wave30"
+      },
+      {
+        "value": 729,
+        "label": "Sy_CZ Wave31"
+      },
+      {
+        "value": 730,
+        "label": "Sy_CZ Wave32"
+      },
+      {
+        "value": 731,
+        "label": "Sy_CZ Wave33"
+      },
+      {
+        "value": 732,
+        "label": "Sy_VA Synth1"
+      },
+      {
+        "value": 733,
+        "label": "Sy_VA Synth2"
+      },
+      {
+        "value": 734,
+        "label": "Sy_VA Synth3"
+      },
+      {
+        "value": 735,
+        "label": "Sy_VA Synth4"
+      },
+      {
+        "value": 736,
+        "label": "Sy_VA Synth5"
+      },
+      {
+        "value": 737,
+        "label": "Sy_VA Synth6"
+      },
+      {
+        "value": 738,
+        "label": "Sy_VA Synth7"
+      },
+      {
+        "value": 739,
+        "label": "Sy_VA Synth8"
+      },
+      {
+        "value": 740,
+        "label": "Sy_VA Synth9"
+      },
+      {
+        "value": 741,
+        "label": "Sy_VA Syn 10"
+      },
+      {
+        "value": 742,
+        "label": "Sy_VA Syn 11"
+      },
+      {
+        "value": 743,
+        "label": "Sy_VA Syn 12"
+      },
+      {
+        "value": 744,
+        "label": "Sy_VA Syn 13"
+      },
+      {
+        "value": 745,
+        "label": "Sy_VA Syn 14"
+      },
+      {
+        "value": 746,
+        "label": "Sy_VA Syn 15"
+      },
+      {
+        "value": 747,
+        "label": "Sy_VA Syn 16"
+      },
+      {
+        "value": 748,
+        "label": "Sy_VA Syn 17"
+      },
+      {
+        "value": 749,
+        "label": "Sy_VA Syn 18"
+      },
+      {
+        "value": 750,
+        "label": "Sy_VA Syn 19"
+      },
+      {
+        "value": 751,
+        "label": "Sy_TB Bass 1"
+      },
+      {
+        "value": 752,
+        "label": "Sy_TB Bass 2"
+      },
+      {
+        "value": 753,
+        "label": "Sy_MG Bass 1"
+      },
+      {
+        "value": 754,
+        "label": "Sy_MG Bass 2"
+      },
+      {
+        "value": 755,
+        "label": "Sy_TB Saw 1"
+      },
+      {
+        "value": 756,
+        "label": "Sy_TB Saw 2"
+      },
+      {
+        "value": 757,
+        "label": "Sy_TB Saw 3"
+      },
+      {
+        "value": 758,
+        "label": "Sy_TB Pulse1"
+      },
+      {
+        "value": 759,
+        "label": "Sy_TB Pulse2"
+      },
+      {
+        "value": 760,
+        "label": "Sy_TB Pulse3"
+      },
+      {
+        "value": 761,
+        "label": "Sy_SH Saw"
+      },
+      {
+        "value": 762,
+        "label": "Sy_SH Pulse1"
+      },
+      {
+        "value": 763,
+        "label": "Sy_SH Pulse2"
+      },
+      {
+        "value": 764,
+        "label": "Sy_SH Pulse3"
+      },
+      {
+        "value": 765,
+        "label": "Sy_SH SubOSC"
+      },
+      {
+        "value": 766,
+        "label": "Sy_SH BASS 1"
+      },
+      {
+        "value": 767,
+        "label": "Sy_SH BASS 2"
+      },
+      {
+        "value": 768,
+        "label": "Sy_SH BASS 3"
+      },
+      {
+        "value": 769,
+        "label": "Sy_SH BASS 4"
+      },
+      {
+        "value": 770,
+        "label": "Sy_SH BASS 5"
+      },
+      {
+        "value": 771,
+        "label": "Sy_SH BASS 6"
+      },
+      {
+        "value": 772,
+        "label": "Sy_SH BASS 7"
+      },
+      {
+        "value": 773,
+        "label": "Sy_SH BASS 8"
+      },
+      {
+        "value": 774,
+        "label": "Sy_SH BASS 9"
+      },
+      {
+        "value": 775,
+        "label": "Nz_WhiteNoiz"
+      },
+      {
+        "value": 776,
+        "label": "Nz_PinkNoise"
+      },
+      {
+        "value": 777,
+        "label": "Nz_FltrNoiz1"
+      },
+      {
+        "value": 778,
+        "label": "Nz_FltrNoiz2"
+      },
+      {
+        "value": 779,
+        "label": "Nz_FltrNoiz3"
+      },
+      {
+        "value": 780,
+        "label": "Nz_FltrNoiz4"
+      },
+      {
+        "value": 781,
+        "label": "Nz_FltrNoiz5"
+      },
+      {
+        "value": 782,
+        "label": "Nz_FltrNoiz6"
+      },
+      {
+        "value": 783,
+        "label": "Nz_FltrNoiz7"
+      },
+      {
+        "value": 784,
+        "label": "Nz_FltrNoiz8"
+      },
+      {
+        "value": 785,
+        "label": "Nz_Smpl&Hld1"
+      },
+      {
+        "value": 786,
+        "label": "Nz_Smpl&Hld2"
+      },
+      {
+        "value": 787,
+        "label": "Nz_Scratch1"
+      },
+      {
+        "value": 788,
+        "label": "Nz_Scratch2"
+      }
+    ],
     "filterType": [
       {
         "value": 0,
@@ -13710,7 +16868,7 @@
     "hexLayer": {
       "category": "0x08",
       "status": "complete",
-      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 26 'Hex Layer Parameter' (printed p72-73), category 08H (XW-P1 only) -- franky's CTRLR panel has a Hex Layer controller (020_ToneHexLayer.lua) but it drives everything live via NRPN (sendHEXParam/g_mixModMidi['mixHEX'], MSB=0x3e), never SysEx, and only for the small per-layer-level + all-layer-cutoff/detune/attack/release mixer subset -- NOT this section's full per-layer offset/LFO param set. So there is no tone-edit-buffer Lua source to mine here, same situation pcmMelody/drawbarOrgan were in. addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth/pcmMelody/drawbarOrgan already match; SysExCodec needed zero changes, same as every other hand-authored section -- the 8-bit '-128..+127' offset params reuse the EXISTING 'cF' vt (2-byte, MIDI-safe), NOT a new one. [bug-198, 2026-07-19] A first pass invented a broken single-byte 'cf256' (wire=value+128 in one raw byte, illegal per MIDI's high-bit-clear rule for SysEx data bytes) -- owner hardware testing caught it immediately (every affected param synced back as -128 regardless of the real value); fixed by switching those params to 'cF', which already encodes this exact -128..+128 shape correctly (2 bytes, lo7/hi7 split). SCOPE: excludes Split Ui Number (per-layer PCM wave# picker, id 0002 -- out of scope, same 'not a wave browser' call PCMEnginePanel made for tone/patch selection; owner has asked for wave picking here and in the PCM editor as a follow-up) and Pitch Cent (id 0005 -- a genuinely different sign+11-bit-fraction bit-packed encoding with no existing vt and no Lua source to cross-check; owner identified this as the synth's own 'Fine Tune' control and wants it implemented too). Pitch Lock (id 0014) was hand-authored and shipped, then REMOVED 2026-07-19 after owner hardware testing found no effect on pitch bend/transpose and no corresponding setting in the synth's own Hex Layer menu -- see HEXLAYER_GLOBAL_PARAMS' comment above. NOT YET HARDWARE-VERIFIED for the remaining params (owner has not run a full live round-trip on this section) -- given the organPosition precedent (a SysEx write that landed and persisted but did not reach the running voice, needing an NRPN live-fader path instead, see drawbarOrgan's section note), a cat=0x08 write here may face the same issue since the Lua's own live path is NRPN (mixHEX), not SysEx -- budget a midi-probe read/write/audible check before trusting this panel's Sync/edit path, and if writes prove SysEx-inert, the known fallback is the same NRPN-fader pattern app/OrganPanel.cpp already established (sendDrawbarNrpn) rather than a new mechanism. Detune Number (hex-layer-wide, not per-layer) and the entire LFO section (also hex-layer-wide, one shared Pitch/Amp LFO pair for all 6 layers) are taken literally from the PDF's Block column -- see HEXLAYER_LFO_NOTE for the specific caveat.",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 26 'Hex Layer Parameter' (printed p72-73), category 08H (XW-P1 only) -- franky's CTRLR panel has a Hex Layer controller (020_ToneHexLayer.lua) but it drives everything live via NRPN (sendHEXParam/g_mixModMidi['mixHEX'], MSB=0x3e), never SysEx, and only for the small per-layer-level + all-layer-cutoff/detune/attack/release mixer subset -- NOT this section's full per-layer offset/LFO param set. So there is no tone-edit-buffer Lua source to mine here, same situation pcmMelody/drawbarOrgan were in. addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth/pcmMelody/drawbarOrgan already match; SysExCodec needed zero changes, same as every other hand-authored section -- the 8-bit '-128..+127' offset params reuse the EXISTING 'cF' vt (2-byte, MIDI-safe), NOT a new one. [bug-198, 2026-07-19] A first pass invented a broken single-byte 'cf256' (wire=value+128 in one raw byte, illegal per MIDI's high-bit-clear rule for SysEx data bytes) -- owner hardware testing caught it immediately (every affected param synced back as -128 regardless of the real value); fixed by switching those params to 'cF', which already encodes this exact -128..+128 shape correctly (2 bytes, lo7/hi7 split). Split Ui Number (id 0002, per-layer PCM wave# picker) was ADDED 2026-07-19 per owner request as 'hexWaveNumber'/'Wave' -- reuses the existing 'wf' vt/codec path (same mechanism as Solo Synth's OSC3/4 wave picker, waveBaseOffset=326) backed by a purpose-built 'hexLayerWaves' enum (pcm_waves[:789]) so the UI only offers the manual-documented PCM Wave # 0326-1114 sub-range, not the full library. SCOPE: still excludes Pitch Cent (id 0005 -- a genuinely different sign+11-bit-fraction bit-packed encoding with no existing vt and no Lua source to cross-check; owner identified this as the synth's own 'Fine Tune' control and wants it implemented too, tracked separately). Pitch Lock (id 0014) was hand-authored and shipped, then REMOVED 2026-07-19 after owner hardware testing found no effect on pitch bend/transpose and no corresponding setting in the synth's own Hex Layer menu -- see HEXLAYER_GLOBAL_PARAMS' comment above. NOT YET HARDWARE-VERIFIED for the remaining params (owner has not run a full live round-trip on this section) -- given the organPosition precedent (a SysEx write that landed and persisted but did not reach the running voice, needing an NRPN live-fader path instead, see drawbarOrgan's section note), a cat=0x08 write here may face the same issue since the Lua's own live path is NRPN (mixHEX), not SysEx -- budget a midi-probe read/write/audible check before trusting this panel's Sync/edit path, and if writes prove SysEx-inert, the known fallback is the same NRPN-fader pattern app/OrganPanel.cpp already established (sendDrawbarNrpn) rather than a new mechanism. Detune Number (hex-layer-wide, not per-layer) and the entire LFO section (also hex-layer-wide, one shared Pitch/Amp LFO pair for all 6 layers) are taken literally from the PDF's Block column -- see HEXLAYER_LFO_NOTE for the specific caveat.",
       "params": [
         {
           "id": "hexOnoff",
@@ -14288,6 +17446,70 @@
               "Layer 6"
             ]
           }
+        },
+        {
+          "id": "hexWaveNumber",
+          "name": "Wave",
+          "block": "Layer",
+          "group": "General",
+          "address": {
+            "ct": 8,
+            "id": 2,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "wf",
+          "range": {
+            "min": 0,
+            "max": 788
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "combo",
+            "enumPerOsc": true
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          },
+          "perOsc": {
+            "waveBaseOffset": {
+              "1": 326,
+              "2": 326,
+              "3": 326,
+              "4": 326,
+              "5": 326,
+              "6": 326
+            },
+            "enumPerOsc": {
+              "1": "hexLayerWaves",
+              "2": "hexLayerWaves",
+              "3": "hexLayerWaves",
+              "4": "hexLayerWaves",
+              "5": "hexLayerWaves",
+              "6": "hexLayerWaves"
+            },
+            "maxPerOsc": {
+              "1": 788,
+              "2": 788,
+              "3": 788,
+              "4": 788,
+              "5": 788,
+              "6": 788
+            }
+          },
+          "note": "Manual name is 'Split Ui Number' (PDF p72 sec 26.1 ID 0002); displayed as 'Wave' to match the project's existing wave-picker naming (Solo Synth's OSC Wave Number). midi-spec.md line 548: PCM Wave # 0326-1114, the same g_tssPCMwave.P1 library Solo Synth OSC3/4 use (waveBaseOffset=326) but a narrower sub-range (indices 0-788 of that library) -- 'hexLayerWaves' below is that same library pre-sliced to just those 789 entries so the UI can't offer an out-of-range selection. NOT YET HARDWARE-VERIFIED, same caveat as the rest of this section."
         },
         {
           "id": "hexDetuneNumber",

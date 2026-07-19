@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "WavePicker.h"
 #include "casioxw/NoteNames.h"
 #include "casioxw/ParamModel.h"
 
@@ -19,6 +20,12 @@
       - ControlKind::ComboEnum        -> juce::ComboBox, one enum backs every instance
       - ControlKind::ComboEnumPerOsc  -> juce::ComboBox, enum source depends on the instance
                                           (tssOSCwf: OSC1/2 -> soloSynthWaves, OSC3/4 -> soloPcmWaves)
+                                          -- EXCEPT wave-number params (vt=="wf"), which get a
+                                          WavePicker instead (see WavePicker.h): their enum runs
+                                          into the hundreds/thousands, and juce::ComboBox's
+                                          PopupMenu-backed dropdown freezes the message thread at
+                                          that size (materializes one live Component + does a
+                                          text measurement PER ITEM, unbounded, at popup-open time)
       - ControlKind::ComboRange       -> juce::ComboBox with plain numeric items (no enum backs it,
                                           e.g. tssLFOsync)
       - ControlKind::Slider           -> juce::Slider bounded by range.min/range.max
@@ -103,6 +110,7 @@ private:
     std::unique_ptr<juce::ToggleButton> toggle;
     std::unique_ptr<juce::ComboBox> combo;
     std::unique_ptr<juce::Slider> slider;
+    std::unique_ptr<WavePicker> wavePicker;   // ComboEnum(PerOsc) + vt=="wf" only, see class doc above
 
     void notify (int uiValue);
 

@@ -17,6 +17,7 @@
 #include "../../app/ParamControl.h"
 #include "../../app/SequencerPanel.h"
 #include "../../app/SoloSynthPanel.h"
+#include "../../app/WavePicker.h"
 #include <casioxw/MidiIO.h>
 #include <casioxw/ParamModel.h>
 #include <casioxw/SysExCodec.h>
@@ -201,6 +202,47 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
+    if (mode == "wavepicker-bench")
+    {
+        // Times how long it takes to OPEN a WavePicker for each of the app's large wave enums --
+        // the exact class of freeze reported live against the old juce::ComboBox-backed picker
+        // (bug: soloPcmWaves' 2158-entry dropdown hangs the app). A ComboBox popup for a list
+        // this size does O(items) Component construction + text measurement before it can even
+        // show; WavePicker's popup only builds a search box + an empty-until-scrolled ListBox, so
+        // opening it should cost single-digit milliseconds regardless of list size -- this proves
+        // that experimentally rather than by inspection alone (gui-preview snapshots alone can't:
+        // createComponentSnapshot() never opens a popup, see the hexlayer mode's own history).
+        auto model = casioxw::ParamModel::fromFile (jsonPath);
+        const char* enumNames[] = { "soloSynthWaves", "soloPcmWaves", "hexLayerWaves" };
+        bool allOk = true;
+        for (const auto* name : enumNames)
+        {
+            const auto* entries = model.enumValues (juce::String (name));
+            if (entries == nullptr)
+            {
+                std::printf ("%-16s MISSING from model.enums\n", name);
+                allOk = false;
+                continue;
+            }
+            WavePicker picker;
+            picker.setEntries (entries);
+            picker.setBounds (0, 0, 200, 24);
+            picker.setVisible (true);
+
+            const auto start = juce::Time::getMillisecondCounterHiRes();
+            picker.triggerOpenForPreview();
+            const auto elapsedMs = juce::Time::getMillisecondCounterHiRes() - start;
+
+            std::printf ("%-16s %5d entries: open() took %.2f ms\n",
+                         name, (int) entries->size(), elapsedMs);
+            if (elapsedMs > 200.0)
+                allOk = false;
+        }
+        std::printf (allOk ? "PASS: all pickers opened in well under a freeze-worthy time\n"
+                            : "FAIL: at least one picker was slow or missing\n");
+        return allOk ? 0 : 1;
+    }
+
     if (mode == "sequencer-pcm-roundtrip")
     {
         // Headless correctness check for PCM track save/load -- no snapshot, no display needed.
@@ -214,6 +256,6 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-pcm-roundtrip)\n", mode.toRawUTF8());
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-pcm-roundtrip|wavepicker-bench)\n", mode.toRawUTF8());
     return 1;
 }
