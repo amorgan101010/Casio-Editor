@@ -56,6 +56,13 @@ namespace casioxw
             SequencerPanel seeds this (Filter Cutoff + Resonance to start); it is the single list
             that both the UI's param-control row and the playback engine iterate. */
         std::vector<LockableParam> lockable;
+
+        /** Opaque app-defined tag naming which tone engine (e.g. "soloSynth"/"hexLayer"/
+            "drawbarOrgan") this sequence's `lockable` set targets -- core does not interpret it,
+            just carries it through JSON round-trips. SequencerPanel uses it to pick which
+            per-engine lockable table to rebuild on load. Empty on very old files, which predate
+            multi-engine support and should be treated as "soloSynth" by the reader. */
+        juce::String engineTag;
     };
 
     /** channel/note/velocity a step sends, or std::nullopt for a disabled step (a rest). */

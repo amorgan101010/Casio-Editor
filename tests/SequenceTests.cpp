@@ -170,6 +170,7 @@ TEST_CASE ("sequenceToJson/fromJson: round-trips a populated sequence", "[sequen
     seq.stepsPerBeat = 6;
     seq.lockable.push_back (casioxw::LockableParam { "tssFLTFcoff", 1, 100 });
     seq.lockable.push_back (casioxw::LockableParam { "tssFLTFreso", 1, 12 });
+    seq.engineTag = "hexLayer";
 
     seq.steps[0].enabled = true;
     seq.steps[0].note = 48;
@@ -186,6 +187,7 @@ TEST_CASE ("sequenceToJson/fromJson: round-trips a populated sequence", "[sequen
     CHECK (back->channel == 7);
     CHECK (back->tempoBpm == 132);
     CHECK (back->stepsPerBeat == 6);
+    CHECK (back->engineTag == "hexLayer");
     REQUIRE (back->lockable.size() == 2);
     CHECK (back->lockable[0].paramId == "tssFLTFcoff");
     CHECK (back->lockable[0].baseValue == 100);
@@ -215,6 +217,7 @@ TEST_CASE ("sequenceFromJson: missing fields fall back to defaults", "[sequence]
     CHECK (back->tempoBpm == 90);
     CHECK (back->channel == 1);        // default
     CHECK (back->stepsPerBeat == 4);   // default
+    CHECK (back->engineTag.isEmpty()); // default -- SequencerPanel treats "" as TrackEngine::soloSynth
     CHECK_FALSE (back->steps[0].enabled);
 }
 
