@@ -62,12 +62,20 @@ namespace
 
     void sendDrawbarNrpn (casioxw::MidiIO& midiIO, int sysExInstance1to9, int uiValue0to8)
     {
-        // NRPN-specific 'db' encoder (011_initTables.lua:71, g_xwModCalc["nrpn"].db) -- NOT the
-        // same as the unused V2SX 'db' entry (011_initTables.lua:44); the NRPN one scales by 15
-        // to spread the UI's 0-8 range across more of the CC's 0-127 resolution. Both invert
-        // (louder UI value -> smaller wire value), matching the physical drawbar's own logic.
+        // Scaled by 15 to spread the UI's 0-8 range across more of the CC's 0-127 resolution
+        // (011_initTables.lua:71, g_xwModCalc["nrpn"].db is "(8-v)*15" -- NOT the same formula as
+        // the unused V2SX 'db' entry at line 44, a separate table for a separate transport).
+        //
+        // HARDWARE-VERIFIED 2026-07-18 the (8-v) inversion in that Lua formula must NOT be
+        // copied here: owner reported moving the app's fader to 0 made the synth show 8 (and
+        // vice versa), and separately that setting a fader to 6 then re-syncing read back 2 --
+        // exactly (8-6). That inversion in franky's Lua exists to translate FROM his own CTRLR
+        // slider widget's convention (which ran the opposite direction) TO the wire's true
+        // sense; our UI's 0=quiet/8=loud already matches the wire directly (same sense the
+        // SysEx read side uses, hardware-confirmed in addendum 31), so inverting a second time
+        // here just un-does it. Plain v*15, no inversion.
         const int nrpnLsb = kSysExInstanceToNrpnLsb[sysExInstance1to9 - 1];
-        const int vmsb = juce::jlimit (0, 127, (8 - uiValue0to8) * 15);
+        const int vmsb = juce::jlimit (0, 127, uiValue0to8 * 15);
         midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x63, kDrawbarNrpnMsb));
         midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x62, nrpnLsb));
         midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x06, vmsb));
