@@ -165,13 +165,19 @@ int main (int argc, char* argv[])
     {
         if (argc < 3)
         {
-            std::fprintf (stderr, "hexlayer requires: <outPath.png>\n");
+            std::fprintf (stderr, "hexlayer requires: <outPath.png> [width] [height]\n");
             return 1;
         }
         auto model = casioxw::ParamModel::fromFile (jsonPath);
         casioxw::SysExCodec codec (std::move (model));
         casioxw::MidiIO midiIO;
         HexLayerPanel panel (codec, midiIO);
+        // Optional width/height: the panel's own natural size (below) is narrow enough that its
+        // Layer-block card grid only ever shows one column -- Main.cpp actually sizes every tab to
+        // the widest tab in the shared TabbedComponent (Sequencer, ~1490px), which is what lets the
+        // 2x3 grid wrap to 3 columns in the real app. Pass an explicit size to preview that.
+        if (argc >= 5)
+            panel.setSize (std::atoi (argv[3]), std::atoi (argv[4]));
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());
