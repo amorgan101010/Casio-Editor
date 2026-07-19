@@ -82,12 +82,15 @@ TEST_CASE ("ParamModel: hexDetuneNumber is Hex-Layer-wide (1 instance, Global bl
     CHECK (detune->addr == 0x13);
 }
 
-TEST_CASE ("ParamModel: hexPitchLock is a per-layer param (Layer block, 6 instances, ai=2)", "[parammodel][hexLayer]")
+TEST_CASE ("ParamModel: hexPitchLock is a per-layer param (Layer block, 6 instances, ai=0)", "[parammodel][hexLayer]")
 {
     // RE-ADDED 2026-07-19 (see gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE): unlike its first, removed
     // Global/1-instance incarnation, the manual scopes this to layers 2/4/6 -- the address layout
     // is still per-layer/6-instance like its siblings (app/HexLayerPanel.cpp is what hides the
-    // control for layers 1/3/5, not the address model).
+    // control for layers 1/3/5, not the address model). ai=0 is HARDWARE-CONFIRMED (2026-07-19,
+    // midi-probe against a real XW-P1) -- the manual's "Array 03" annotation does NOT map to ai=2
+    // via this section's usual Array-1 rule for this one param; ai=2 was tried first and read the
+    // wrong value on real hardware.
     const auto model = loadModel();
 
     const auto* lock = model.find ("hexPitchLock");
@@ -98,7 +101,7 @@ TEST_CASE ("ParamModel: hexPitchLock is a per-layer param (Layer block, 6 instan
     CHECK (lock->range.min == 0);
     CHECK (lock->range.max == 1);
     CHECK (lock->addr == 0x14);
-    CHECK (lock->ai == 2);
+    CHECK (lock->ai == 0);
 }
 
 TEST_CASE ("ParamModel: LFO section is 14 params, all Global block, group LFO", "[parammodel][hexLayer]")
@@ -243,10 +246,12 @@ TEST_CASE ("SysExCodec: hexPanOffset/hexPitchKey (cf) round-trip -64..63", "[sys
         }
 }
 
-TEST_CASE ("SysExCodec: hexPitchLock's 6 layer instances each address a distinct block byte with ai=2", "[sysex][hexLayer]")
+TEST_CASE ("SysExCodec: hexPitchLock's 6 layer instances each address a distinct block byte with ai=0", "[sysex][hexLayer]")
 {
     // Address layout only, not the layers-2/4/6-only UI restriction (that's app/HexLayerPanel.cpp,
-    // not the codec/model) -- see gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE for why ai=2 rather than 0.
+    // not the codec/model). ai=0 is HARDWARE-CONFIRMED (2026-07-19, midi-probe against a real
+    // XW-P1 with Pitch Lock audibly on) -- see gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE for the
+    // probe transcript; the manual's "Array 03" does NOT map to ai=2 for this one param.
     const casioxw::SysExCodec codec (loadModel());
 
     for (int instance = 1; instance <= 6; ++instance)
@@ -255,7 +260,7 @@ TEST_CASE ("SysExCodec: hexPitchLock's 6 layer instances each address a distinct
         REQUIRE (frame.size() == 26);
         CHECK (frame[16] == (std::uint8_t) (instance - 1));   // block byte (addressByteIndex 10 -> wire index 6+10)
         CHECK (frame[18] == 0x14);                            // id byte (Pitch Lock = id 0x14)
-        CHECK (frame[20] == 0x02);                            // ai byte (Array 03 -> ai=2)
+        CHECK (frame[20] == 0x00);                            // ai byte (hardware-confirmed 0, not the manual's naive Array-1=2)
         CHECK (frame[24] == 0x01);                            // value byte (nf: 1, no offset)
 
         const auto dec = codec.decode (frame);

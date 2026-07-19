@@ -585,20 +585,15 @@ print(f"Drawbar Organ params: {len(organ_params)} (hand-authored, unverified aga
 #   precedents in this repo (tssOSCPlfo2D/tssOSCAlfo2D/tssFLTFlfo2D, all manual "Array 02" -> ai=1,
 #   see OVR above) -- the rule is ai = Array-1, not specific to those collision cases. Every param
 #   in this section except Pitch Lock has manual Array=01 (-> ai=0). Pitch Lock (id 0014, "Array
-#   03") is RE-ADDED 2026-07-19 as ai=2 (literal application of the same rule) -- unlike this
-#   rule's 3 other precedents, Pitch Lock's id isn't shared with anything else, so there is no
-#   independent collision to cross-check ai=2 against; it remains the weakest address inference in
-#   this section, flagged loudly in HEXLAYER_PITCH_LOCK_NOTE below rather than silently trusted.
-#   ALTERNATIVE READING flagged, not adopted: "Array 03" could instead mean a 3-element array
-#   (one slot per lockable layer 2/4/6, ai 0/1/2) rather than ai=2 on the normal 6-instance
-#   per-layer block -- i.e. block could be Global/fixed like Detune Number, not per-layer. Chose
-#   the per-layer+ai=2 reading because (a) row 0014, unlike row 0013 (Detune Number), carries NO
-#   "(Block 00000000)" override annotation in the manual, so it inherits section 26.1's stated
-#   default block ("2-0:Layer Number"), and (b) it's the most literal composition of two already-
-#   established rules (block-override-annotation absence, and Array-1->ai) rather than inventing a
-#   third addressing shape with no precedent anywhere else in this codebase. Hardware round-trip on
-#   a real XW-P1 is the only way to actually settle this -- budget it before trusting Sync/edit on
-#   this specific param even more than the rest of this already-unverified section.
+#   03") is the ONE param in this section where that rule does NOT hold, HARDWARE-CONFIRMED
+#   2026-07-19: ai=2 (the literal Array-1 application, first shipped in the initial re-add) read
+#   back the wrong value against a real XW-P1 with Pitch Lock audibly on; a midi-probe sweep of
+#   ai=0/1/2/3 found only ai=0 reads correctly (see HEXLAYER_PITCH_LOCK_NOTE below for the full
+#   probe transcript/reasoning). So Pitch Lock uses ai=0, same as every OTHER per-layer param in
+#   this section -- "Array 03" in the manual apparently does NOT map to this address's ai byte the
+#   way it does for the LFO-depth collision precedents (possibly PDF table noise specific to this
+#   one row, or "Array" meaning something unrelated to addressing for a single-bit toggle -- not
+#   resolved, and not worth resolving further now that the empirically-correct address is known).
 # - Detune Number (0013) is the only param in section 26.1 whose PDF Block column reads the fixed
 #   "00000000" instead of "up-arrow" (= 2-0:Layer Number, same as every param above it) -- i.e. it
 #   is HEX-LAYER-WIDE (one value covering all 6 layers), not per-layer. Section 26.2's entire LFO
@@ -616,17 +611,19 @@ HEXLAYER_PITCH_LOCK_NOTE = (
     "each pair -- app/HexLayerPanel.cpp hides it for layers 1/3/5 rather than showing a control "
     "with no target. REMOVED 2026-07-19 after an initial hardware test (as a Global/1-instance "
     "param) found no effect and no matching synth-menu setting, then RE-ADDED same day once the "
-    "owner found the real per-layer scope in the manual -- the original negative test is fully "
-    "consistent with the old version targeting the wrong address (hex-layer-wide instead of "
-    "per-layer), not with the control being fictitious. ADDRESS STILL NOT HARDWARE-VERIFIED: "
-    "encoded here as ai=2 (literal Array-1, see the Array->ai mapping note above "
-    "HEXLAYER_LAYER_LABELS), the most literal reading, but an alternative (ai as a 3-slot array "
-    "keyed 0/1/2 to layers 2/4/6, addressed off a fixed Global block rather than the normal 6-way "
-    "per-layer block) was considered and rejected only for lack of precedent elsewhere in this "
-    "codec, not because it's implausible. Correct hardware test: set Layer 1 and Layer 2 to "
-    "audibly different pitches, toggle Pitch Lock on for Layer 2, confirm Layer 2 snaps to Layer "
-    "1's pitch (NOT a pitch-bend/transpose test -- that was the wrong behavior checked the first "
-    "time)."
+    "owner found the real per-layer scope in the manual (the setting lives in each even layer's "
+    "OWN menu page -- the original 'no corresponding setting' finding was from checking Layer 1's "
+    "menu, which correctly has none). ADDRESS: ai=0, HARDWARE-CONFIRMED 2026-07-19 via "
+    "tools/midi-probe against a real XW-P1 with a Hex patch (Layer 2 tuned a fifth above Layer 1, "
+    "Pitch Lock audibly on) -- 'midi-probe get hexPitchLock 2' read back value=1 (correct) only at "
+    "ai=0; ai=1 and the originally-guessed ai=2 both read back 0 (wrong), ai=3 got what looks like "
+    "a NAK reply. A reference read (hexPitchKey[2], the same patch's +7-semitone Pitch Key offset) "
+    "confirmed Layer 2 SysEx reads work correctly in general, isolating the bug to this one "
+    "param's ai byte rather than a section-wide read problem. So the PDF's 'Array 03' does NOT "
+    "follow the Array-1->ai rule that holds for this section's other Array-tagged param (see the "
+    "Array->ai mapping note above HEXLAYER_LAYER_LABELS) -- ai=0 here, same as every OTHER per-layer "
+    "param in section 26.1, not ai=2. Only the read direction has been hardware-verified so far; "
+    "SET (toggling Pitch Lock from the app and hearing the hardware follow) is still owner-pending."
 )
 
 # Split Ui Number (id 0002) -- per-layer PCM wave# picker, ADDED 2026-07-19 per owner request
@@ -729,7 +726,7 @@ def build_hexlayer_params():
         "name": "Pitch Lock",
         "block": "Layer",
         "group": "General",
-        "address": {"ct": 0x08, "id": 0x14, "ai": 2, "an": 0},
+        "address": {"ct": 0x08, "id": 0x14, "ai": 0, "an": 0},
         "vt": "nf",
         "range": {"min": 0, "max": 1},
         "default": 0,
