@@ -51,6 +51,15 @@ namespace
     // transports numbering them differently.
     constexpr int kSysExInstanceToNrpnLsb[9] = { 0, 2, 3, 5, 8, 1, 4, 6, 7 };
 
+    // Owner feedback 2026-07-18: the type-grouped SysEx order above is correct DATA (which
+    // register a given fader must read/write), but the owner wants the fader COLUMNS laid out
+    // in the original harmonic order on screen (16',5 1/3',8',4',2 2/3',2',1 3/5',1 1/3',1'),
+    // not grouped by octave/mutation. This is purely a display-order concern -- each entry here
+    // is still the correct SysEx instance for that screen position, so labels/addressing/NRPN
+    // translation are all untouched; only the ORDER the 9 ParamControls are built/laid out in
+    // changes (left-to-right, wrapping into the same 5-then-4 grid as before).
+    constexpr int kDrawbarDisplayOrder[9] = { 1, 6, 2, 3, 7, 4, 8, 9, 5 };
+
     void sendDrawbarNrpn (casioxw::MidiIO& midiIO, int sysExInstance1to9, int uiValue0to8)
     {
         // NRPN-specific 'db' encoder (011_initTables.lua:71, g_xwModCalc["nrpn"].db) -- NOT the
@@ -183,7 +192,7 @@ void OrganPanel::buildParamControls()
             for (const auto* p : bucket)
             {
                 std::vector<ParamControl*> faderPtrs;
-                for (int instance = 1; instance <= p->instanceCount; ++instance)
+                for (int instance : kDrawbarDisplayOrder)
                 {
                     const juce::String caption = (instance - 1) < p->instanceLabels.size()
                         ? p->instanceLabels[instance - 1] : juce::String (instance);
