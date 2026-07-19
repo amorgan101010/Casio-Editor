@@ -25,6 +25,35 @@ namespace
         return paramId + "#" + juce::String (instance);
     }
 
+    // Owner-confirmed on hardware 2026-07-18: writing organPosition through the SysEx cat=0x07
+    // edit-buffer (act=0x01 IPS, what this panel used before) does NOT reach the live voice --
+    // moving the app's fader visibly updates the synth's own edit-menu display and (per the
+    // owner) DOES persist if the tone is saved and reloaded, but produces no audible change while
+    // editing. The synth's own 9 physical drawbar knobs are wired to a completely different,
+    // channel-voice NRPN path (022_XWOrgan.lua's g_orgModMidi["orgTW"] table, sent via sendNRNP,
+    // 014_globalFunctions.lua:345) -- so Position writes now go out that way instead, matching
+    // the owner's own suggestion ("point at those [hardware fader] parameters instead"). Reads
+    // (Sync) still use the SysEx path below (unchanged) -- NRPN/CC are one-way performance
+    // messages on this synth, there is no "read back the current NRPN value" mechanism, so the
+    // edit-buffer register remains the only way to populate the fader from the current patch.
+    // Whether that read correctly maps each of the 9 addresses to the right physical bar is a
+    // SEPARATE, still-open question (see .wolf/cerebrum.md addendum 30) -- this fixes the WRITE
+    // side only.
+    constexpr int kOrganMidiChannel = 1;    // "Organ is always zone 1" -- 022_XWOrgan.lua:132
+    constexpr int kDrawbarNrpnMsb = 0x40;   // g_orgModMidi["orgTW"].orgMSBid -- 011_initTables.lua:523
+
+    void sendDrawbarNrpn (casioxw::MidiIO& midiIO, int drawbarIndex0to8, int uiValue0to8)
+    {
+        // NRPN-specific 'db' encoder (011_initTables.lua:71, g_xwModCalc["nrpn"].db) -- NOT the
+        // same as the unused V2SX 'db' entry (011_initTables.lua:44); the NRPN one scales by 15
+        // to spread the UI's 0-8 range across more of the CC's 0-127 resolution. Both invert
+        // (louder UI value -> smaller wire value), matching the physical drawbar's own logic.
+        const int vmsb = juce::jlimit (0, 127, (8 - uiValue0to8) * 15);
+        midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x63, kDrawbarNrpnMsb));
+        midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x62, drawbarIndex0to8));
+        midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x06, vmsb));
+    }
+
     // Bold label + separator between the block's groups — same visual language as
     // SoloSynthPanel/PCMEnginePanel's own GroupHeader, kept as a small local duplicate rather
     // than a shared header (see PCMEnginePanel.cpp for the same reasoning: not worth coupling
@@ -154,7 +183,14 @@ void OrganPanel::buildParamControls()
                     auto ctrl = std::make_unique<ParamControl> (model, *p, instance,
                                                                  ParamControl::RenderMode::VerticalFader,
                                                                  caption, true);
-                    wireControl (*ctrl);
+                    // NOT wireControl() -- drawbar writes go out via the live NRPN performance
+                    // path (sendDrawbarNrpn), not the SysEx edit-buffer write every other control
+                    // uses. See sendDrawbarNrpn's comment for why.
+                    const int drawbarIndex0to8 = instance - 1;
+                    ctrl->onValueChanged = [this, drawbarIndex0to8] (int value)
+                    {
+                        sendDrawbarNrpn (midiIO, drawbarIndex0to8, value);
+                    };
                     paramContainer.addAndMakeVisible (*ctrl);
                     faderPtrs.push_back (ctrl.get());
                     controls.push_back (std::move (ctrl));

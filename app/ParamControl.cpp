@@ -56,6 +56,42 @@ namespace
         {
             return juce::Slider::proportionOfLengthToValue (1.0 - proportion);
         }
+
+        // Stock LookAndFeel_V4::drawLinearSlider always fills the coloured "value track" from
+        // the BOTTOM up to the thumb — correct when the bottom end is the slider's own minimum
+        // (true for every other fader in this app), but backwards here: this slider puts the
+        // MAXIMUM at the bottom, so the stock fill made the loudest setting look nearly bare/grey
+        // (thumb sitting right at the fill's own bottom-anchored start) and the quietest setting
+        // look nearly fully coloured (owner: "when it is at 0 the slider should be grey, and when
+        // it is at 8/100% it should be blue -- opposite how it is now"). Overriding paint() keeps
+        // every other visual (background track, thumb, colours) identical to the stock
+        // LookAndFeel_V4 rendering (mirrored below) — only the fill's anchor moves from bottom to
+        // top, so the coloured portion now grows as the drawbar gets louder instead of as the
+        // thumb gets closer to the bottom pixel.
+        void paint (juce::Graphics& g) override
+        {
+            const auto trackBounds = getLookAndFeel().getSliderLayout (*this).sliderBounds.toFloat();
+            const float trackWidth = juce::jmin (6.0f, trackBounds.getWidth() * 0.25f);
+            const juce::Point<float> top    (trackBounds.getCentreX(), trackBounds.getY());
+            const juce::Point<float> bottom (trackBounds.getCentreX(), trackBounds.getBottom());
+            const juce::Point<float> thumb  (trackBounds.getCentreX(), getPositionOfValue (getValue()));
+
+            juce::Path background;
+            background.startNewSubPath (bottom);
+            background.lineTo (top);
+            g.setColour (findColour (juce::Slider::backgroundColourId));
+            g.strokePath (background, { trackWidth, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+
+            juce::Path valueTrack;
+            valueTrack.startNewSubPath (top);   // anchor at the TOP (the quiet/0 end), not bottom
+            valueTrack.lineTo (thumb);
+            g.setColour (findColour (juce::Slider::trackColourId));
+            g.strokePath (valueTrack, { trackWidth, juce::PathStrokeType::curved, juce::PathStrokeType::rounded });
+
+            const float thumbWidth = getLookAndFeel().getSliderThumbRadius (*this);
+            g.setColour (findColour (juce::Slider::thumbColourId));
+            g.fillEllipse (juce::Rectangle<float> (thumbWidth, thumbWidth).withCentre (thumb));
+        }
     };
 }
 
