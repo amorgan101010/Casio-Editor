@@ -588,6 +588,27 @@ void ArrangerPanel::resetCurrentRuntimeToBase()
             sendParamNow (lp.paramId, lp.instance, lp.baseValue);
 }
 
+void ArrangerPanel::queueDiffEstablish (juce::MidiBuffer& buffer, const casioxw::Sequence& seq,
+                                       int stepIndex, double timeMs)
+{
+    const int samplePos = (int) std::llround (timeMs);
+    for (const auto& lp : seq.lockable)
+    {
+        const auto value = casioxw::effectiveParamValue (seq, stepIndex, lp.paramId, lp.instance);
+        if (! value.has_value())
+            continue;
+
+        const auto key = lp.paramId + "#" + juce::String (lp.instance);
+        const auto it = lastAppliedParams.find (key);
+        if (it != lastAppliedParams.end() && it->second == *value)
+            continue;   // device already believed to hold this value -- nothing to send
+
+        for (const auto& m : paramMessages (lp.paramId, lp.instance, *value))
+            buffer.addEvent (m, samplePos);
+        lastAppliedParams[key] = *value;
+    }
+}
+
 void ArrangerPanel::play()
 {
     if (playing)
@@ -607,6 +628,8 @@ void ArrangerPanel::play()
     currentPosition = { 0, 0, {} };
     runtimeLoadedForRow = -1;
     lastHighlightedRow = -1;
+    lastAppliedParams.clear();   // device's actual state is unknown at song start, same reasoning
+                                // as prevStepIndex's kPrevStepFresh below
 
     // Parse every row's file(s) ONCE, here, before the real-time clock starts -- disk I/O + JSON
     // parsing is fine as a one-time pause on Play, but doing it from inside the feeder at every row
@@ -702,21 +725,23 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
             // Row boundary: swap in the new row's ALREADY-parsed runtime (preloadedRuntimes, built
             // once in play() -- never disk I/O/JSON parsing from inside this real-time feeder loop,
             // which used to stall the message thread long enough to cause audible lateness).
-            //
-            // Deliberately NOT resetting the old row's lockable params to base here (owner's call,
-            // for now): even queued through the non-blocking scheduled path, sending a whole
-            // lockable list's worth of param messages at every row transition was still enough
-            // traffic to cause audible lag switching rows, worse the larger the previous row's
-            // engine's lockable set was (e.g. Hex Layer's ~90 params) and worse still with loop
-            // lines bouncing between rows repeatedly. The new row's OWN lockable params still fully
-            // re-establish correctly regardless (prevStepIndex is reset to kPrevStepFresh below,
-            // which forces scheduleStep() to emit every one of ITS lockable params on its first
-            // step) -- the only gap this leaves is a param the OLD row locked away from base that
-            // the NEW row doesn't itself touch, which can be left sitting at the old row's value
-            // rather than snapping back to base. Revisit if that's audible in practice.
             currentRuntime = preloadedRuntimes[(size_t) currentPosition.row];
             runtimeLoadedForRow = currentPosition.row;
-            prevStepIndex = casioxw::kPrevStepFresh;   // unknown device state relative to the new lane set
+
+            // Establish the new row's lockable params via a DIFF against lastAppliedParams, not a
+            // full kPrevStepFresh dump -- unconditionally re-sending every lockable param (dozens
+            // for an engine like Hex Layer) at every row transition was exactly the "SysEx burst
+            // fired alongside the first notes" lurch SequencerPanel's own play() already documents
+            // avoiding, just recurring here instead of happening once. Same-engine/same-value rows
+            // send ~nothing; an actual change sends only what's needed -- no p-lock carryover left
+            // permanently stuck (the removed reset-to-base's gap), no silent wrong-tone risk from
+            // assuming the device sits at base (kPrevStepBaseline would be wrong here: nothing
+            // resets the device to base between rows any more).
+            if (currentRuntime.solo.has_value())
+                queueDiffEstablish (buffer, *currentRuntime.solo, nextStepIndex, nextStepStartMs);
+            prevStepIndex = nextStepIndex;   // suppress scheduleStep()'s OWN paramChange emission
+                                             // below (diffing a sequence against itself is always
+                                             // empty) -- queueDiffEstablish() already covered it
         }
 
         const auto& row = song.rows[(size_t) currentPosition.row];
@@ -761,6 +786,11 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
                     case casioxw::ScheduledEvent::Type::paramChange:
                         for (const auto& m : paramMessages (e.paramId, e.instance, e.value))
                             buffer.addEvent (m, samplePos);
+                        // Keep lastAppliedParams current for whatever a NORMAL (non-transition)
+                        // p-lock/base change just sent, so a later row transition's diff (see
+                        // queueDiffEstablish()) compares against the device's real current value,
+                        // not a stale one from the last row boundary.
+                        lastAppliedParams[e.paramId + "#" + juce::String (e.instance)] = e.value;
                         break;
                 }
             }

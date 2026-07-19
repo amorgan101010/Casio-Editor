@@ -11,6 +11,7 @@
 
 #include <array>
 #include <functional>
+#include <map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -142,6 +143,17 @@ private:
     void timerCallback() override;
     void feedLookahead (double lookaheadMs);
     void resetCurrentRuntimeToBase();
+
+    /** Queues only the lockable params whose effective value at `stepIndex` actually differs from
+        `lastAppliedParams` (the last value this engine believes is on the device), instead of a
+        full kPrevStepFresh-style dump of every lockable param -- that dump is exactly the "SysEx
+        burst fired alongside the first notes" lurch SequencerPanel's own play() already had to
+        avoid (see its kPrevStepBaseline comment), just recurring at every row transition here
+        instead of once at song start. Updates lastAppliedParams for whatever it sends. Called at
+        every row transition (never mid-row -- normal per-step p-locks go through scheduleStep()'s
+        own dedup, which also updates lastAppliedParams, in feedLookahead()). */
+    void queueDiffEstablish (juce::MidiBuffer& buffer, const casioxw::Sequence& seq, int stepIndex, double timeMs);
+
     std::vector<juce::MidiMessage> paramMessages (const juce::String& paramId, int instance, int value) const;
     void sendParamNow (const juce::String& paramId, int instance, int value);
 
@@ -191,6 +203,15 @@ private:
     // more/shorter rows (more boundaries hit during playback).
     std::vector<RowRuntime> preloadedRuntimes;
     int lastHighlightedRow = -1;   // paints only when the playing row actually changes, not every tick
+
+    // What this engine believes is currently on the device for each lockable param, keyed
+    // "paramId#instance" (matching SequencerPanel::outstandingBaseSync's key convention). Updated
+    // every time a paramChange is actually scheduled (see feedLookahead()/queueDiffEstablish()) so
+    // a row transition can send only what changed instead of a full re-establish burst. Cleared at
+    // play() -- the device's actual state is unknown at song start, same reasoning as
+    // prevStepIndex's kPrevStepFresh there.
+    std::map<juce::String, int> lastAppliedParams;
+
     double transportStartMs = 0.0;
     double nextStepStartMs  = 0.0;
     int    nextStepIndex    = 0;
