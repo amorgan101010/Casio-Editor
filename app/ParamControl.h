@@ -58,9 +58,16 @@ public:
                           side by side (e.g. the Drawbar Organ's 9 "Position" faders, one per
                           foot length), where the param name alone can't tell them apart the way
                           SoloSynthPanel's one-instance-at-a-time nav can. Empty (default)
-                          preserves every existing call site's behaviour unchanged. */
+                          preserves every existing call site's behaviour unchanged.
+        @param invertVerticalFader  only meaningful when mode == VerticalFader: when true, the
+                          bottom of the fader's travel is range.max and the top is range.min
+                          (the physical-drawbar convention — pulled all the way down/out = loudest
+                          — rather than a mixing-console fader's usual up-is-more). Value
+                          semantics (getValue()/onValueChanged/setValueFromSync) are completely
+                          unaffected — only the visual thumb position flips. Ignored otherwise. */
     ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& info, int instance,
-                  RenderMode mode = RenderMode::Default, juce::String labelOverride = {});
+                  RenderMode mode = RenderMode::Default, juce::String labelOverride = {},
+                  bool invertVerticalFader = false);
 
     const juce::String& paramId() const noexcept { return info.id; }
     int instanceNumber() const noexcept { return instance; }

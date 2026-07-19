@@ -152,7 +152,7 @@ OVR = {
 # core/include/casioxw/ParamModel.h (isEnvelopeGroup() was deleted; no group is
 # ever named "X Envelope" any more).
 # ---------------------------------------------------------------------------
-GROUP_ORDER = ["Drawbars", "Percussion", "Click", "General", "Pitch", "Filter", "Amp", "PWM",
+GROUP_ORDER = ["Drawbars", "Percussion", "General", "Pitch", "Filter", "Amp", "PWM",
                "External Input", "External Trigger", "Pitch Shifter", "LFO",
                "Envelope", "Vibrato"]
 
@@ -444,12 +444,24 @@ ORGAN_PARAMS = [
     ("organPosition",      "Drawbar Position",      0x00, "nf", (0, 8),   0,   "Drawbars",   "slider", None),
     ("organPercussion",    "Percussion",            0x01, "nf", (0, 3),   0,   "Percussion", "combo",  "organPercussionMode"),
     ("organPercDecayTime", "Percussion Decay Time", 0x02, "nf", (0, 127), 0,   "Percussion", "slider", None),
-    ("organKeyonClick",    "Key-On Click",          0x03, "nf", (0, 1),   0,   "Click",      "toggle", None),
-    ("organKeyoffClick",   "Key-Off Click",         0x04, "nf", (0, 1),   0,   "Click",      "toggle", None),
-    ("organType",          "Type",                  0x05, "nf", (0, 1),   0,   "General",    "combo",  "organType"),
+    ("organKeyonClick",    "Key-On Click",          0x03, "nf", (0, 1),   0,   "Percussion", "toggle", None),
+    ("organKeyoffClick",   "Key-Off Click",         0x04, "nf", (0, 1),   0,   "Percussion", "toggle", None),
+    # OWNER-VERIFIED ON HARDWARE 2026-07-18: this is a rotary-speaker/vibrato character switch
+    # (Sine vs Vintage), not a general organ-type selector, and belongs with the Vibrato group --
+    # the manual's own "Type"/section-25 placement was misleading here (see the note below).
+    ("organRotaryType",    "Rotary Type",           0x05, "nf", (0, 1),   0,   "Vibrato",    "combo",  "organRotaryType"),
     ("organVibratoRate",   "Vibrato Rate",          0x06, "nf", (0, 127), 0,   "Vibrato",    "slider", None),
     ("organVibratoDepth",  "Vibrato Depth",         0x07, "nf", (0, 127), 0,   "Vibrato",    "slider", None),
 ]
+
+ORGAN_ROTARY_TYPE_NOTE = (
+    "OWNER-VERIFIED ON HARDWARE 2026-07-18: the manual's section 25 calls this 'Type' with values "
+    "'Normal'/'Vintage' and groups it as a general organ parameter, but on the real XW-P1 it is a "
+    "rotary-speaker/vibrato character switch (values Sine/Vintage), grouped with Vibrato -- "
+    "renamed organType -> organRotaryType and moved out of General accordingly. Address (ct=0x07, "
+    "id=0x05) and encoding (nf, 0-1) were already correct; only the manual's own name/grouping/enum "
+    "labels were wrong."
+)
 
 ORGAN_POSITION_NOTE = (
     "HARDWARE-UNVERIFIED (owner chose to ship flagged rather than probe live hardware first, "
@@ -491,6 +503,8 @@ def build_organ_params():
             entry["ui"]["enum"] = enum
         if is_position:
             entry["note"] = ORGAN_POSITION_NOTE
+        if pid == "organRotaryType":
+            entry["note"] = ORGAN_ROTARY_TYPE_NOTE
         out.append(entry)
     return out
 
@@ -548,8 +562,10 @@ enums = {
     # (orgTWperc2/orgTWperc3) into the one enum column the manual's SysEx table documents.
     "organPercussionMode": [{"value":0,"label":"Off"},{"value":1,"label":"2nd"},
                               {"value":2,"label":"3rd"},{"value":3,"label":"2nd + 3rd"}],
-    # Drawbar Organ Type (midi-spec.md section 5.6): 0=Normal/1=Vintage.
-    "organType": [{"value":0,"label":"Normal"},{"value":1,"label":"Vintage"}],
+    # Drawbar Organ Rotary Type -- OWNER-VERIFIED ON HARDWARE 2026-07-18: a rotary-speaker/vibrato
+    # character switch, values Sine/Vintage (NOT "Normal"/"Vintage" as the manual's section 25
+    # table names it -- see organRotaryType's own note).
+    "organRotaryType": [{"value":0,"label":"Sine"},{"value":1,"label":"Vintage"}],
 }
 
 # ---------------------------------------------------------------------------

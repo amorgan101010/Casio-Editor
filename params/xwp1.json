@@ -10261,10 +10261,10 @@
         "label": "2nd + 3rd"
       }
     ],
-    "organType": [
+    "organRotaryType": [
       {
         "value": 0,
-        "label": "Normal"
+        "label": "Sine"
       },
       {
         "value": 1,
@@ -10275,7 +10275,6 @@
   "groupOrder": [
     "Drawbars",
     "Percussion",
-    "Click",
     "General",
     "Pitch",
     "Filter",
@@ -14113,7 +14112,7 @@
           "id": "organKeyonClick",
           "name": "Key-On Click",
           "block": "DrawbarOrgan",
-          "group": "Click",
+          "group": "Percussion",
           "address": {
             "ct": 7,
             "id": 3,
@@ -14144,7 +14143,7 @@
           "id": "organKeyoffClick",
           "name": "Key-Off Click",
           "block": "DrawbarOrgan",
-          "group": "Click",
+          "group": "Percussion",
           "address": {
             "ct": 7,
             "id": 4,
@@ -14172,10 +14171,10 @@
           }
         },
         {
-          "id": "organType",
-          "name": "Type",
+          "id": "organRotaryType",
+          "name": "Rotary Type",
           "block": "DrawbarOrgan",
-          "group": "General",
+          "group": "Vibrato",
           "address": {
             "ct": 7,
             "id": 5,
@@ -14191,7 +14190,7 @@
           "unit": "",
           "ui": {
             "control": "combo",
-            "enum": "organType"
+            "enum": "organRotaryType"
           },
           "instances": {
             "count": 1,
@@ -14201,7 +14200,8 @@
             "labels": [
               "Organ"
             ]
-          }
+          },
+          "note": "OWNER-VERIFIED ON HARDWARE 2026-07-18: the manual's section 25 calls this 'Type' with values 'Normal'/'Vintage' and groups it as a general organ parameter, but on the real XW-P1 it is a rotary-speaker/vibrato character switch (values Sine/Vintage), grouped with Vibrato -- renamed organType -> organRotaryType and moved out of General accordingly. Address (ct=0x07, id=0x05) and encoding (nf, 0-1) were already correct; only the manual's own name/grouping/enum labels were wrong."
         },
         {
           "id": "organVibratoRate",

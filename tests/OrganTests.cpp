@@ -25,7 +25,7 @@ TEST_CASE ("ParamModel: drawbarOrgan section carries all 8 manual-sourced params
     const auto model = loadModel();
 
     for (const char* id : { "organPosition", "organPercussion", "organPercDecayTime",
-                             "organKeyonClick", "organKeyoffClick", "organType",
+                             "organKeyonClick", "organKeyoffClick", "organRotaryType",
                              "organVibratoRate", "organVibratoDepth" })
     {
         INFO ("id=" << id);
@@ -75,7 +75,7 @@ TEST_CASE ("ParamModel: organPercussion is a 4-value combo (Off/2nd/3rd/2nd+3rd)
     CHECK ((*entries)[3].label == "2nd + 3rd");
 }
 
-TEST_CASE ("ParamModel: organKeyonClick/organKeyoffClick are toggles", "[parammodel][drawbarOrgan]")
+TEST_CASE ("ParamModel: organKeyonClick/organKeyoffClick are toggles grouped with Percussion", "[parammodel][drawbarOrgan]")
 {
     const auto model = loadModel();
     for (const char* id : { "organKeyonClick", "organKeyoffClick" })
@@ -86,7 +86,35 @@ TEST_CASE ("ParamModel: organKeyonClick/organKeyoffClick are toggles", "[parammo
         CHECK (p->range.min == 0);
         CHECK (p->range.max == 1);
         CHECK (casioxw::decideControlKind (*p, 1) == casioxw::ControlKind::Toggle);
+        // Owner feedback 2026-07-18: Percussion and Click should be one group, not two.
+        CHECK (p->group == "Percussion");
     }
+}
+
+TEST_CASE ("ParamModel: organRotaryType is a Sine/Vintage combo grouped with Vibrato", "[parammodel][drawbarOrgan]")
+{
+    // Owner-verified on hardware 2026-07-18: the manual calls this "Type" (Normal/Vintage) and
+    // groups it as general, but it's actually a rotary-speaker/vibrato character switch
+    // (Sine/Vintage) -- renamed organType -> organRotaryType and moved to Vibrato accordingly.
+    const auto model = loadModel();
+    const auto* p = model.find ("organRotaryType");
+    REQUIRE (p != nullptr);
+
+    CHECK (p->vt == "nf");
+    CHECK (p->range.min == 0);
+    CHECK (p->range.max == 1);
+    CHECK (p->ui.control == "combo");
+    CHECK (p->group == "Vibrato");
+
+    using casioxw::ControlKind;
+    CHECK (casioxw::decideControlKind (*p, 1) == ControlKind::ComboEnum);
+    CHECK (casioxw::resolveEnumName (*p, 1) == "organRotaryType");
+
+    const auto* entries = model.enumValues ("organRotaryType");
+    REQUIRE (entries != nullptr);
+    REQUIRE (entries->size() == 2);
+    CHECK ((*entries)[0].label == "Sine");
+    CHECK ((*entries)[1].label == "Vintage");
 }
 
 TEST_CASE ("ParamModel: organVibratoRate/Depth are plain 0..127 faders", "[parammodel][drawbarOrgan]")

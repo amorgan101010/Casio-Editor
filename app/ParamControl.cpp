@@ -35,10 +35,32 @@ namespace
             s << " (" << info.unit << ")";
         return s;
     }
+
+    // juce::Slider's stock LinearVertical always maps min->bottom/max->top (the mixing-console
+    // "up is more" convention). The Drawbar Organ's Position fader needs the opposite (owner
+    // feedback: physical drawbars are pulled DOWN/out for more volume) — juce::Slider exposes
+    // exactly this customization point as two overridable virtuals; overriding them flips only
+    // the visual thumb position, value semantics (getValue()/setValue()/onValueChange) are
+    // untouched, so nothing else in ParamControl needs to know the difference.
+    class InvertedVerticalSlider : public juce::Slider
+    {
+    public:
+        using juce::Slider::Slider;
+
+        double valueToProportionOfLength (double value) override
+        {
+            return 1.0 - juce::Slider::valueToProportionOfLength (value);
+        }
+
+        double proportionOfLengthToValue (double proportion) override
+        {
+            return juce::Slider::proportionOfLengthToValue (1.0 - proportion);
+        }
+    };
 }
 
 ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& infoIn, int instanceIn,
-                             RenderMode modeIn, juce::String labelOverride)
+                             RenderMode modeIn, juce::String labelOverride, bool invertVerticalFader)
     : info (infoIn), instance (instanceIn), kind (casioxw::decideControlKind (info, instance)),
       mode (kind == ControlKind::Slider ? modeIn : RenderMode::Default)
 {
@@ -123,7 +145,10 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
                                     : faderMode ? juce::Slider::LinearVertical
                                                 : juce::Slider::LinearHorizontal;
             const auto textBoxPos = compact ? juce::Slider::TextBoxBelow : juce::Slider::TextBoxRight;
-            slider = std::make_unique<juce::Slider> (sliderStyle, textBoxPos);
+            if (faderMode && invertVerticalFader)
+                slider = std::make_unique<InvertedVerticalSlider> (sliderStyle, textBoxPos);
+            else
+                slider = std::make_unique<juce::Slider> (sliderStyle, textBoxPos);
             slider->setRange ((double) info.range.min, (double) info.range.max, 1.0);
             slider->onValueChange = [this] { notify ((int) slider->getValue()); };
             if (compact)

@@ -148,9 +148,12 @@ void OrganPanel::buildParamControls()
                 {
                     const juce::String caption = (instance - 1) < p->instanceLabels.size()
                         ? p->instanceLabels[instance - 1] : juce::String (instance);
+                    // invertVerticalFader=true: owner feedback (2026-07-18) -- physical drawbars
+                    // are pulled DOWN/out for more volume, the opposite of a mixing-console
+                    // fader's usual up-is-more convention.
                     auto ctrl = std::make_unique<ParamControl> (model, *p, instance,
                                                                  ParamControl::RenderMode::VerticalFader,
-                                                                 caption);
+                                                                 caption, true);
                     wireControl (*ctrl);
                     paramContainer.addAndMakeVisible (*ctrl);
                     faderPtrs.push_back (ctrl.get());

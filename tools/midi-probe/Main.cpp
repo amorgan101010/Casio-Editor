@@ -5,6 +5,7 @@
 // Usage:
 //   midi-probe get <paramId> <instance>
 //   midi-probe set <paramId> <instance> <value>
+//   midi-probe organ-drawbar-test <instance 1-9>   (GET/SET/GET round-trip diagnostic)
 
 #include <casioxw/MidiIO.h>
 #include <casioxw/ParamModel.h>
@@ -14,6 +15,7 @@
 
 #include <chrono>
 #include <cstdio>
+#include <optional>
 #include <thread>
 
 namespace
@@ -25,20 +27,62 @@ namespace
             s << juce::String::toHexString ((int) byte).paddedLeft ('0', 2) << " ";
         return s.trim();
     }
+
+    // Sends a get-request for (paramId, instance) and polls the receive queue briefly for the
+    // matching reply. Returns nullopt if nothing matching arrived within the timeout. Shared by
+    // "get" (which prints every reply frame, matching or not) and the drawbar round-trip test
+    // (which only cares about this one param/instance's value).
+    std::optional<int> getValue (casioxw::MidiIO& io, const casioxw::SysExCodec& codec,
+                                  const juce::String& paramId, int instance,
+                                  int timeoutMs = 500)
+    {
+        io.sendFrame (casioxw::MidiIO::syncRequest (codec, paramId, instance));
+        for (int waited = 0; waited < timeoutMs; waited += 25)
+        {
+            std::this_thread::sleep_for (std::chrono::milliseconds (25));
+            for (auto& frame : io.drainReceived())
+            {
+                auto d = codec.decode (frame);
+                if (d.ok && ! d.ambiguous && d.paramId == paramId && d.instance == instance)
+                    return d.value;
+            }
+        }
+        return std::nullopt;
+    }
 }
 
 int main (int argc, char* argv[])
 {
-    if (argc < 4)
+    if (argc < 2)
     {
         std::fprintf (stderr, "usage: midi-probe get <paramId> <instance>\n"
-                               "       midi-probe set <paramId> <instance> <value>\n");
+                               "       midi-probe set <paramId> <instance> <value>\n"
+                               "       midi-probe organ-drawbar-test <instance 1-9>\n");
+        return 1;
+    }
+    const juce::String mode = argv[1];
+
+    // Every mode except organ-drawbar-test (which only takes an instance number in argv[2])
+    // expects at least argv[2]/argv[3] the same way it always has -- scan/setraw below dereference
+    // them unchecked, relying on this gate.
+    if (mode == "organ-drawbar-test")
+    {
+        if (argc < 3)
+        {
+            std::fprintf (stderr, "organ-drawbar-test requires: <instance 1-9>\n");
+            return 1;
+        }
+    }
+    else if (argc < 4)
+    {
+        std::fprintf (stderr, "usage: midi-probe get <paramId> <instance>\n"
+                               "       midi-probe set <paramId> <instance> <value>\n"
+                               "       midi-probe organ-drawbar-test <instance 1-9>\n");
         return 1;
     }
 
-    const juce::String mode = argv[1];
-    const juce::String paramId = argv[2];
-    const int instance = juce::String (argv[3]).getIntValue();
+    const juce::String paramId = argc > 2 ? juce::String (argv[2]) : juce::String();
+    const int instance = argc > 3 ? juce::String (argv[3]).getIntValue() : 0;
 
     const auto jsonPath = juce::File::getCurrentWorkingDirectory().getChildFile ("params/xwp1.json");
     if (! jsonPath.existsAsFile())
@@ -176,6 +220,77 @@ int main (int argc, char* argv[])
         return 0;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected get|set|scan)\n", mode.toRawUTF8());
+    if (mode == "organ-drawbar-test")
+    {
+        // organ-drawbar-test <instance 1-9>
+        //
+        // Diagnoses the "drawbar SET does nothing" report: the owner confirmed sync/GET already
+        // reflects the real patch's per-bar values correctly (organPosition's address/decode is
+        // trusted), but moving the panel's fader has no audible/visible effect on the synth. This
+        // does a GET/SET/GET round-trip on the target bar (does our own SET actually change what
+        // GET reads back?) plus the SAME check on a second bar (did the write land somewhere
+        // else / alias onto a different bar instead of doing nothing at all?).
+        //
+        // This only tells you whether OUR frame changes what OUR reads see -- it can't confirm
+        // the drawbar audibly/visibly changed on the real hardware. Watch the synth's screen
+        // and/or listen while this runs, and read both together.
+        //
+        // NOTE: this mode's one argument (the drawbar number) lands in argv[2], not argv[3] --
+        // it takes only ONE arg after the mode name, unlike get/set's <paramId> <instance> shape
+        // that the shared `paramId`/`instance` locals above are parsed for. Use `paramId` (the
+        // raw argv[2] string) here, not `instance` (which reads argv[3] and would silently be 0).
+        const int drawbar = paramId.getIntValue();
+        if (drawbar < 1 || drawbar > 9)
+        {
+            std::fprintf (stderr, "instance must be 1-9 (drawbar: 1=16' .. 9=1')\n");
+            return 1;
+        }
+        const int otherInstance = (drawbar == 1) ? 2 : 1;
+
+        const auto before = getValue (io, codec, "organPosition", drawbar);
+        if (! before.has_value())
+        {
+            std::printf ("No reply reading organPosition[%d] baseline -- is a Drawbar Organ tone "
+                          "loaded on the synth? Aborting.\n", drawbar);
+            return 1;
+        }
+        const auto otherBefore = getValue (io, codec, "organPosition", otherInstance);
+
+        const int testValue = (*before == 0) ? 8 : 0;
+        std::printf ("Baseline: organPosition[%d] = %d (other bar %d = %s)\n",
+                     drawbar, *before, otherInstance,
+                     otherBefore.has_value() ? juce::String (*otherBefore).toRawUTF8() : "no reply");
+        std::printf ("Setting organPosition[%d] = %d ...\n", drawbar, testValue);
+
+        const auto frame = codec.encode ("organPosition", drawbar, testValue);
+        std::printf ("Frame: %s\n", hex (frame).toRawUTF8());
+        io.sendFrame (frame);
+        std::this_thread::sleep_for (std::chrono::milliseconds (150));
+
+        const auto after = getValue (io, codec, "organPosition", drawbar);
+        const auto otherAfter = getValue (io, codec, "organPosition", otherInstance);
+
+        std::printf ("Read back: organPosition[%d] = %s (other bar %d = %s)\n",
+                     drawbar, after.has_value() ? juce::String (*after).toRawUTF8() : "no reply",
+                     otherInstance,
+                     otherAfter.has_value() ? juce::String (*otherAfter).toRawUTF8() : "no reply");
+
+        if (after.has_value() && *after == testValue)
+            std::printf ("PASS: the SET took effect on bar %d's own readback.\n", drawbar);
+        else
+            std::printf ("FAIL: bar %d's readback did not change to %d -- the SET had no effect "
+                         "on this address (matches the reported symptom).\n", drawbar, testValue);
+
+        if (otherBefore.has_value() && otherAfter.has_value() && *otherBefore != *otherAfter)
+            std::printf ("NOTE: bar %d's value ALSO changed (%d -> %d) -- the write may be "
+                         "aliasing onto the wrong bar rather than doing nothing.\n",
+                         otherInstance, *otherBefore, *otherAfter);
+
+        std::printf ("\nNow check the synth itself: did bar %d actually move/sound different? "
+                     "Report both this printout and what you saw/heard.\n", drawbar);
+        return 0;
+    }
+
+    std::fprintf (stderr, "unknown mode '%s' (expected get|set|setraw|scan|organ-drawbar-test)\n", mode.toRawUTF8());
     return 1;
 }

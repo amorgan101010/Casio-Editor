@@ -24,7 +24,7 @@
     faders in a row -- the actual physical drawbar-organ metaphor, where every bar is visible and
     settable at once. Each fader's caption is the foot-length label ("16'", "8'", ...), not the
     repeated param name "Position" -- see ParamControl's labelOverride parameter, added for
-    exactly this case. Every other param (Percussion, Click, General, Vibrato) is a single
+    exactly this case. Every other param (Percussion, Vibrato) is a single
     always-one-instance ParamControl row, same shape as PCMEnginePanel.
 
     PROVENANCE / TRUST NOTE (read before treating this like soloSynth): drawbarOrgan's
