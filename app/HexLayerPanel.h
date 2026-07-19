@@ -17,10 +17,18 @@
     Two blocks, per the manual's own address layout: "Layer" (instanceCount=6, per-layer Pan/
     Pitch/Amp/Filter/Effects/Range offsets -- the block selector bit-range "2-0:Layer Number") and
     "Global" (instanceCount=1, Detune Number plus the entire LFO section -- one shared Pitch/Amp
-    LFO pair for all 6 layers, per the manual's fixed Block 00000000 for those params. Pitch Lock,
-    id 0x14, was hand-authored and shipped here too, then REMOVED 2026-07-19 after owner hardware
-    testing found no effect on pitch bend/transpose and no corresponding synth-menu setting -- see
-    gen_xwp1.py's HEXLAYER_GLOBAL_PARAMS comment).
+    LFO pair for all 6 layers, per the manual's fixed Block 00000000 for those params).
+
+    Pitch Lock (id 0x14, "Layer" block) was hand-authored and shipped as a Global/1-instance param,
+    REMOVED 2026-07-19 after owner hardware testing found no effect and no corresponding synth-menu
+    setting, then RE-ADDED the same day once the owner re-read the manual and found the real scope:
+    "Pitch Lock (Layers 2, 4, and 6 only)" -- turning it on for an even layer copies the odd
+    layer's pitch onto it (Layer2<-1, Layer4<-3, Layer6<-5). The original negative test is
+    consistent with the removed version targeting the wrong SCOPE (hex-layer-wide instead of
+    per-layer), not with the control not existing. It's declared with 6 instances like its Layer
+    siblings (address layout doesn't change), but rebuildParamControls() skips building its
+    ParamControl entirely when currentInstance is odd (1/3/5) -- there's nothing for those layers
+    to lock TO. See gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE for the still-open ai=2 address question.
     A block combo picks between them; an instance combo (Layer 1..6, hidden for Global) picks
     which layer is shown, the same "one instance at a time" navigation SoloSynthPanel's OSC block
     already established for a comparable instance count -- unlike the Drawbar Organ's 9
