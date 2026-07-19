@@ -76,6 +76,15 @@ private:
     SequencerPanel sequencerPanel;
     juce::TabbedComponent tabs { juce::TabbedButtonBar::TabsAtTop };
 
+    // No juce::TooltipWindow existed ANYWHERE in the app before this -- ParamControl.cpp's own
+    // nameLabel.setTooltip(label) call (compact/knob modes, for names truncated by wrapping) has
+    // been present and silently inert this whole time: a SettableTooltipClient's text is just
+    // stored data until some TooltipWindow is watching for mouse-hover to display it. One instance
+    // here (parented to this always-alive top-level component) now makes EVERY existing
+    // setTooltip() call in the app actually show something, not just HexLayerPanel::MiniKnob's new
+    // ones (owner request: "descriptive tooltips on hover for these shortened param names").
+    juce::TooltipWindow tooltipWindow { this };
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainContentComponent)
 };
 

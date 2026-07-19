@@ -6,6 +6,7 @@
 #include "casioxw/MidiIO.h"
 #include "casioxw/SysExCodec.h"
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <vector>
@@ -26,22 +27,28 @@
     layer's pitch onto it (Layer2<-1, Layer4<-3, Layer6<-5). The original negative test is
     consistent with the removed version targeting the wrong SCOPE (hex-layer-wide instead of
     per-layer), not with the control not existing. It's declared with 6 instances like its Layer
-    siblings (address layout doesn't change), but rebuildParamControls() skips building its
-    ParamControl entirely when currentInstance is odd (1/3/5) -- there's nothing for those layers
-    to lock TO. See gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE for the still-open ai=2 address question.
-    A block combo picks between them; an instance combo (Layer 1..6, hidden for Global) picks
-    which layer is shown, the same "one instance at a time" navigation SoloSynthPanel's OSC block
-    already established for a comparable instance count -- unlike the Drawbar Organ's 9
-    simultaneous drawbar faders, a hex layer's own params (envelope/amp/filter offsets) are edited
-    per-layer the way an oscillator is, not compared side-by-side the way drawbar registration is.
+    siblings (address layout doesn't change), but buildLayerGrid() skips building its ParamControl
+    entirely on odd layer cards (1/3/5) -- there's nothing for those layers to lock TO. See
+    gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE for the still-open ai=2 address question.
 
-    Deliberately lean: no group selector (every block here is small enough -- at most 16 params --
-    that group-at-a-time navigation isn't worth the friction, same call PCMEnginePanel/OrganPanel
-    made), no envelope graphic (no 9-stage envelope params in this section), no knob/fader grid
-    (no repeated-instance-of-one-param case the way Organ's drawbars are). Every group for the
-    current block renders as plain full-width ParamControl rows under a bold group header, exactly
-    PCMEnginePanel's shape, with a block/instance combo layered on top for the two-block/six-
-    instance navigation this section (unlike PCM's single flat block) actually needs.
+    REDESIGNED 2026-07-19 (owner brief + two follow-up passes): the "Layer" block used to be a
+    one-instance-at-a-time view (six pages behind an instance combo), the same per-layer paging
+    pain the physical synth has. It's now ONE continuous page, no block combo at all -- a 2-wide x
+    3-tall grid of LayerCard components (all 6 layers, paired 1&2/3&4/5&6 to match Pitch Lock's own
+    relationship) followed by a single full-width GlobalSection carrying the shared Pitch/Amp LFO
+    pair + Detune. See buildLayerGrid()/buildGlobalSection()/layoutContent()'s own comments for the
+    layout mechanics, and MiniKnob's doc comment for why the numeric params render on a bespoke
+    compact knob widget rather than ParamControl::RenderMode::Knob (that widget's fixed ~50px of
+    internal label/textbox overhead can't produce a legible dial at the cell size this layout
+    needs -- see MiniKnob's comment for the full reasoning and the sequencer-step-knob precedent it
+    matches instead).
+
+    On/Off + Pitch Lock share ONE row per card (left/right half each, Pitch Lock blank-but-same-
+    height on odd layers) so every card's header is identical height and the knob grids below line
+    up across all 6 cards. Wave stays a full-width ParamControl row (needs WavePicker, not a knob).
+    No per-card group headers (General/Amp/Filter/Effects/Range) -- all 6 cards repeat the
+    identical param set/order, so the layout is learned once rather than paying for 5 sub-headers
+    times 6 cards.
 
     PROVENANCE / TRUST NOTE (read before treating this like soloSynth): hexLayer's
     params/xwp1.json entries are hand-transcribed from XWP1_midi_EN.pdf section 26 (printed
@@ -59,8 +66,10 @@
 
     Reuses the shared casioxw::MidiIO connection opened from the Solo Synth tab -- like
     PCMEnginePanel/OrganPanel/SequencerPanel, this panel has no device combo/Connect button of its
-    own, only a status label and a Sync button. Every param is a data-driven ParamControl (see
-    ParamControl.h), matching the app's "no per-param hand-authored widget" convention. */
+    own, only a status label and a Sync button. Every param is data-driven (ParamControl for
+    toggle/combo, MiniKnob for numeric sliders), matching the app's "no per-param hand-authored
+    widget" convention -- MiniKnob is a second reusable renderer for a param, the same relationship
+    ParamPageDisplay::Cell already has to ParamControl elsewhere in this codebase. */
 class HexLayerPanel : public juce::Component,
                       private juce::Timer
 {
@@ -78,49 +87,42 @@ private:
     juce::Label statusLabel;
     juce::TextButton syncButton { "Sync" };
 
-    // ---- Block / instance navigation ----------------------------------------------------------
-    juce::Label blockLabel { {}, "Block:" };
-    juce::ComboBox blockCombo;
-    juce::Label instanceLabel { {}, "Layer:" };
-    juce::ComboBox instanceCombo;
-
-    juce::StringArray blockOrder;   // "Layer", "Global"
-    juce::String currentBlock;
-    int currentInstance = 1;
-
-    void buildBlockList();
-    void blockSelectionChanged();
-    void instanceSelectionChanged();
-
-    /** Re-run Sync automatically after a block/instance switch, matching PCMEnginePanel/
-        SoloSynthPanel's autoSyncIfConnected() pattern -- but only when both MIDI ends are open. */
-    void autoSyncIfConnected();
-
-    // ---- Param list -----------------------------------------------------------------------------
+    // ---- Param display --------------------------------------------------------------------------
+    // One continuous page, no block combo -- Layer's 6 instances (the LayerCard grid) and Global's
+    // 1 instance (GlobalSection) are both always visible, built once in the constructor and never
+    // rebuilt in response to any nav control (there isn't one any more).
     juce::Viewport paramViewport;
     juce::Component paramContainer;
+
+    // Toggle/combo params (On/Off, Pitch Lock, Wave, the 2 LFO Wave Type combos) -- these need
+    // ParamControl's real widgets (ToggleButton/WavePicker/ComboBox), not a knob.
     std::vector<std::unique_ptr<ParamControl>> controls;
-    std::vector<std::unique_ptr<juce::Component>> groupHeaders;
 
-    // Simple vertical stack -- no knob/fader grid, same as PCMEnginePanel (this section has no
-    // repeated-instance-of-one-param case; every row is full width).
-    struct Row
-    {
-        juce::Component* component = nullptr;
-        int height = 0;
-        int gapAfter = 0;
-    };
-    std::vector<Row> rows;
+    class MiniKnob;
+    // Every numeric slider param (90 across the 6 LayerCards + 13 in GlobalSection) -- see
+    // MiniKnob's own doc comment for why these are a bespoke widget rather than
+    // ParamControl::RenderMode::Knob.
+    std::vector<std::unique_ptr<MiniKnob>> miniKnobs;
 
-    /** Rebuilds `controls`/`rows` for (currentBlock, currentInstance). Called whenever either
-        changes. */
-    void rebuildParamControls();
+    class LayerCard;
+    std::vector<std::unique_ptr<LayerCard>> layerCards;   // 6 of them, instance order 1..6
 
-    int layoutRows (int width);          // assigns row bounds, returns total content height
-    void layoutParamContainerWidth();    // shared by rebuildParamControls() and resized()
+    class GlobalSection;
+    std::unique_ptr<GlobalSection> globalSection;
+
+    void buildParamControls();     // builds layerCards + globalSection + wires every control once
+    void buildLayerGrid();         // 6 LayerCards, all instances at once
+    void buildGlobalSection();     // the one shared-LFO/Detune section
+
+    /** Lays out layerCards as a 2-wide grid, then globalSection full-width beneath it. Returns
+        total content height (paramContainer is sized to this). */
+    int layoutContent (int width);
+    void layoutParamContainerWidth();    // shared by buildParamControls() and resized()
 
     // ---- Sync (poll-on-demand, juce::Timer -- never a busy loop; same pattern as PCMEnginePanel) --
-    std::map<juce::String, ParamControl*> outstandingSync;
+    // Value is a type-erased "push this synced value into the widget" callback rather than a
+    // ParamControl* directly, since a sync target may be either a ParamControl or a MiniKnob.
+    std::map<juce::String, std::function<void (int)>> outstandingSync;
     juce::uint32 syncStartedMs = 0;
 
     void syncButtonClicked();

@@ -1,59 +1,341 @@
 #include "HexLayerPanel.h"
 #include "EditorLookAndFeel.h"
 
+#include <map>
+
 namespace
 {
     constexpr int kMargin = 8;
     constexpr int kRowGap = 6;
     constexpr int kTopRowHeight = 28;
-    constexpr int kControlRowHeight = 28;
-    constexpr int kGroupHeaderHeight = 24;
-    constexpr int kInterGroupGap = 10;
-    constexpr juce::uint32 kSyncTimeoutMs = 3000;   // stop polling if replies stop arriving
+    // Layer-grid sync now fans out to ~90-103 params at once (previously just one layer's worth)
+    // -- widened from the original 3s so a full batch has room to reply before the panel gives up
+    // and reports a timeout. Still a guess pending an owner hardware pass (hexLayer's Sync path is
+    // itself unverified -- see the class doc's provenance note).
+    constexpr juce::uint32 kSyncTimeoutMs = 6000;
 
     constexpr const char* kSection = "hexLayer";
+    constexpr const char* kLayerBlock = "Layer";
+    constexpr const char* kGlobalBlock = "Global";
+    constexpr int kHexLayerInstanceCount = 6;
+
+    // Shared by LayerCard's knob grid and GlobalSection's knob row -- see MiniKnob's own doc
+    // comment for why this is much smaller than ParamControl::RenderMode::Knob's 100x110, and why
+    // it's not smaller still (matches the sequencer's own validated per-step knob floor).
+    constexpr int kMiniKnobWidth = 70;
+    constexpr int kMiniKnobHeight = 80;
+
+    constexpr int kInterSectionGap = 12;   // between the layer-card grid and GlobalSection
 
     juce::String syncKey (const juce::String& paramId, int instance)
     {
         return paramId + "#" + juce::String (instance);
     }
 
-    // Representative ParamInfo for a block: every param sharing a block shares the same
-    // instances.count/labels (Layer=6 "Layer 1".."Layer 6", Global=1 "Hex Layer") -- same
-    // "first param stands in for the block" convention SoloSynthPanel's firstParamInBlock() uses.
-    const casioxw::ParamInfo* firstParamInBlock (const casioxw::ParamModel& model, const juce::String& block)
+    // 3-4 char hardware-style captions for the numeric Layer/Global params -- same convention
+    // ParamPageDisplay::CellSpec::shortName already established for a compact knob cell.
+    juce::String shortNameFor (const juce::String& paramId)
     {
-        for (const auto& p : model.all())
-            if (p.section == kSection && p.block == block)
-                return &p;
-        return nullptr;
+        static const std::map<juce::String, juce::String> kNames = {
+            { "hexPanOffset", "PAN" }, { "hexPitchKey", "P.KEY" },
+            { "hexAmpAttackOfs", "ATK" }, { "hexAmpDecayOfs", "DCY" },
+            { "hexAmpSustainOfs", "SUS" }, { "hexAmpReleaseOfs", "REL" },
+            { "hexVolumeOfs", "VOL" }, { "hexCutoffOfs", "CUT" },
+            { "hexTouchSenseOfs", "TOUCH" }, { "hexReverbSendOfs", "REV" },
+            { "hexChorusSendOfs", "CHO" }, { "hexKeyRangeLow", "KEY.LO" },
+            { "hexKeyRangeHigh", "KEY.HI" }, { "hexVelRangeLow", "VEL.LO" },
+            { "hexVelRangeHigh", "VEL.HI" },
+            { "hexDetuneNumber", "DET" },
+            { "hexPitchLfoRate", "P.RATE" }, { "hexPitchAutoDelay", "P.DLY" },
+            { "hexPitchAutoRise", "P.RISE" }, { "hexPitchAutoDepth", "P.ADEP" },
+            { "hexPitchModDepth", "P.MDEP" }, { "hexPitchAfterDepth", "P.AFT" },
+            { "hexAmpLfoRate", "A.RATE" }, { "hexAmpAutoDelay", "A.DLY" },
+            { "hexAmpAutoRise", "A.RISE" }, { "hexAmpAutoDepth", "A.ADEP" },
+            { "hexAmpModDepth", "A.MDEP" }, { "hexAmpAfterDepth", "A.AFT" },
+        };
+        const auto it = kNames.find (paramId);
+        return it != kNames.end() ? it->second : paramId;
+    }
+}
+
+//==============================================================================
+/** A compact rotary-knob cell for one numeric Layer/Global param: a short 3-4 char caps label
+    painted above, a bare juce::Slider (RotaryHorizontalVerticalDrag, NoTextBox -- the value is
+    painted below instead of a live JUCE text box) in the middle.
+
+    Deliberately NOT ParamControl::RenderMode::Knob: that widget has ~50px of fixed internal
+    overhead (a 34px name-label strip + a 16px live text box, baked into ParamControl.cpp's own
+    resized(), which doesn't shrink with the cell) -- giving it a cell shorter than ~100px tall
+    starves the actual dial down to an unreadable size. Fitting 90 Layer knobs + 13 Global knobs
+    on one page inside the app's existing ~1490x962 window needs a much smaller cell, so MiniKnob
+    keeps only ~28px of painted label/value overhead (14px each) instead, leaving room for a dial
+    close to the SEQUENCER's own validated per-step knob size (SequencerPanel's note/gate/velocity
+    knobs render a ~52px dial in a 74px-tall cell -- see .wolf/cerebrum.md addendum 8, where that
+    size was deliberately ENLARGED from something smaller after an owner "tiny dots" complaint).
+    MiniKnob's dial matches that floor rather than inventing a smaller one.
+
+    Modeled structurally on ParamPageDisplay::Cell (the sequencer's own compact-knob-cell
+    precedent: painted label above, NoTextBox rotary, painted value below) but WITHOUT that
+    class's phosphor/glass colour overrides -- MiniKnob leaves the rotary's colours unset, so it
+    inherits the same standard orange-on-panelBg look EditorLookAndFeel::drawRotarySlider draws
+    for every other knob in the app. That's a deliberate, owner-confirmed choice (offered directly
+    against the sequencer's screen-cell look, picked "matches the rest of the editor's normal
+    control chrome") -- only Cell's SHAPE is reused here, not its palette.
+
+    Dumb like ParamControl: knows nothing about SysEx/MidiIO. The owning panel wires
+    onValueChanged to build+send an edit and calls setValueFromSync() to push a synced value in
+    without firing it.
+
+    The 3-4 char caption is necessarily terse (CUT, TS, VLO, ...) -- MiniKnob is a
+    juce::SettableTooltipClient carrying the param's real display name ("Cutoff Offset", "Velocity
+    Range Low", ...) as its tooltip, set on both itself AND the inner `knob` (a hover anywhere in
+    the cell, dial included, should resolve the abbreviation) -- owner feedback: "we need
+    descriptive tooltips on hover for these shortened param names". */
+class HexLayerPanel::MiniKnob : public juce::Component,
+                                public juce::SettableTooltipClient
+{
+public:
+    MiniKnob (juce::String paramIdIn, int instanceIn, int rangeMin, int rangeMax,
+              juce::String shortNameIn, const juce::String& fullNameIn)
+        : paramId (std::move (paramIdIn)), instance (instanceIn), shortName (std::move (shortNameIn))
+    {
+        setTooltip (fullNameIn);
+        knob.setTooltip (fullNameIn);
+        knob.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        knob.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        knob.setRange ((double) rangeMin, (double) rangeMax, 1.0);
+        knob.onValueChange = [this]
+        {
+            repaint();
+            if (onValueChanged != nullptr)
+                onValueChanged ((int) knob.getValue());
+        };
+        addAndMakeVisible (knob);
     }
 
-    // Bold label + separator between a block's groups -- same visual language as
-    // SoloSynthPanel/PCMEnginePanel's own GroupHeader, kept as a small local duplicate rather than
-    // a shared header (same rationale PCMEnginePanel's copy already gave: not worth coupling this
-    // deliberately-independent panel to another panel's translation unit for ~15 lines).
-    class GroupHeader : public juce::Component
+    const juce::String& getParamId() const noexcept { return paramId; }
+    int getInstance() const noexcept { return instance; }
+
+    /** Update the displayed value from a sync read-back WITHOUT firing onValueChanged -- same
+        guard ParamControl::setValueFromSync() provides. */
+    void setValueFromSync (int value)
     {
-    public:
-        explicit GroupHeader (juce::String text) : label (std::move (text)) {}
+        knob.setValue ((double) value, juce::dontSendNotification);
+        repaint();
+    }
 
-        void paint (juce::Graphics& g) override
+    std::function<void (int)> onValueChanged;
+
+    void paint (juce::Graphics& g) override
+    {
+        auto b = getLocalBounds();
+        g.setFont (EditorFonts::mono (10.0f, true));
+        g.setColour (EditorColours::textMuted);
+        g.drawFittedText (shortName, b.removeFromTop (14), juce::Justification::centred, 1);
+
+        g.setFont (EditorFonts::mono (11.5f));
+        g.setColour (EditorColours::textPrimary);
+        g.drawFittedText (juce::String ((int) knob.getValue()), b.removeFromBottom (14), juce::Justification::centred, 1);
+    }
+
+    void resized() override
+    {
+        auto b = getLocalBounds();
+        b.removeFromTop (14);
+        b.removeFromBottom (14);
+        knob.setBounds (b.reduced (1));
+    }
+
+private:
+    juce::String paramId;
+    int instance;
+    juce::String shortName;
+    juce::Slider knob;
+};
+
+//==============================================================================
+/** One hex layer's card in the 2-wide x 3-tall grid: a bold "LAYER N" title, then On/Off + Pitch
+    Lock sharing ONE row (left/right half each -- Pitch Lock is blank on odd layers, but the row
+    is always there, so every card's header is the same height and the knob grids below line up
+    across all 6 cards), then a full-width Wave row, then every other Layer param as a MiniKnob
+    tiled in a grid. Purely a layout shell -- it neither owns nor constructs its child controls
+    (HexLayerPanel::controls/miniKnobs do), just parents + positions the ones handed to it via
+    setRows(). */
+class HexLayerPanel::LayerCard : public juce::Component
+{
+public:
+    // kKnobCols=10 fits the 15 numeric Layer params in 2 rows (10+5) at a card width that pairs
+    // 2-per-row inside the app's existing ~1490px window -- see HexLayerPanel::layoutContent().
+    static constexpr int kKnobCols = 10;
+    static constexpr int kPad = 10;
+    static constexpr int kTitleHeight = 20;
+    static constexpr int kRowGapV = 2;
+
+    explicit LayerCard (juce::String titleIn) : title (std::move (titleIn)) {}
+
+    /** onoff/wave are always present; lock is nullptr on odd layers (Pitch Lock only exists on
+        Layers 2/4/6 -- see the class doc's provenance note). Takes ownership of nothing -- every
+        pointer here is owned by HexLayerPanel and must outlive this card. */
+    void setRows (ParamControl* onoffIn, ParamControl* waveIn, ParamControl* lockIn,
+                  std::vector<MiniKnob*> knobsIn)
+    {
+        onoff = onoffIn;
+        wave = waveIn;
+        lock = lockIn;
+        knobs = std::move (knobsIn);
+
+        addAndMakeVisible (onoff);
+        addAndMakeVisible (wave);
+        if (lock != nullptr)
+            addAndMakeVisible (lock);
+        for (auto* k : knobs)
+            addAndMakeVisible (k);
+    }
+
+    /** Total height this card needs at its fixed content width -- used by HexLayerPanel to pick
+        one uniform grid-cell height. Identical for every card (the On/Off + Pitch Lock row is
+        always present, just half-empty on odd layers), which is the whole point of combining them
+        onto one row -- knob grids line up across all 6 cards. */
+    int contentHeight() const
+    {
+        const int knobRows = knobs.empty() ? 0 : (((int) knobs.size() + kKnobCols - 1) / kKnobCols);
+        int h = kPad + kTitleHeight;
+        h += onoff->getHeight() + kRowGapV;             // On/Off + Pitch Lock, shared row
+        if (wave != nullptr) h += wave->getHeight() + kRowGapV;
+        h += knobRows * kMiniKnobHeight;
+        h += kPad;
+        return h;
+    }
+
+    static int contentWidth() { return kPad * 2 + kKnobCols * kMiniKnobWidth; }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto card = getLocalBounds().toFloat().reduced (1.0f);
+        g.setColour (EditorColours::panelBg);
+        g.fillRoundedRectangle (card, 5.0f);
+        g.setColour (EditorColours::border.withAlpha (0.6f));
+        g.drawRoundedRectangle (card, 5.0f, 1.0f);
+
+        juce::Font font (juce::FontOptions (14.0f, juce::Font::bold));
+        font.setExtraKerningFactor (0.05f);
+        g.setFont (font);
+        g.setColour (EditorColours::textHeader);
+        g.drawText (title.toUpperCase(), getLocalBounds().reduced (kPad, 0).removeFromTop (kPad + kTitleHeight).withTrimmedTop (kPad),
+                    juce::Justification::centredLeft);
+    }
+
+    void resized() override
+    {
+        auto b = getLocalBounds().reduced (kPad);
+        b.removeFromTop (kTitleHeight);
+
+        auto headerRow = b.removeFromTop (onoff->getHeight());
+        onoff->setBounds (headerRow.removeFromLeft (headerRow.getWidth() / 2));
+        if (lock != nullptr)
+            lock->setBounds (headerRow);
+        b.removeFromTop (kRowGapV);
+
+        if (wave != nullptr) { wave->setBounds (b.removeFromTop (wave->getHeight())); b.removeFromTop (kRowGapV); }
+
+        int col = 0;
+        int rowY = b.getY();
+        for (auto* k : knobs)
         {
-            auto bounds = getLocalBounds();
-            g.setColour (EditorColours::textHeader);
-            juce::Font font (juce::FontOptions (14.0f, juce::Font::bold));
-            font.setExtraKerningFactor (0.04f);
-            g.setFont (font);
-            g.drawText (label.toUpperCase(), bounds.removeFromTop (getHeight() - 4), juce::Justification::centredLeft);
-            g.setColour (EditorColours::border);
-            g.fillRect (0, getHeight() - 2, getWidth(), 1);
+            k->setBounds (b.getX() + col * kMiniKnobWidth, rowY, kMiniKnobWidth, kMiniKnobHeight);
+            if (++col >= kKnobCols)
+            {
+                col = 0;
+                rowY += kMiniKnobHeight;
+            }
         }
+    }
 
-    private:
-        juce::String label;
-    };
-}
+private:
+    juce::String title;
+    ParamControl* onoff = nullptr;
+    ParamControl* wave = nullptr;
+    ParamControl* lock = nullptr;
+    std::vector<MiniKnob*> knobs;
+};
+
+//==============================================================================
+/** The shared Pitch/Amp LFO pair + Detune (Global block, one instance, never had the per-layer
+    paging pain the Layer block did) -- now a single full-width section below the LayerCard grid
+    instead of behind a block combo (owner feedback: "we don't really need the block selector any
+    more, find somewhere on the same screen"). "GLOBAL" is folded into the same row as the two
+    LFO Wave Type combos (rather than a separate title row above them, the way LayerCard does it)
+    to save vertical space -- this section only has 2 non-knob rows to begin with, so folding the
+    title costs nothing in readability the way it would on a busier card. */
+class HexLayerPanel::GlobalSection : public juce::Component
+{
+public:
+    static constexpr int kPad = 10;
+    static constexpr int kTitleWidth = 90;
+    static constexpr int kRowGapV = 2;
+    static constexpr int kComboWidth = 340;
+
+    /** Takes ownership of nothing -- every pointer here is owned by HexLayerPanel and must
+        outlive this section. */
+    void setRows (ParamControl* pitchWaveIn, ParamControl* ampWaveIn, std::vector<MiniKnob*> knobsIn)
+    {
+        pitchWave = pitchWaveIn;
+        ampWave = ampWaveIn;
+        knobs = std::move (knobsIn);
+
+        addAndMakeVisible (pitchWave);
+        addAndMakeVisible (ampWave);
+        for (auto* k : knobs)
+            addAndMakeVisible (k);
+    }
+
+    int contentHeight() const
+    {
+        const int headerH = juce::jmax (pitchWave->getHeight(), ampWave->getHeight());
+        const int knobRowH = knobs.empty() ? 0 : kMiniKnobHeight;
+        return kPad + headerH + kRowGapV + knobRowH + kPad;
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto card = getLocalBounds().toFloat().reduced (1.0f);
+        g.setColour (EditorColours::panelBg);
+        g.fillRoundedRectangle (card, 5.0f);
+        g.setColour (EditorColours::border.withAlpha (0.6f));
+        g.drawRoundedRectangle (card, 5.0f, 1.0f);
+
+        const int headerH = juce::jmax (pitchWave->getHeight(), ampWave->getHeight());
+        juce::Font font (juce::FontOptions (14.0f, juce::Font::bold));
+        font.setExtraKerningFactor (0.05f);
+        g.setFont (font);
+        g.setColour (EditorColours::textHeader);
+        auto titleZone = getLocalBounds().reduced (kPad, 0).removeFromTop (kPad + headerH).withTrimmedTop (kPad).removeFromLeft (kTitleWidth - kPad);
+        g.drawText ("GLOBAL", titleZone, juce::Justification::centredLeft);
+    }
+
+    void resized() override
+    {
+        auto b = getLocalBounds().reduced (kPad);
+        auto headerRow = b.removeFromTop (juce::jmax (pitchWave->getHeight(), ampWave->getHeight()));
+        headerRow.removeFromLeft (kTitleWidth);
+        pitchWave->setBounds (headerRow.removeFromLeft (juce::jmin (kComboWidth, headerRow.getWidth())));
+        headerRow.removeFromLeft (kPad);
+        ampWave->setBounds (headerRow.removeFromLeft (juce::jmin (kComboWidth, headerRow.getWidth())));
+        b.removeFromTop (kRowGapV);
+
+        int x = b.getX();
+        for (auto* k : knobs)
+        {
+            k->setBounds (x, b.getY(), kMiniKnobWidth, kMiniKnobHeight);
+            x += kMiniKnobWidth;
+        }
+    }
+
+private:
+    ParamControl* pitchWave = nullptr;
+    ParamControl* ampWave = nullptr;
+    std::vector<MiniKnob*> knobs;
+};
 
 //==============================================================================
 HexLayerPanel::HexLayerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& midiIOIn)
@@ -71,22 +353,18 @@ HexLayerPanel::HexLayerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& mid
     addAndMakeVisible (syncButton);
     syncButton.onClick = [this] { syncButtonClicked(); };
 
-    addAndMakeVisible (blockLabel);
-    addAndMakeVisible (blockCombo);
-    addAndMakeVisible (instanceLabel);
-    addAndMakeVisible (instanceCombo);
-    blockCombo.onChange = [this] { blockSelectionChanged(); };
-    instanceCombo.onChange = [this] { instanceSelectionChanged(); };
-
     addAndMakeVisible (paramViewport);
     paramViewport.setViewedComponent (&paramContainer, false);
     paramViewport.setScrollBarsShown (true, false);
 
-    buildBlockList();
+    buildParamControls();
 
-    // Same bug-009-class fix as every other panel: setSize() above ran before the block/instance
-    // combos and param rows existed, so force one final, correct layout pass now that they do.
+    // Same bug-009-class fix as every other panel: setSize() above ran before the param rows
+    // existed, so force one final, correct layout pass now that they do.
     resized();
+
+    if (midiIO.isOutputOpen() && midiIO.isInputOpen())
+        syncButtonClicked();
 }
 
 HexLayerPanel::~HexLayerPanel()
@@ -98,10 +376,7 @@ void HexLayerPanel::paint (juce::Graphics& g)
 {
     g.fillAll (EditorColours::chassisBg);
 
-    // Anchored to blockCombo (always visible) rather than instanceCombo (sometimes hidden for the
-    // Global block) -- the same fix SoloSynthPanel's own nav-card background needed once a block
-    // could hide its instance selector (see .wolf/cerebrum.md decision log, 2026-07-18).
-    const int cardBottom = blockCombo.getBottom();
+    const int cardBottom = syncButton.getBottom();
     if (cardBottom > 0)
     {
         auto card = juce::Rectangle<int> (0, 0, getWidth(), cardBottom + kMargin).toFloat().reduced (2.0f);
@@ -113,144 +388,185 @@ void HexLayerPanel::paint (juce::Graphics& g)
 }
 
 //==============================================================================
-void HexLayerPanel::buildBlockList()
-{
-    blockOrder.clear();
-    for (const auto& p : codec.model().all())
-        if (p.section == kSection && ! blockOrder.contains (p.block))
-            blockOrder.add (p.block);
-
-    // dontSendNotification: clear() defaults to an async notification, which would otherwise
-    // queue a redundant blockSelectionChanged() re-fire after the explicit call below already
-    // runs synchronously -- same fix SoloSynthPanel::buildBlockList() applies.
-    blockCombo.clear (juce::dontSendNotification);
-    for (int i = 0; i < blockOrder.size(); ++i)
-        blockCombo.addItem (blockOrder[i], i + 1);
-
-    if (! blockOrder.isEmpty())
-        blockCombo.setSelectedId (1, juce::dontSendNotification);
-
-    blockSelectionChanged();
-}
-
-void HexLayerPanel::blockSelectionChanged()
-{
-    const int id = blockCombo.getSelectedId();
-    if (id <= 0 || id > blockOrder.size())
-        return;
-    currentBlock = blockOrder[id - 1];
-
-    const auto* rep = firstParamInBlock (codec.model(), currentBlock);
-    instanceCombo.clear (juce::dontSendNotification);
-
-    const int instanceCount = rep != nullptr ? rep->instanceCount : 1;
-    const bool multi = instanceCount > 1;
-    instanceLabel.setVisible (multi);
-    instanceCombo.setVisible (multi);
-
-    if (multi && rep != nullptr)
-    {
-        for (int i = 0; i < instanceCount; ++i)
-        {
-            const juce::String label = i < rep->instanceLabels.size() ? rep->instanceLabels[i]
-                                                                        : juce::String (i + 1);
-            instanceCombo.addItem (label, i + 1);
-        }
-        instanceCombo.setSelectedId (1, juce::dontSendNotification);
-    }
-
-    currentInstance = 1;
-    rebuildParamControls();
-    autoSyncIfConnected();
-}
-
-void HexLayerPanel::instanceSelectionChanged()
-{
-    const int id = instanceCombo.getSelectedId();
-    if (id <= 0)
-        return;
-    currentInstance = id;
-    rebuildParamControls();
-    autoSyncIfConnected();
-}
-
-void HexLayerPanel::autoSyncIfConnected()
-{
-    if (midiIO.isOutputOpen() && midiIO.isInputOpen())
-        syncButtonClicked();
-}
-
-//==============================================================================
-void HexLayerPanel::rebuildParamControls()
+void HexLayerPanel::buildParamControls()
 {
     stopTimer();
     outstandingSync.clear();
-    groupHeaders.clear();
-    controls.clear();   // destroying each ParamControl removes it from paramContainer automatically
-    rows.clear();
+    layerCards.clear();
+    globalSection.reset();
+    miniKnobs.clear();
+    controls.clear();   // destroying each ParamControl removes it from its parent automatically
 
+    buildLayerGrid();
+    buildGlobalSection();
+
+    layoutParamContainerWidth();
+}
+
+void HexLayerPanel::buildLayerGrid()
+{
     const auto& model = codec.model();
-    const auto groups = casioxw::orderedGroupsForBlock (model, kSection, currentBlock);
 
-    for (size_t groupIdx = 0; groupIdx < groups.size(); ++groupIdx)
+    // All 6 layers at once -- no per-group headers within a card: every card repeats the
+    // identical param set/order, so the layout is learned once from Layer 1 rather than paying
+    // for 5 sub-headers (General/Amp/Filter/Effects/Range) x 6 cards.
+    for (int instance = 1; instance <= kHexLayerInstanceCount; ++instance)
     {
-        const auto& group = groups[groupIdx];
+        auto card = std::make_unique<LayerCard> ("Layer " + juce::String (instance));
 
-        std::vector<const casioxw::ParamInfo*> bucket;
+        ParamControl* onoffCtrl = nullptr;
+        ParamControl* waveCtrl = nullptr;
+        ParamControl* lockCtrl = nullptr;
+        std::vector<MiniKnob*> knobCtrls;
+
         for (const auto& p : model.all())
-            if (p.section == kSection && p.block == currentBlock && p.group == group)
-                bucket.push_back (&p);
-        if (bucket.empty())
-            continue;
-
-        auto header = std::make_unique<GroupHeader> (group);
-        paramContainer.addAndMakeVisible (*header);
-        rows.push_back ({ header.get(), kGroupHeaderHeight, 0 });
-        groupHeaders.push_back (std::move (header));
-
-        for (const auto* p : bucket)
         {
+            if (p.section != kSection || p.block != kLayerBlock)
+                continue;
+
             // Pitch Lock only exists on Layers 2/4/6 (manual: "Pitch Lock (Layers 2, 4, and 6
             // only)" -- turning it on for the even layer copies the odd layer's pitch onto it).
             // Layers 1/3/5 have nothing to lock TO, so skip the control entirely rather than show
             // a toggle with no effect -- see gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE.
-            if (p->id == "hexPitchLock" && (currentInstance % 2) != 0)
+            if (p.id == "hexPitchLock" && (instance % 2) != 0)
                 continue;
 
-            auto ctrl = std::make_unique<ParamControl> (model, *p, currentInstance);
-            const juce::String paramId = ctrl->paramId();
-            const int instance = ctrl->instanceNumber();
-            ctrl->onValueChanged = [this, paramId, instance] (int value)
+            if (p.id == "hexOnoff" || p.id == "hexWaveNumber" || p.id == "hexPitchLock")
             {
-                midiIO.sendFrame (codec.encode (paramId, instance, value));
-            };
-            paramContainer.addAndMakeVisible (*ctrl);
-            rows.push_back ({ ctrl.get(), kControlRowHeight, 0 });
-            controls.push_back (std::move (ctrl));
+                // On/Off, Wave and (even layers') Pitch Lock need ParamControl's real widgets
+                // (ToggleButton / WavePicker) -- not a knob.
+                auto ctrl = std::make_unique<ParamControl> (model, p, instance);
+                const juce::String paramId = ctrl->paramId();
+                const int inst = ctrl->instanceNumber();
+                ctrl->onValueChanged = [this, paramId, inst] (int value)
+                {
+                    midiIO.sendFrame (codec.encode (paramId, inst, value));
+                };
+
+                if (p.id == "hexOnoff")           onoffCtrl = ctrl.get();
+                else if (p.id == "hexWaveNumber") waveCtrl = ctrl.get();
+                else                              lockCtrl = ctrl.get();
+                controls.push_back (std::move (ctrl));
+            }
+            else
+            {
+                auto knob = std::make_unique<MiniKnob> (p.id, instance, p.range.min, p.range.max, shortNameFor (p.id), p.name);
+                const juce::String paramId = knob->getParamId();
+                const int inst = knob->getInstance();
+                knob->onValueChanged = [this, paramId, inst] (int value)
+                {
+                    midiIO.sendFrame (codec.encode (paramId, inst, value));
+                };
+                knobCtrls.push_back (knob.get());
+                miniKnobs.push_back (std::move (knob));
+            }
         }
 
-        if (groupIdx + 1 < groups.size() && ! rows.empty())
-            rows.back().gapAfter += kInterGroupGap;
+        card->setRows (onoffCtrl, waveCtrl, lockCtrl, knobCtrls);
+        paramContainer.addAndMakeVisible (*card);
+        layerCards.push_back (std::move (card));
     }
-
-    layoutRows (paramContainer.getWidth() > 0 ? paramContainer.getWidth() : 400);
 }
 
-int HexLayerPanel::layoutRows (int width)
+void HexLayerPanel::buildGlobalSection()
 {
-    int y = 0;
-    for (auto& row : rows)
+    const auto& model = codec.model();
+    auto section = std::make_unique<GlobalSection>();
+
+    ParamControl* pitchWaveCtrl = nullptr;
+    ParamControl* ampWaveCtrl = nullptr;
+    std::vector<MiniKnob*> knobCtrls;
+
+    for (const auto& p : model.all())
     {
-        row.component->setBounds (0, y, width, row.height);
-        y += row.height + row.gapAfter;
+        if (p.section != kSection || p.block != kGlobalBlock)
+            continue;
+
+        if (p.id == "hexPitchLfoWave" || p.id == "hexAmpLfoWave")
+        {
+            auto ctrl = std::make_unique<ParamControl> (model, p, 1);
+            const juce::String paramId = ctrl->paramId();
+            ctrl->onValueChanged = [this, paramId] (int value)
+            {
+                midiIO.sendFrame (codec.encode (paramId, 1, value));
+            };
+
+            if (p.id == "hexPitchLfoWave") pitchWaveCtrl = ctrl.get();
+            else                           ampWaveCtrl = ctrl.get();
+            controls.push_back (std::move (ctrl));
+        }
+        else
+        {
+            auto knob = std::make_unique<MiniKnob> (p.id, 1, p.range.min, p.range.max, shortNameFor (p.id), p.name);
+            const juce::String paramId = knob->getParamId();
+            knob->onValueChanged = [this, paramId] (int value)
+            {
+                midiIO.sendFrame (codec.encode (paramId, 1, value));
+            };
+            knobCtrls.push_back (knob.get());
+            miniKnobs.push_back (std::move (knob));
+        }
     }
-    paramContainer.setSize (juce::jmax (400, width), y);
-    return y;
+
+    section->setRows (pitchWaveCtrl, ampWaveCtrl, knobCtrls);
+    paramContainer.addAndMakeVisible (*section);
+    globalSection = std::move (section);
+}
+
+//==============================================================================
+int HexLayerPanel::layoutContent (int width)
+{
+    if (layerCards.empty())
+    {
+        paramContainer.setSize (juce::jmax (400, width), 0);
+        return 0;
+    }
+
+    const int cellW = LayerCard::contentWidth();
+
+    // One uniform cell height for the whole grid (every card is the same height now that On/Off +
+    // Pitch Lock share one row -- see LayerCard::contentHeight()'s own comment).
+    int cellH = 0;
+    for (auto& card : layerCards)
+        cellH = juce::jmax (cellH, card->contentHeight());
+
+    // 2 wide x 3 tall, fixed (owner's explicit layout, not a responsive wrap): layerCards is built
+    // in instance order 1..6, so 2 columns naturally pairs (1,2)/(3,4)/(5,6) -- the exact pairing
+    // Pitch Lock needs (Layer 2 locks to 1, 4 to 3, 6 to 5). Still falls back to 1 column if the
+    // window is too narrow for 2 (avoids a horizontal scrollbar).
+    const int cols = juce::jmin (2, juce::jmax (1, width / cellW));
+    int col = 0;
+    int rowY = 0;
+    for (auto& card : layerCards)
+    {
+        card->setBounds (col * cellW, rowY, cellW, cellH);
+        if (++col >= cols)
+        {
+            col = 0;
+            rowY += cellH;
+        }
+    }
+    if (col != 0)
+        rowY += cellH;   // a partially-filled last row still consumes a full row
+
+    const int gridWidth = juce::jmax (cellW, cols * cellW);
+    int totalHeight = rowY;
+
+    if (globalSection != nullptr)
+    {
+        totalHeight += kInterSectionGap;
+        const int globalHeight = globalSection->contentHeight();
+        globalSection->setBounds (0, totalHeight, gridWidth, globalHeight);
+        totalHeight += globalHeight;
+    }
+
+    paramContainer.setSize (juce::jmax (gridWidth, width), totalHeight);
+    return totalHeight;
 }
 
 void HexLayerPanel::layoutParamContainerWidth()
 {
-    layoutRows (juce::jmax (400, paramViewport.getWidth()));
+    layoutContent (juce::jmax (400, paramViewport.getWidth()));
 }
 
 //==============================================================================
@@ -267,7 +583,15 @@ void HexLayerPanel::syncButtonClicked()
     {
         const auto req = casioxw::MidiIO::syncRequest (codec, c->paramId(), c->instanceNumber());
         midiIO.sendFrame (req);
-        outstandingSync[syncKey (c->paramId(), c->instanceNumber())] = c.get();
+        ParamControl* ptr = c.get();
+        outstandingSync[syncKey (c->paramId(), c->instanceNumber())] = [ptr] (int v) { ptr->setValueFromSync (v); };
+    }
+    for (auto& k : miniKnobs)
+    {
+        const auto req = casioxw::MidiIO::syncRequest (codec, k->getParamId(), k->getInstance());
+        midiIO.sendFrame (req);
+        MiniKnob* ptr = k.get();
+        outstandingSync[syncKey (k->getParamId(), k->getInstance())] = [ptr] (int v) { ptr->setValueFromSync (v); };
     }
 
     if (outstandingSync.empty())
@@ -290,7 +614,7 @@ void HexLayerPanel::timerCallback()
         const auto it = outstandingSync.find (syncKey (d.paramId, d.instance));
         if (it != outstandingSync.end())
         {
-            it->second->setValueFromSync (d.value);
+            it->second (d.value);
             outstandingSync.erase (it);
         }
     }
@@ -317,18 +641,6 @@ void HexLayerPanel::resized()
     syncButton.setBounds (topRow.removeFromLeft (100));
     topRow.removeFromLeft (kRowGap);
     statusLabel.setBounds (topRow);
-
-    bounds.removeFromTop (kRowGap);
-
-    auto navRow = bounds.removeFromTop (kTopRowHeight);
-    blockLabel.setBounds (navRow.removeFromLeft (60));
-    blockCombo.setBounds (navRow.removeFromLeft (160));
-    navRow.removeFromLeft (kRowGap);
-    if (instanceCombo.isVisible())
-    {
-        instanceLabel.setBounds (navRow.removeFromLeft (60));
-        instanceCombo.setBounds (navRow.removeFromLeft (140));
-    }
 
     bounds.removeFromTop (kRowGap);
 
