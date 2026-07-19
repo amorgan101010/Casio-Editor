@@ -26,22 +26,32 @@
     layer's pitch onto it (Layer2<-1, Layer4<-3, Layer6<-5). The original negative test is
     consistent with the removed version targeting the wrong SCOPE (hex-layer-wide instead of
     per-layer), not with the control not existing. It's declared with 6 instances like its Layer
-    siblings (address layout doesn't change), but rebuildParamControls() skips building its
-    ParamControl entirely when currentInstance is odd (1/3/5) -- there's nothing for those layers
-    to lock TO. See gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE for the still-open ai=2 address question.
-    A block combo picks between them; an instance combo (Layer 1..6, hidden for Global) picks
-    which layer is shown, the same "one instance at a time" navigation SoloSynthPanel's OSC block
-    already established for a comparable instance count -- unlike the Drawbar Organ's 9
-    simultaneous drawbar faders, a hex layer's own params (envelope/amp/filter offsets) are edited
-    per-layer the way an oscillator is, not compared side-by-side the way drawbar registration is.
+    siblings (address layout doesn't change), but buildLayerGrid() skips building its ParamControl
+    entirely on odd layer cards (1/3/5) -- there's nothing for those layers to lock TO. See
+    gen_xwp1.py's HEXLAYER_PITCH_LOCK_NOTE for the still-open ai=2 address question.
 
-    Deliberately lean: no group selector (every block here is small enough -- at most 16 params --
-    that group-at-a-time navigation isn't worth the friction, same call PCMEnginePanel/OrganPanel
-    made), no envelope graphic (no 9-stage envelope params in this section), no knob/fader grid
-    (no repeated-instance-of-one-param case the way Organ's drawbars are). Every group for the
-    current block renders as plain full-width ParamControl rows under a bold group header, exactly
-    PCMEnginePanel's shape, with a block/instance combo layered on top for the two-block/six-
-    instance navigation this section (unlike PCM's single flat block) actually needs.
+    REDESIGNED 2026-07-19 (owner brief): the "Layer" block used to be a one-instance-at-a-time view
+    (six pages behind an instance combo), the same per-layer paging pain the physical synth has.
+    It's now a single 2x3 grid of LayerCard components -- all 6 layers visible at once, no
+    instance nav at all (the instance combo/label were removed; Global's instanceCount is always 1
+    so it never needed one anyway). Each card is a compact clone of the old full-width row list:
+    On/Off + Wave (+ Pitch Lock on even layers) as Default-mode ParamControl rows on top, then
+    every remaining Layer param as a ParamControl::RenderMode::Knob -- the owner's explicit choice
+    (offered against the sequencer's screen-cell p-lock knobs, picked "matches the rest of the
+    editor's normal control chrome" instead) -- tiled in a wrapping grid, same cellWidth/cellHeight-
+    tiling convention OrganPanel's drawbar grid and SoloSynthPanel's OSC knob grid already use.
+    Knob cells intentionally stay at ParamControl's standard 100x110 size, NOT shrunk to fit more
+    per row -- SequencerPanel's per-step knobs were once smaller ("tiny dots", owner screenshot)
+    and were enlarged to their current size for readability/grabbability; repeating that mistake
+    here to cram more per card was rejected in favour of using the width the app already has
+    (Sequencer's own tab is ~1490px wide, comfortably fitting 3 cards per row at the standard knob
+    size) and letting the existing vertical-scrolling paramViewport absorb the remaining two rows
+    of cards, rather than shrinking the widget that was already corrected once for this reason.
+    Global (the shared Pitch/Amp LFO pair + Detune, one instance, not part of the per-layer paging
+    pain to begin with) is UNCHANGED: same flat group-header + full-width-row list behind the block
+    combo. No per-card group headers (General/Amp/Filter/Effects/Range) -- all 6 cards repeat the
+    identical param set/order, so the layout is learned once rather than paying for 5 sub-headers
+    times 6 cards; see buildLayerGrid()'s own comment for the same tradeoff stated inline.
 
     PROVENANCE / TRUST NOTE (read before treating this like soloSynth): hexLayer's
     params/xwp1.json entries are hand-transcribed from XWP1_midi_EN.pdf section 26 (printed
@@ -78,32 +88,34 @@ private:
     juce::Label statusLabel;
     juce::TextButton syncButton { "Sync" };
 
-    // ---- Block / instance navigation ----------------------------------------------------------
+    // ---- Block navigation (Layer grid vs. Global LFO/Detune list) -----------------------------
+    // No instance combo: Global's instanceCount is always 1, and Layer now shows all 6 instances
+    // at once (the LayerCard grid below) instead of one at a time -- there is nothing left for an
+    // instance selector to do.
     juce::Label blockLabel { {}, "Block:" };
     juce::ComboBox blockCombo;
-    juce::Label instanceLabel { {}, "Layer:" };
-    juce::ComboBox instanceCombo;
 
     juce::StringArray blockOrder;   // "Layer", "Global"
     juce::String currentBlock;
-    int currentInstance = 1;
 
     void buildBlockList();
     void blockSelectionChanged();
-    void instanceSelectionChanged();
 
-    /** Re-run Sync automatically after a block/instance switch, matching PCMEnginePanel/
-        SoloSynthPanel's autoSyncIfConnected() pattern -- but only when both MIDI ends are open. */
+    /** Re-run Sync automatically after a block switch, matching PCMEnginePanel/SoloSynthPanel's
+        autoSyncIfConnected() pattern -- but only when both MIDI ends are open. */
     void autoSyncIfConnected();
 
-    // ---- Param list -----------------------------------------------------------------------------
+    // ---- Param display --------------------------------------------------------------------------
     juce::Viewport paramViewport;
     juce::Component paramContainer;
     std::vector<std::unique_ptr<ParamControl>> controls;
-    std::vector<std::unique_ptr<juce::Component>> groupHeaders;
+    std::vector<std::unique_ptr<juce::Component>> groupHeaders;   // Global block only
 
-    // Simple vertical stack -- no knob/fader grid, same as PCMEnginePanel (this section has no
-    // repeated-instance-of-one-param case; every row is full width).
+    class LayerCard;
+    std::vector<std::unique_ptr<LayerCard>> layerCards;   // Layer block only, 6 of them
+
+    // Global block: simple vertical stack of full-width rows -- no knob/fader grid, same as
+    // PCMEnginePanel (one instance, so no repeated-instance-of-one-param case).
     struct Row
     {
         juce::Component* component = nullptr;
@@ -112,11 +124,14 @@ private:
     };
     std::vector<Row> rows;
 
-    /** Rebuilds `controls`/`rows` for (currentBlock, currentInstance). Called whenever either
-        changes. */
+    /** Rebuilds `controls` + (`layerCards` or `rows`, per currentBlock). Called whenever the
+        block combo changes. */
     void rebuildParamControls();
+    void buildLayerGrid();     // currentBlock == "Layer": 6 LayerCards, all instances at once
+    void buildGlobalList();    // currentBlock == "Global": unchanged group-header + row list
 
-    int layoutRows (int width);          // assigns row bounds, returns total content height
+    int layoutRows (int width);          // Global: assigns row bounds, returns total content height
+    int layoutLayerGrid (int width);     // Layer: wraps LayerCards, returns total content height
     void layoutParamContainerWidth();    // shared by rebuildParamControls() and resized()
 
     // ---- Sync (poll-on-demand, juce::Timer -- never a busy loop; same pattern as PCMEnginePanel) --
