@@ -47,10 +47,14 @@ TEST_CASE ("ParamModel: organPosition has 9 instances, one per drawbar foot leng
     CHECK (p->range.min == 0);
     CHECK (p->range.max == 8);
 
+    // Order is the SysEx "Select Bar" index, hardware-confirmed 2026-07-18 via a ladder test
+    // (see .wolf/cerebrum.md addendum 31): NOT harmonic order -- 5 octave bars first
+    // (16',8',4',2',1'), then 4 non-octave "mutation" bars (5 1/3',2 2/3',1 3/5',1 1/3').
     REQUIRE (p->instanceLabels.size() == 9);
     CHECK (p->instanceLabels[0] == "16'");
-    CHECK (p->instanceLabels[2] == "8'");
-    CHECK (p->instanceLabels[8] == "1'");
+    CHECK (p->instanceLabels[2] == "4'");
+    CHECK (p->instanceLabels[4] == "1'");
+    CHECK (p->instanceLabels[8] == "1 1/3'");
 }
 
 TEST_CASE ("ParamModel: organPercussion is a 4-value combo (Off/2nd/3rd/2nd+3rd)", "[parammodel][drawbarOrgan]")

@@ -36,21 +36,31 @@ namespace
     // (Sync) still use the SysEx path below (unchanged) -- NRPN/CC are one-way performance
     // messages on this synth, there is no "read back the current NRPN value" mechanism, so the
     // edit-buffer register remains the only way to populate the fader from the current patch.
-    // Whether that read correctly maps each of the 9 addresses to the right physical bar is a
-    // SEPARATE, still-open question (see .wolf/cerebrum.md addendum 30) -- this fixes the WRITE
-    // side only.
     constexpr int kOrganMidiChannel = 1;    // "Organ is always zone 1" -- 022_XWOrgan.lua:132
     constexpr int kDrawbarNrpnMsb = 0x40;   // g_orgModMidi["orgTW"].orgMSBid -- 011_initTables.lua:523
 
-    void sendDrawbarNrpn (casioxw::MidiIO& midiIO, int drawbarIndex0to8, int uiValue0to8)
+    // Ladder-tested on real hardware 2026-07-18 (.wolf/cerebrum.md addendum 31): the SysEx
+    // "Select Bar" index (what organPosition's ParamModel instance 1-9 / params/xwp1.json's
+    // ORGAN_DRAWBAR_LABELS now correctly reflects) groups drawbars by type -- 5 octave bars
+    // (16',8',4',2',1') at SysEx instances 1-5, then 4 non-octave "mutation" bars (5 1/3',2 2/3',
+    // 1 3/5',1 1/3') at instances 6-9. The NRPN performance path numbers the SAME 9 physical
+    // drawbars in harmonic order instead (011_initTables.lua's orgTWdbar* table: LSB 0=16',
+    // 1=5 1/3',2=8',3=4',4=2 2/3',5=2',6=1 3/5',7=1 1/3',8=1'). This table translates a SysEx
+    // instance (1-9, i.e. array index 0-8) to the NRPN LSB for the SAME physical bar, so a write
+    // triggered from the correctly-labelled fader lands on the correct drawbar despite the two
+    // transports numbering them differently.
+    constexpr int kSysExInstanceToNrpnLsb[9] = { 0, 2, 3, 5, 8, 1, 4, 6, 7 };
+
+    void sendDrawbarNrpn (casioxw::MidiIO& midiIO, int sysExInstance1to9, int uiValue0to8)
     {
         // NRPN-specific 'db' encoder (011_initTables.lua:71, g_xwModCalc["nrpn"].db) -- NOT the
         // same as the unused V2SX 'db' entry (011_initTables.lua:44); the NRPN one scales by 15
         // to spread the UI's 0-8 range across more of the CC's 0-127 resolution. Both invert
         // (louder UI value -> smaller wire value), matching the physical drawbar's own logic.
+        const int nrpnLsb = kSysExInstanceToNrpnLsb[sysExInstance1to9 - 1];
         const int vmsb = juce::jlimit (0, 127, (8 - uiValue0to8) * 15);
         midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x63, kDrawbarNrpnMsb));
-        midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x62, drawbarIndex0to8));
+        midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x62, nrpnLsb));
         midiIO.sendMessageNow (juce::MidiMessage::controllerEvent (kOrganMidiChannel, 0x06, vmsb));
     }
 
@@ -185,11 +195,11 @@ void OrganPanel::buildParamControls()
                                                                  caption, true);
                     // NOT wireControl() -- drawbar writes go out via the live NRPN performance
                     // path (sendDrawbarNrpn), not the SysEx edit-buffer write every other control
-                    // uses. See sendDrawbarNrpn's comment for why.
-                    const int drawbarIndex0to8 = instance - 1;
-                    ctrl->onValueChanged = [this, drawbarIndex0to8] (int value)
+                    // uses. `instance` here is the SysEx instance (1-9); sendDrawbarNrpn
+                    // translates it to the correct NRPN LSB internally.
+                    ctrl->onValueChanged = [this, instance] (int value)
                     {
-                        sendDrawbarNrpn (midiIO, drawbarIndex0to8, value);
+                        sendDrawbarNrpn (midiIO, instance, value);
                     };
                     paramContainer.addAndMakeVisible (*ctrl);
                     faderPtrs.push_back (ctrl.get());

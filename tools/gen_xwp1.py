@@ -400,44 +400,32 @@ print(f"PCM/Melody params: {len(melody_params)} (hand-authored, unverified again
 # plain CC for vibrato/rotary/general). So there is no SysEx tone-edit-buffer source to mine for
 # this domain, the same situation pcmMelody was in. Every field below is transcribed directly
 # from XWP1_midi_EN.pdf section 25 "Drawbar" (printed p71-72), category 07H, XW-P1-only --
-# reference/midi-spec.md section 5.6. UNVERIFIED against real hardware (same caveat as
-# pcmMelody) -- the owner chose to ship flagged rather than probe live hardware first
-# (2026-07-18); budget a midi-probe scan pass (bug-124's method) before trusting this section.
+# reference/midi-spec.md section 5.6.
 #
-# Three specific guesses stacked on top of the manual transcription, in descending confidence:
-#   1. Category/address layout: cat=0x07, ai=0/an=0 for every entry -- same general SX frame
-#      field layout (midi-spec.md section 2.3) that soloSynth (Lua-verified) and pcmMelody
-#      (manual-only, partially hardware-verified) both already matched byte-for-byte. High
-#      confidence -- SysExCodec is category-agnostic and needed zero changes for either
-#      precedent, and won't need any here either.
-#   2. "Select Bar" block-byte position for organPosition (the only param with instanceCount>1):
-#      the manual describes it as "Block 3-0:Select Bar" (section 5.6) -- at first glance that
-#      LOOKS like a different byte than solo synth's OSC ("Block 2-0:Oscillator Number(0-5)",
-#      section 5.8), but midi-spec.md section 2.3 explicitly defines the "N-0" notation as a BIT
-#      range within the documented blk field's 14-bit dimension, not a byte-index selector that
-#      varies per category -- confirmed by the fact OSC's own "2-0" notation is bits within the
-#      SAME byte franky's Lua writes at absolute address offset 10 (blkByteOffset 6 within the
-#      8-byte blk field), not offset 2. Given that, "3-0:Select Bar" needing 4 bits (0-8 fits in
-#      4 bits) is read the same way -- offset 10, not a new byte position. Medium-high confidence
-#      (sound documentary reasoning, not hardware-tested for this specific category).
-#   3. organPosition's wire encoding: encoded here as plain 'nf' (0-8, direct, matching the
-#      manual's literal Min-Def-Max column) rather than the INVERTED encoding
-#      (`db = function(v) return (8-v) end`, 011_initTables.lua:41) franky's live NRPN/CC path
-#      uses for the same drawbars. That inversion may be a CTRLR-panel-specific UI-slider
-#      artifact of the live-performance transport (physical drawbar pull direction vs. a fader
-#      widget's 0-at-bottom convention) rather than something that carries over to the persisted
-#      SysEx tone data -- but it is a genuine guess on the single most audible param in this
-#      section. If hardware later shows the drawbars come out backwards, flip this one 'nf' to
-#      an inverted encoding (add 'db' to SysExCodec's vt table) -- do not assume it silently
-#      matches until confirmed.
+# HARDWARE-VERIFIED 2026-07-18 (owner + midi-probe on a real XW-P1, see .wolf/cerebrum.md
+# addendum 31 for the full story): category/address (ct=0x07, ai=0/an=0, block byte @ address
+# offset 10) and the plain 'nf' (direct, non-inverted) wire encoding are BOTH CONFIRMED CORRECT --
+# GET/SET round-trips cleanly on every one of the 9 block-byte positions. What was WRONG was the
+# assumed drawbar ORDER: this is NOT the harmonic order (16',5-1/3',8',4',2-2/3',2',1-3/5',
+# 1-1/3',1') the Lua's NRPN table uses -- a "ladder test" (owner set each physical drawbar to a
+# distinct recognizable value, then every one of the 9 SysEx block bytes was read back and
+# matched against the known ladder) proved the SysEx "Select Bar" index instead groups drawbars
+# by TYPE: the 5 octave bars first (16',8',4',2',1' at block bytes 0-4), then the 4 non-octave
+# "mutation"/quint-tierce bars (5 1/3',2 2/3',1 3/5',1 1/3' at block bytes 5-8). See
+# ORGAN_DRAWBAR_LABELS below (now in this confirmed order) and app/OrganPanel.cpp's
+# kSysExInstanceToNrpnLsb (translates a SysEx instance to the DIFFERENT NRPN LSB order needed for
+# writes, since the two transports number the same 9 drawbars differently).
 #
-# Drawbar instance order (16' downto 1', "Position" id=0x00 instances 1..9) is taken from the
-# Lua's own NRPN id ordering for the SAME 9 drawbars (orgTWdbar16..orgTWdbar1, ids 0x00-0x08,
-# 011_initTables.lua:524-532) -- assumed to be the same physical/logical bar numbering as the
-# SysEx "Select Bar" index even though the transports differ; this is just a drawbar-position
-# convention, not encoding-specific, so the cross-transport reuse is low-risk relative to guesses
-# 2/3 above.
-ORGAN_DRAWBAR_LABELS = ["16'", "5 1/3'", "8'", "4'", "2 2/3'", "2'", "1 3/5'", "1 1/3'", "1'"]
+# Also hardware-confirmed: a SysEx SET to organPosition lands and persists in the saved tone (it
+# survives save+reload) but does NOT reach the running voice in real time -- the drawbar additive
+# table apparently only gets recomputed on tone load, not on a bare parameter write. Every OTHER
+# organPosition-adjacent control (Percussion/Click/Rotary Type/Vibrato) DOES apply live through
+# this same SysEx path; only Position itself needs the separate NRPN live-fader path
+# (app/OrganPanel.cpp's sendDrawbarNrpn) to be audible while editing.
+# Order = the SysEx "Select Bar" index (hardware-confirmed 2026-07-18 via ladder test): octave
+# bars first (16',8',4',2',1'), then non-octave "mutation" bars (5 1/3',2 2/3',1 3/5',1 1/3') --
+# NOT the harmonic order the NRPN performance path uses. See the ORGAN_PARAMS comment above.
+ORGAN_DRAWBAR_LABELS = ["16'", "8'", "4'", "2'", "1'", "5 1/3'", "2 2/3'", "1 3/5'", "1 1/3'"]
 
 ORGAN_PARAMS = [
     # id,                  manual name,             hex id, vt,   range,     default, group,        ui,       enum
@@ -464,16 +452,19 @@ ORGAN_ROTARY_TYPE_NOTE = (
 )
 
 ORGAN_POSITION_NOTE = (
-    "HARDWARE-UNVERIFIED (owner chose to ship flagged rather than probe live hardware first, "
-    "2026-07-18). Two stacked guesses: (1) block-byte position for the 'Select Bar' instance "
-    "selector assumed to be the same absolute address offset 10 solo synth's OSC block uses -- "
-    "see the generator's ORGAN_PARAMS comment for the manual-notation reasoning (midi-spec.md "
-    "section 2.3's 'N-0' bit-range explanation); (2) wire encoding assumed direct/non-inverted "
-    "('nf', 0-8 matching the manual's literal Min-Def-Max column), NOT the inverted encoding "
-    "(db = 8-v) franky's live NRPN/CC organ path uses for the same 9 drawbars -- that inversion "
-    "may be specific to the live-performance transport's slider-widget convention, not the "
-    "persisted SysEx tone data. If a hardware probe shows drawbars come out backwards or on the "
-    "wrong bar, this is the param to fix first (see tools/midi-probe scan, bug-124's method)."
+    "HARDWARE-VERIFIED 2026-07-18 (owner + midi-probe on a real XW-P1, see .wolf/cerebrum.md "
+    "addendum 31). Address (ct=0x07, id=0x00, block byte @ offset 10) and encoding (plain 'nf', "
+    "0-8 direct) are both confirmed correct via GET/SET round-trip on every one of the 9 block "
+    "bytes. The drawbar ORDER is confirmed via a ladder test (each physical bar set to a distinct "
+    "value, then every block byte read back and matched): it groups by type -- 5 octave bars "
+    "(16',8',4',2',1') at block bytes 0-4, then 4 non-octave 'mutation' bars (5 1/3',2 2/3', "
+    "1 3/5',1 1/3') at block bytes 5-8 -- NOT the harmonic order the NRPN performance path uses "
+    "(see ORGAN_DRAWBAR_LABELS above). ALSO CONFIRMED: a SysEx write here lands and persists into "
+    "the saved tone (survives save+reload) but does not reach the running voice in real time -- "
+    "the drawbar additive table only recomputes on tone load. app/OrganPanel.cpp therefore writes "
+    "Position via the separate NRPN live-fader path (sendDrawbarNrpn) for audible feedback while "
+    "editing, translating each SysEx instance to its NRPN LSB via kSysExInstanceToNrpnLsb; this "
+    "SysEx path remains authoritative for reads (Sync) only."
 )
 
 def build_organ_params():
@@ -649,12 +640,13 @@ doc = {
               "(g_orgModMidi/011_initTables.lua), never SysEx, so there is no tone-edit-buffer "
               "Lua source to mine here, same situation as pcmMelody. addr/vt follow the general "
               "SX frame field layout (midi-spec.md section 2) that soloSynth and pcmMelody both "
-              "already match, so encode()/decode() need no codec changes. HARDWARE-UNVERIFIED "
-              "(owner chose to ship flagged rather than probe live hardware first, 2026-07-18) -- "
-              "budget a midi-probe scan pass (bug-124's method) before trusting this section the "
-              "way soloSynth is trusted. organPosition (the drawbars themselves) carries the "
-              "riskiest guesses -- see its own param-level note and the generator's ORGAN_PARAMS "
-              "comment for the full reasoning on block-byte position and wire-encoding direction.",
+              "already match, so encode()/decode() need no codec changes. HARDWARE-VERIFIED "
+              "2026-07-18 (owner + midi-probe on a real XW-P1): every param round-trips "
+              "correctly. organPosition (the drawbars) needed one real fix -- see its own "
+              "param-level note -- its 9-instance ORDER was wrong (assumed harmonic, actually "
+              "grouped by octave-vs-mutation type) and its writes needed rerouting to the NRPN "
+              "live-fader path since the SysEx edit-buffer write doesn't reach the running voice "
+              "in real time. Every other param in this section applies live via SysEx as-is.",
       "params": organ_params
     },
     "mixer":       {"status":"stub","params":[]},
