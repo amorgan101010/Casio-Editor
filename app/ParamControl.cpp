@@ -38,7 +38,7 @@ namespace
 }
 
 ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& infoIn, int instanceIn,
-                             RenderMode modeIn)
+                             RenderMode modeIn, juce::String labelOverride)
     : info (infoIn), instance (instanceIn), kind (casioxw::decideControlKind (info, instance)),
       mode (kind == ControlKind::Slider ? modeIn : RenderMode::Default)
 {
@@ -49,7 +49,8 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
     setSize (compact ? kCompactCellWidth : kLabelWidth + 220,
              knobMode ? kKnobHeight : faderMode ? kFaderHeight : kControlHeight);
 
-    nameLabel.setText (displayName (info), juce::dontSendNotification);
+    const juce::String label = labelOverride.isNotEmpty() ? labelOverride : displayName (info);
+    nameLabel.setText (label, juce::dontSendNotification);
     nameLabel.setJustificationType (compact ? juce::Justification::centred
                                              : juce::Justification::centredLeft);
     if (compact)
@@ -63,7 +64,7 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
         // font and NOT setting a minimum scale gets natural, readable wrapping instead. Tooltip
         // stays as a fallback for the rare name that's long even wrapped.
         nameLabel.setFont (juce::Font (juce::FontOptions (13.0f)));
-        nameLabel.setTooltip (displayName (info));
+        nameLabel.setTooltip (label);
     }
     addAndMakeVisible (nameLabel);
 

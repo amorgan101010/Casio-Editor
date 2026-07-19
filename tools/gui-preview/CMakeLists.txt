@@ -14,6 +14,7 @@ target_sources(gui-preview PRIVATE
     ../../app/SequencerPanel.cpp
     ../../app/EnvelopeDisplay.cpp
     ../../app/PCMEnginePanel.cpp
+    ../../app/OrganPanel.cpp
 )
 
 target_include_directories(gui-preview PRIVATE

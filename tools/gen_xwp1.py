@@ -152,7 +152,7 @@ OVR = {
 # core/include/casioxw/ParamModel.h (isEnvelopeGroup() was deleted; no group is
 # ever named "X Envelope" any more).
 # ---------------------------------------------------------------------------
-GROUP_ORDER = ["General", "Pitch", "Filter", "Amp", "PWM",
+GROUP_ORDER = ["Drawbars", "Percussion", "Click", "General", "Pitch", "Filter", "Amp", "PWM",
                "External Input", "External Trigger", "Pitch Shifter", "LFO",
                "Envelope", "Vibrato"]
 
@@ -391,6 +391,112 @@ def build_melody_params():
 melody_params = build_melody_params()
 print(f"PCM/Melody params: {len(melody_params)} (hand-authored, unverified against hardware)")
 
+# ---------------------------------------------------------------------------
+# 4c. Drawbar Organ params -- HAND-AUTHORED, not mined from Lua.
+#
+# franky's CTRLR panel DOES have an organ controller (022_XWOrgan.lua), but unlike
+# 019_ToneSoloSynth.lua it never calls sendXWSX -- every organ control there goes out live as
+# NRPN/CC (g_orgModMidi in 011_initTables.lua: MSB=0x40 NRPN for drawbars/percussion/click/type,
+# plain CC for vibrato/rotary/general). So there is no SysEx tone-edit-buffer source to mine for
+# this domain, the same situation pcmMelody was in. Every field below is transcribed directly
+# from XWP1_midi_EN.pdf section 25 "Drawbar" (printed p71-72), category 07H, XW-P1-only --
+# reference/midi-spec.md section 5.6. UNVERIFIED against real hardware (same caveat as
+# pcmMelody) -- the owner chose to ship flagged rather than probe live hardware first
+# (2026-07-18); budget a midi-probe scan pass (bug-124's method) before trusting this section.
+#
+# Three specific guesses stacked on top of the manual transcription, in descending confidence:
+#   1. Category/address layout: cat=0x07, ai=0/an=0 for every entry -- same general SX frame
+#      field layout (midi-spec.md section 2.3) that soloSynth (Lua-verified) and pcmMelody
+#      (manual-only, partially hardware-verified) both already matched byte-for-byte. High
+#      confidence -- SysExCodec is category-agnostic and needed zero changes for either
+#      precedent, and won't need any here either.
+#   2. "Select Bar" block-byte position for organPosition (the only param with instanceCount>1):
+#      the manual describes it as "Block 3-0:Select Bar" (section 5.6) -- at first glance that
+#      LOOKS like a different byte than solo synth's OSC ("Block 2-0:Oscillator Number(0-5)",
+#      section 5.8), but midi-spec.md section 2.3 explicitly defines the "N-0" notation as a BIT
+#      range within the documented blk field's 14-bit dimension, not a byte-index selector that
+#      varies per category -- confirmed by the fact OSC's own "2-0" notation is bits within the
+#      SAME byte franky's Lua writes at absolute address offset 10 (blkByteOffset 6 within the
+#      8-byte blk field), not offset 2. Given that, "3-0:Select Bar" needing 4 bits (0-8 fits in
+#      4 bits) is read the same way -- offset 10, not a new byte position. Medium-high confidence
+#      (sound documentary reasoning, not hardware-tested for this specific category).
+#   3. organPosition's wire encoding: encoded here as plain 'nf' (0-8, direct, matching the
+#      manual's literal Min-Def-Max column) rather than the INVERTED encoding
+#      (`db = function(v) return (8-v) end`, 011_initTables.lua:41) franky's live NRPN/CC path
+#      uses for the same drawbars. That inversion may be a CTRLR-panel-specific UI-slider
+#      artifact of the live-performance transport (physical drawbar pull direction vs. a fader
+#      widget's 0-at-bottom convention) rather than something that carries over to the persisted
+#      SysEx tone data -- but it is a genuine guess on the single most audible param in this
+#      section. If hardware later shows the drawbars come out backwards, flip this one 'nf' to
+#      an inverted encoding (add 'db' to SysExCodec's vt table) -- do not assume it silently
+#      matches until confirmed.
+#
+# Drawbar instance order (16' downto 1', "Position" id=0x00 instances 1..9) is taken from the
+# Lua's own NRPN id ordering for the SAME 9 drawbars (orgTWdbar16..orgTWdbar1, ids 0x00-0x08,
+# 011_initTables.lua:524-532) -- assumed to be the same physical/logical bar numbering as the
+# SysEx "Select Bar" index even though the transports differ; this is just a drawbar-position
+# convention, not encoding-specific, so the cross-transport reuse is low-risk relative to guesses
+# 2/3 above.
+ORGAN_DRAWBAR_LABELS = ["16'", "5 1/3'", "8'", "4'", "2 2/3'", "2'", "1 3/5'", "1 1/3'", "1'"]
+
+ORGAN_PARAMS = [
+    # id,                  manual name,             hex id, vt,   range,     default, group,        ui,       enum
+    ("organPosition",      "Drawbar Position",      0x00, "nf", (0, 8),   0,   "Drawbars",   "slider", None),
+    ("organPercussion",    "Percussion",            0x01, "nf", (0, 3),   0,   "Percussion", "combo",  "organPercussionMode"),
+    ("organPercDecayTime", "Percussion Decay Time", 0x02, "nf", (0, 127), 0,   "Percussion", "slider", None),
+    ("organKeyonClick",    "Key-On Click",          0x03, "nf", (0, 1),   0,   "Click",      "toggle", None),
+    ("organKeyoffClick",   "Key-Off Click",         0x04, "nf", (0, 1),   0,   "Click",      "toggle", None),
+    ("organType",          "Type",                  0x05, "nf", (0, 1),   0,   "General",    "combo",  "organType"),
+    ("organVibratoRate",   "Vibrato Rate",          0x06, "nf", (0, 127), 0,   "Vibrato",    "slider", None),
+    ("organVibratoDepth",  "Vibrato Depth",         0x07, "nf", (0, 127), 0,   "Vibrato",    "slider", None),
+]
+
+ORGAN_POSITION_NOTE = (
+    "HARDWARE-UNVERIFIED (owner chose to ship flagged rather than probe live hardware first, "
+    "2026-07-18). Two stacked guesses: (1) block-byte position for the 'Select Bar' instance "
+    "selector assumed to be the same absolute address offset 10 solo synth's OSC block uses -- "
+    "see the generator's ORGAN_PARAMS comment for the manual-notation reasoning (midi-spec.md "
+    "section 2.3's 'N-0' bit-range explanation); (2) wire encoding assumed direct/non-inverted "
+    "('nf', 0-8 matching the manual's literal Min-Def-Max column), NOT the inverted encoding "
+    "(db = 8-v) franky's live NRPN/CC organ path uses for the same 9 drawbars -- that inversion "
+    "may be specific to the live-performance transport's slider-widget convention, not the "
+    "persisted SysEx tone data. If a hardware probe shows drawbars come out backwards or on the "
+    "wrong bar, this is the param to fix first (see tools/midi-probe scan, bug-124's method)."
+)
+
+def build_organ_params():
+    out = []
+    for pid, name, idhex, vt, rng, default, group, ui, enum in ORGAN_PARAMS:
+        is_position = pid == "organPosition"
+        entry = {
+            "id": pid,
+            "name": name,
+            "block": "DrawbarOrgan",
+            "group": group,
+            "address": {"ct": 0x07, "id": idhex, "ai": 0, "an": 0},
+            "vt": vt,
+            "range": {"min": rng[0], "max": rng[1]},
+            "default": default,
+            "unit": "",
+            "ui": {"control": ui},
+            "instances": {
+                "count": 9 if is_position else 1,
+                "blkByteOffset": 6,
+                "addressByteIndex": 10,
+                "idSuffix": False,
+                "labels": ORGAN_DRAWBAR_LABELS if is_position else ["Organ"],
+            },
+        }
+        if enum:
+            entry["ui"]["enum"] = enum
+        if is_position:
+            entry["note"] = ORGAN_POSITION_NOTE
+        out.append(entry)
+    return out
+
+organ_params = build_organ_params()
+print(f"Drawbar Organ params: {len(organ_params)} (hand-authored, unverified against hardware)")
+
 # Address collision detection (same 18-byte address for >1 param within same instance)
 def addr_key(e):
     return (e["address"]["ct"], e["address"]["id"], e["address"]["ai"], e["address"]["an"])
@@ -437,6 +543,13 @@ enums = {
     # Distinct from soloSynth's 8-value lfoWave enum -- Melody's is its own, smaller list.
     "melodyVibratoType": [{"value":0,"label":"Sine"},{"value":1,"label":"Triangle"},
                             {"value":2,"label":"Saw"},{"value":3,"label":"Square"}],
+    # Drawbar Organ Percussion mode (midi-spec.md section 5.6 / PDF p71-72 sec 25):
+    # 0=off,1=2nd,2=3rd,3=2nd+3rd. Collapses franky's live-path two separate booleans
+    # (orgTWperc2/orgTWperc3) into the one enum column the manual's SysEx table documents.
+    "organPercussionMode": [{"value":0,"label":"Off"},{"value":1,"label":"2nd"},
+                              {"value":2,"label":"3rd"},{"value":3,"label":"2nd + 3rd"}],
+    # Drawbar Organ Type (midi-spec.md section 5.6): 0=Normal/1=Vintage.
+    "organType": [{"value":0,"label":"Normal"},{"value":1,"label":"Vintage"}],
 }
 
 # ---------------------------------------------------------------------------
@@ -510,6 +623,23 @@ doc = {
               "hardware-verified (see pcmVolume's own note). Ranges/defaults of the cf params remain "
               "unconfirmed for exact bounds; do not treat the whole section as soloSynth-grade yet.",
       "params": melody_params
+    },
+    "drawbarOrgan": {
+      "category": "0x07",
+      "status": "complete",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 25 'Drawbar' (printed p71-72), "
+              "category 07H (XW-P1 only) -- franky's CTRLR panel has an organ controller "
+              "(022_XWOrgan.lua) but it drives everything live via NRPN/CC "
+              "(g_orgModMidi/011_initTables.lua), never SysEx, so there is no tone-edit-buffer "
+              "Lua source to mine here, same situation as pcmMelody. addr/vt follow the general "
+              "SX frame field layout (midi-spec.md section 2) that soloSynth and pcmMelody both "
+              "already match, so encode()/decode() need no codec changes. HARDWARE-UNVERIFIED "
+              "(owner chose to ship flagged rather than probe live hardware first, 2026-07-18) -- "
+              "budget a midi-probe scan pass (bug-124's method) before trusting this section the "
+              "way soloSynth is trusted. organPosition (the drawbars themselves) carries the "
+              "riskiest guesses -- see its own param-level note and the generator's ORGAN_PARAMS "
+              "comment for the full reasoning on block-byte position and wire-encoding direction.",
+      "params": organ_params
     },
     "mixer":       {"status":"stub","params":[]},
     "performance": {"category":"0x02","status":"stub","params":[]},

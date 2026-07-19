@@ -52,9 +52,15 @@ public:
         @param instance  1-based instance number (oscillator/LFO/etc — fixed for this control's
                           lifetime; the owning panel rebuilds its ParamControls rather than
                           re-pointing one at a different instance).
-        @param mode      see RenderMode above. */
+        @param mode      see RenderMode above.
+        @param labelOverride  when non-empty, shown instead of the param's own display name —
+                          for panels showing several SIMULTANEOUS instances of the SAME param
+                          side by side (e.g. the Drawbar Organ's 9 "Position" faders, one per
+                          foot length), where the param name alone can't tell them apart the way
+                          SoloSynthPanel's one-instance-at-a-time nav can. Empty (default)
+                          preserves every existing call site's behaviour unchanged. */
     ParamControl (const casioxw::ParamModel& model, const casioxw::ParamInfo& info, int instance,
-                  RenderMode mode = RenderMode::Default);
+                  RenderMode mode = RenderMode::Default, juce::String labelOverride = {});
 
     const juce::String& paramId() const noexcept { return info.id; }
     int instanceNumber() const noexcept { return instance; }

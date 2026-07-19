@@ -10242,9 +10242,40 @@
         "value": 3,
         "label": "Square"
       }
+    ],
+    "organPercussionMode": [
+      {
+        "value": 0,
+        "label": "Off"
+      },
+      {
+        "value": 1,
+        "label": "2nd"
+      },
+      {
+        "value": 2,
+        "label": "3rd"
+      },
+      {
+        "value": 3,
+        "label": "2nd + 3rd"
+      }
+    ],
+    "organType": [
+      {
+        "value": 0,
+        "label": "Normal"
+      },
+      {
+        "value": 1,
+        "label": "Vintage"
+      }
     ]
   },
   "groupOrder": [
+    "Drawbars",
+    "Percussion",
+    "Click",
     "General",
     "Pitch",
     "Filter",
@@ -13967,6 +13998,272 @@
             ]
           },
           "note": "midi-spec.md/PDF p70 sec 23: the manual's own hex Min-Def-Max column for Touch Sense (00-7F-7F) is IDENTICAL to Volume's row directly above it, but Touch Sense's described effective range is signed (-64..+63, matching the cf-encoded params above it) while Volume's is unsigned 0-127 -- the two rows cannot both be literally correct under one encoding. Encoded here as cf (consistent with every other -64..+63 param in this block); default taken from the effective-range description (0, centered) rather than the hex column's 0x7F (which would decode to +63 under cf and makes no sense as a centered default). Likely a copy-paste artifact in the manual's own table. Needs hardware read-back to confirm."
+        }
+      ]
+    },
+    "drawbarOrgan": {
+      "category": "0x07",
+      "status": "complete",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 25 'Drawbar' (printed p71-72), category 07H (XW-P1 only) -- franky's CTRLR panel has an organ controller (022_XWOrgan.lua) but it drives everything live via NRPN/CC (g_orgModMidi/011_initTables.lua), never SysEx, so there is no tone-edit-buffer Lua source to mine here, same situation as pcmMelody. addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth and pcmMelody both already match, so encode()/decode() need no codec changes. HARDWARE-UNVERIFIED (owner chose to ship flagged rather than probe live hardware first, 2026-07-18) -- budget a midi-probe scan pass (bug-124's method) before trusting this section the way soloSynth is trusted. organPosition (the drawbars themselves) carries the riskiest guesses -- see its own param-level note and the generator's ORGAN_PARAMS comment for the full reasoning on block-byte position and wire-encoding direction.",
+      "params": [
+        {
+          "id": "organPosition",
+          "name": "Drawbar Position",
+          "block": "DrawbarOrgan",
+          "group": "Drawbars",
+          "address": {
+            "ct": 7,
+            "id": 0,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 8
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 9,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "16'",
+              "5 1/3'",
+              "8'",
+              "4'",
+              "2 2/3'",
+              "2'",
+              "1 3/5'",
+              "1 1/3'",
+              "1'"
+            ]
+          },
+          "note": "HARDWARE-UNVERIFIED (owner chose to ship flagged rather than probe live hardware first, 2026-07-18). Two stacked guesses: (1) block-byte position for the 'Select Bar' instance selector assumed to be the same absolute address offset 10 solo synth's OSC block uses -- see the generator's ORGAN_PARAMS comment for the manual-notation reasoning (midi-spec.md section 2.3's 'N-0' bit-range explanation); (2) wire encoding assumed direct/non-inverted ('nf', 0-8 matching the manual's literal Min-Def-Max column), NOT the inverted encoding (db = 8-v) franky's live NRPN/CC organ path uses for the same 9 drawbars -- that inversion may be specific to the live-performance transport's slider-widget convention, not the persisted SysEx tone data. If a hardware probe shows drawbars come out backwards or on the wrong bar, this is the param to fix first (see tools/midi-probe scan, bug-124's method)."
+        },
+        {
+          "id": "organPercussion",
+          "name": "Percussion",
+          "block": "DrawbarOrgan",
+          "group": "Percussion",
+          "address": {
+            "ct": 7,
+            "id": 1,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 3
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "combo",
+            "enum": "organPercussionMode"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organPercDecayTime",
+          "name": "Percussion Decay Time",
+          "block": "DrawbarOrgan",
+          "group": "Percussion",
+          "address": {
+            "ct": 7,
+            "id": 2,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organKeyonClick",
+          "name": "Key-On Click",
+          "block": "DrawbarOrgan",
+          "group": "Click",
+          "address": {
+            "ct": 7,
+            "id": 3,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 1
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "toggle"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organKeyoffClick",
+          "name": "Key-Off Click",
+          "block": "DrawbarOrgan",
+          "group": "Click",
+          "address": {
+            "ct": 7,
+            "id": 4,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 1
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "toggle"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organType",
+          "name": "Type",
+          "block": "DrawbarOrgan",
+          "group": "General",
+          "address": {
+            "ct": 7,
+            "id": 5,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 1
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "combo",
+            "enum": "organType"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organVibratoRate",
+          "name": "Vibrato Rate",
+          "block": "DrawbarOrgan",
+          "group": "Vibrato",
+          "address": {
+            "ct": 7,
+            "id": 6,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
+        },
+        {
+          "id": "organVibratoDepth",
+          "name": "Vibrato Depth",
+          "block": "DrawbarOrgan",
+          "group": "Vibrato",
+          "address": {
+            "ct": 7,
+            "id": 7,
+            "ai": 0,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 127
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "slider"
+          },
+          "instances": {
+            "count": 1,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Organ"
+            ]
+          }
         }
       ]
     },

@@ -1,0 +1,289 @@
+#include "OrganPanel.h"
+#include "EditorLookAndFeel.h"
+
+namespace
+{
+    constexpr int kMargin = 8;
+    constexpr int kRowGap = 6;
+    constexpr int kTopRowHeight = 28;
+    constexpr int kControlRowHeight = 28;
+    constexpr int kGroupHeaderHeight = 24;
+    constexpr int kInterGroupGap = 10;
+    constexpr juce::uint32 kSyncTimeoutMs = 3000;   // stop polling if replies stop arriving
+
+    // Must match ParamControl.cpp's kFaderHeight cell (kCompactLabelHeight + 130) — "the grid
+    // just tiles the control's own size" convention SoloSynthPanel already established.
+    constexpr int kFaderCellWidth = 100;
+    constexpr int kFaderCellHeight = 164;
+
+    constexpr const char* kSection = "drawbarOrgan";
+    constexpr const char* kBlock = "DrawbarOrgan";
+    constexpr const char* kDrawbarsGroup = "Drawbars";
+
+    juce::String syncKey (const juce::String& paramId, int instance)
+    {
+        return paramId + "#" + juce::String (instance);
+    }
+
+    // Bold label + separator between the block's groups — same visual language as
+    // SoloSynthPanel/PCMEnginePanel's own GroupHeader, kept as a small local duplicate rather
+    // than a shared header (see PCMEnginePanel.cpp for the same reasoning: not worth coupling
+    // this deliberately-independent panel to another panel's translation unit for ~15 lines).
+    class GroupHeader : public juce::Component
+    {
+    public:
+        explicit GroupHeader (juce::String text) : label (std::move (text)) {}
+
+        void paint (juce::Graphics& g) override
+        {
+            auto bounds = getLocalBounds();
+            g.setColour (EditorColours::textHeader);
+            juce::Font font (juce::FontOptions (14.0f, juce::Font::bold));
+            font.setExtraKerningFactor (0.04f);
+            g.setFont (font);
+            g.drawText (label.toUpperCase(), bounds.removeFromTop (getHeight() - 4), juce::Justification::centredLeft);
+            g.setColour (EditorColours::border);
+            g.fillRect (0, getHeight() - 2, getWidth(), 1);
+        }
+
+    private:
+        juce::String label;
+    };
+}
+
+//==============================================================================
+OrganPanel::OrganPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& midiIOIn)
+    : codec (codecIn), midiIO (midiIOIn)
+{
+    setSize (560, 620);
+
+    addAndMakeVisible (statusLabel);
+    statusLabel.setJustificationType (juce::Justification::centredLeft);
+    statusLabel.setText (midiIO.isOutputOpen() && midiIO.isInputOpen()
+                              ? "Connected"
+                              : "Not connected - open MIDI devices on the Solo Synth tab first",
+                          juce::dontSendNotification);
+
+    addAndMakeVisible (syncButton);
+    syncButton.onClick = [this] { syncButtonClicked(); };
+
+    addAndMakeVisible (paramViewport);
+    paramViewport.setViewedComponent (&paramContainer, false);
+    paramViewport.setScrollBarsShown (true, false);
+
+    buildParamControls();
+
+    // Same bug-009-class fix as every other panel: setSize() above ran before the param rows
+    // existed, so force one final, correct layout pass now that they do.
+    resized();
+}
+
+OrganPanel::~OrganPanel()
+{
+    stopTimer();
+}
+
+void OrganPanel::paint (juce::Graphics& g)
+{
+    g.fillAll (EditorColours::chassisBg);
+
+    const int cardBottom = syncButton.getBottom();
+    if (cardBottom > 0)
+    {
+        auto card = juce::Rectangle<int> (0, 0, getWidth(), cardBottom + kMargin).toFloat().reduced (2.0f);
+        g.setColour (EditorColours::panelBg);
+        g.fillRoundedRectangle (card, 4.0f);
+        g.setColour (EditorColours::border.withAlpha (0.5f));
+        g.drawRoundedRectangle (card, 4.0f, 1.0f);
+    }
+}
+
+//==============================================================================
+void OrganPanel::buildParamControls()
+{
+    stopTimer();
+    outstandingSync.clear();
+    groupHeaders.clear();
+    controls.clear();   // destroying each ParamControl removes it from paramContainer automatically
+    layoutItems.clear();
+
+    const auto& model = codec.model();
+    const auto groups = casioxw::orderedGroupsForBlock (model, kSection, kBlock);
+
+    auto wireControl = [this] (ParamControl& ctrl)
+    {
+        const juce::String paramId = ctrl.paramId();
+        const int instance = ctrl.instanceNumber();
+        ctrl.onValueChanged = [this, paramId, instance] (int value)
+        {
+            midiIO.sendFrame (codec.encode (paramId, instance, value));
+        };
+    };
+
+    for (size_t groupIdx = 0; groupIdx < groups.size(); ++groupIdx)
+    {
+        const auto& group = groups[groupIdx];
+
+        std::vector<const casioxw::ParamInfo*> bucket;
+        for (const auto& p : model.all())
+            if (p.section == kSection && p.block == kBlock && p.group == group)
+                bucket.push_back (&p);
+        if (bucket.empty())
+            continue;
+
+        auto header = std::make_unique<GroupHeader> (group);
+        paramContainer.addAndMakeVisible (*header);
+        layoutItems.push_back ({ header.get(), kGroupHeaderHeight, {}, 0, 0, 0 });
+        groupHeaders.push_back (std::move (header));
+
+        if (group == kDrawbarsGroup)
+        {
+            // The drawbars: every instance of "Position" shown SIMULTANEOUS as a compact
+            // vertical fader (the physical drawbar-organ metaphor), captioned by foot length
+            // rather than the repeated param name — see ParamControl's labelOverride.
+            for (const auto* p : bucket)
+            {
+                std::vector<ParamControl*> faderPtrs;
+                for (int instance = 1; instance <= p->instanceCount; ++instance)
+                {
+                    const juce::String caption = (instance - 1) < p->instanceLabels.size()
+                        ? p->instanceLabels[instance - 1] : juce::String (instance);
+                    auto ctrl = std::make_unique<ParamControl> (model, *p, instance,
+                                                                 ParamControl::RenderMode::VerticalFader,
+                                                                 caption);
+                    wireControl (*ctrl);
+                    paramContainer.addAndMakeVisible (*ctrl);
+                    faderPtrs.push_back (ctrl.get());
+                    controls.push_back (std::move (ctrl));
+                }
+                layoutItems.push_back ({ nullptr, 0, std::move (faderPtrs), kFaderCellWidth, kFaderCellHeight, 0 });
+            }
+        }
+        else
+        {
+            for (const auto* p : bucket)
+            {
+                auto ctrl = std::make_unique<ParamControl> (model, *p, 1);
+                wireControl (*ctrl);
+                paramContainer.addAndMakeVisible (*ctrl);
+                layoutItems.push_back ({ ctrl.get(), kControlRowHeight, {}, 0, 0, 0 });
+                controls.push_back (std::move (ctrl));
+            }
+        }
+
+        if (groupIdx + 1 < groups.size() && ! layoutItems.empty())
+            layoutItems.back().gapAfter += kInterGroupGap;
+    }
+
+    layoutSequential (paramContainer.getWidth() > 0 ? paramContainer.getWidth() : 400);
+}
+
+int OrganPanel::layoutSequential (int width)
+{
+    int y = 0;
+    for (auto& item : layoutItems)
+    {
+        if (item.rowComponent != nullptr)
+        {
+            item.rowComponent->setBounds (0, y, width, item.rowHeight);
+            y += item.rowHeight;
+        }
+        else if (! item.gridControls.empty())
+        {
+            const int cols = juce::jmax (1, width / item.cellWidth);
+            int col = 0, rowY = y;
+            for (auto* c : item.gridControls)
+            {
+                c->setBounds (col * item.cellWidth, rowY, item.cellWidth, item.cellHeight);
+                if (++col >= cols)
+                {
+                    col = 0;
+                    rowY += item.cellHeight;
+                }
+            }
+            if (col != 0)
+                rowY += item.cellHeight;   // a partially-filled last row still consumes a full row
+            y = rowY;
+        }
+        y += item.gapAfter;
+    }
+
+    paramContainer.setSize (juce::jmax (400, width), y);
+    return y;
+}
+
+void OrganPanel::layoutParamContainerWidth()
+{
+    layoutSequential (juce::jmax (400, paramViewport.getWidth()));
+}
+
+//==============================================================================
+void OrganPanel::syncButtonClicked()
+{
+    if (! midiIO.isOutputOpen() || ! midiIO.isInputOpen())
+    {
+        statusLabel.setText ("Connect device(s) on the Solo Synth tab before syncing", juce::dontSendNotification);
+        return;
+    }
+
+    outstandingSync.clear();
+    for (auto& c : controls)
+    {
+        const auto req = casioxw::MidiIO::syncRequest (codec, c->paramId(), c->instanceNumber());
+        midiIO.sendFrame (req);
+        outstandingSync[syncKey (c->paramId(), c->instanceNumber())] = c.get();
+    }
+
+    if (outstandingSync.empty())
+        return;
+
+    statusLabel.setText ("Syncing " + juce::String ((int) outstandingSync.size()) + " param(s)...",
+                         juce::dontSendNotification);
+    syncStartedMs = juce::Time::getMillisecondCounter();
+    startTimerHz (20);   // poll the receive queue -- never a busy loop
+}
+
+void OrganPanel::timerCallback()
+{
+    for (auto& frame : midiIO.drainReceived())
+    {
+        const auto d = codec.decode (frame);
+        if (! d.ok || d.ambiguous)
+            continue;
+
+        const auto it = outstandingSync.find (syncKey (d.paramId, d.instance));
+        if (it != outstandingSync.end())
+        {
+            it->second->setValueFromSync (d.value);
+            outstandingSync.erase (it);
+        }
+    }
+
+    if (outstandingSync.empty())
+    {
+        statusLabel.setText ("Sync complete", juce::dontSendNotification);
+        stopTimer();
+    }
+    else if (juce::Time::getMillisecondCounter() - syncStartedMs > kSyncTimeoutMs)
+    {
+        statusLabel.setText (juce::String ((int) outstandingSync.size()) + " param(s) did not reply (timeout)",
+                             juce::dontSendNotification);
+        stopTimer();
+    }
+}
+
+//==============================================================================
+void OrganPanel::resized()
+{
+    auto bounds = getLocalBounds().reduced (kMargin);
+
+    auto topRow = bounds.removeFromTop (kTopRowHeight);
+    syncButton.setBounds (topRow.removeFromLeft (100));
+    topRow.removeFromLeft (kRowGap);
+    statusLabel.setBounds (topRow);
+
+    bounds.removeFromTop (kRowGap);
+
+    paramViewport.setBounds (bounds);
+    layoutParamContainerWidth();
+}
