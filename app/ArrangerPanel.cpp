@@ -18,6 +18,9 @@ namespace
     constexpr int kLabelWidth      = 120;
     constexpr int kFileComboWidth  = 108;
     constexpr int kRepeatWidth     = 100;
+    constexpr int kLoopBackWidth   = 84;
+    constexpr int kLoopCountWidth  = 84;
+    constexpr int kLoopInfWidth    = 26;
     constexpr int kMuteChipWidth   = 30;
     constexpr int kMuteGroupGap    = 10;    // extra gap between the synth/drum/pcm mute clusters
     constexpr int kRemoveWidth     = 24;
@@ -66,6 +69,10 @@ void ArrangerPanel::RowWidgets::resized()
 
     repeatSlider.setBounds (x, midY - 11, kRepeatWidth, 22); x += kRepeatWidth + kColGap;
 
+    loopBackSlider.setBounds (x, midY - 11, kLoopBackWidth, 22); x += kLoopBackWidth + kColGap;
+    loopCountSlider.setBounds (x, midY - 11, kLoopCountWidth, 22); x += kLoopCountWidth + 3;
+    loopInfiniteButton.setBounds (x, midY - 11, kLoopInfWidth, 22); x += kLoopInfWidth + kColGap;
+
     for (int i = 0; i < casioxw::kSongLaneCount; ++i)
     {
         muteChips[(size_t) i].setBounds (x, midY - 13, kMuteChipWidth, 26);
@@ -85,7 +92,7 @@ ArrangerPanel::ArrangerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& mid
     titleLabel.setColour (juce::Label::textColourId, EditorColours::textHeader);
     addAndMakeVisible (titleLabel);
 
-    for (auto* header : { &colLabelHeader, &colContentHeader, &colRepeatHeader, &colMuteHeader })
+    for (auto* header : { &colLabelHeader, &colContentHeader, &colRepeatHeader, &colLoopHeader, &colMuteHeader })
     {
         header->setFont (EditorFonts::header (10.0f));
         header->setColour (juce::Label::textColourId, EditorColours::textMuted);
@@ -94,6 +101,11 @@ ArrangerPanel::ArrangerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& mid
 
     playStopButton.onClick = [this] { playing ? stop() : play(); };
     addAndMakeVisible (playStopButton);
+
+    loopArrangementButton.setClickingTogglesState (true);
+    loopArrangementButton.setTooltip ("Loop the whole arrangement: restart at row 1 when it ends");
+    loopArrangementButton.onClick = [this] { song.loopEnabled = loopArrangementButton.getToggleState(); };
+    addAndMakeVisible (loopArrangementButton);
 
     addRowButton.onClick = [this] { addRow(); };
     addAndMakeVisible (addRowButton);
@@ -159,6 +171,8 @@ void ArrangerPanel::resized()
     auto headerRow = b.removeFromTop (24);
     titleLabel.setBounds (headerRow.removeFromLeft (100));
     playStopButton.setBounds (headerRow.removeFromLeft (70));
+    headerRow.removeFromLeft (6);
+    loopArrangementButton.setBounds (headerRow.removeFromLeft (60));
     headerRow.removeFromLeft (12);
     tempoLabel.setBounds (headerRow.removeFromLeft (30));
     tempoSlider.setBounds (headerRow.removeFromLeft (140));
@@ -180,6 +194,8 @@ void ArrangerPanel::resized()
     colContentHeader.setBounds (x, colHeaderRow.getY(), kFileComboWidth * 4 + kColGap * 3, kHeaderHeight);
     x += kFileComboWidth * 4 + kColGap * 3 + kColGap;
     colRepeatHeader.setBounds (x, colHeaderRow.getY(), kRepeatWidth, kHeaderHeight); x += kRepeatWidth + kColGap;
+    constexpr int kLoopClusterWidth = kLoopBackWidth + kLoopCountWidth + kLoopInfWidth + 3;
+    colLoopHeader.setBounds (x, colHeaderRow.getY(), kLoopClusterWidth, kHeaderHeight); x += kLoopClusterWidth + kColGap;
     colMuteHeader.setBounds (x, colHeaderRow.getY(), colHeaderRow.getRight() - x, kHeaderHeight);
 
     b.removeFromTop (4);
@@ -287,6 +303,25 @@ void ArrangerPanel::configureRowWidgets (RowWidgets& w)
     w.repeatSlider.onValueChange = [this, &w] { onRowFieldChanged (w); };
     w.addAndMakeVisible (w.repeatSlider);
 
+    w.loopBackSlider.setRange (0.0, 99.0, 1.0);
+    w.loopBackSlider.setValue (0.0, juce::dontSendNotification);
+    w.loopBackSlider.setTooltip ("Loop line: jump back this many rows once this row's own repeats "
+                                 "finish (0 = no loop line on this row)");
+    w.loopBackSlider.onValueChange = [this, &w] { onRowFieldChanged (w); updateLoopWidgetVisibility (w); };
+    w.addAndMakeVisible (w.loopBackSlider);
+
+    w.loopCountSlider.setRange (1.0, 99.0, 1.0);
+    w.loopCountSlider.setValue (1.0, juce::dontSendNotification);
+    w.loopCountSlider.setTextValueSuffix ("x");
+    w.loopCountSlider.setTooltip ("How many times to take the loop line before falling through");
+    w.loopCountSlider.onValueChange = [this, &w] { onRowFieldChanged (w); };
+    w.addAndMakeVisible (w.loopCountSlider);
+
+    w.loopInfiniteButton.setClickingTogglesState (true);
+    w.loopInfiniteButton.setTooltip ("Loop forever instead of a set number of times");
+    w.loopInfiniteButton.onClick = [this, &w] { onRowFieldChanged (w); updateLoopWidgetVisibility (w); };
+    w.addAndMakeVisible (w.loopInfiniteButton);
+
     for (int i = 0; i < casioxw::kSongLaneCount; ++i)
     {
         auto& chip = w.muteChips[(size_t) i];
@@ -309,6 +344,14 @@ void ArrangerPanel::configureRowWidgets (RowWidgets& w)
     w.addAndMakeVisible (w.removeButton);
 }
 
+void ArrangerPanel::updateLoopWidgetVisibility (RowWidgets& w)
+{
+    const bool hasLoopLine = w.loopBackSlider.getValue() > 0.0;
+    w.loopCountSlider.setVisible (hasLoopLine);
+    w.loopInfiniteButton.setVisible (hasLoopLine);
+    w.loopCountSlider.setEnabled (! w.loopInfiniteButton.getToggleState());
+}
+
 void ArrangerPanel::syncRowWidgetsFromSong (int rowIndex)
 {
     if (rowIndex < 0 || rowIndex >= (int) rowWidgets.size())
@@ -319,6 +362,11 @@ void ArrangerPanel::syncRowWidgetsFromSong (int rowIndex)
     w.indexLabel.setText (juce::String (rowIndex + 1), juce::dontSendNotification);
     w.labelEditor.setText (row.label, juce::dontSendNotification);
     w.repeatSlider.setValue ((double) row.repeatCount, juce::dontSendNotification);
+    w.loopBackSlider.setValue ((double) row.loopBackRows, juce::dontSendNotification);
+    const bool infinite = row.loopCount == casioxw::kInfiniteLoopCount;
+    w.loopInfiniteButton.setToggleState (infinite, juce::dontSendNotification);
+    w.loopCountSlider.setValue (infinite ? 1.0 : (double) row.loopCount, juce::dontSendNotification);
+    updateLoopWidgetVisibility (w);
     for (int i = 0; i < casioxw::kSongLaneCount; ++i)
         w.muteChips[(size_t) i].setToggleState (row.laneMuted[(size_t) i], juce::dontSendNotification);
 
@@ -338,6 +386,10 @@ void ArrangerPanel::onRowFieldChanged (RowWidgets& w)
 
     row.label = w.labelEditor.getText();
     row.repeatCount = juce::jlimit (1, 99, (int) w.repeatSlider.getValue());
+    row.loopBackRows = juce::jlimit (0, 99, (int) w.loopBackSlider.getValue());
+    row.loopCount = w.loopInfiniteButton.getToggleState()
+                        ? casioxw::kInfiniteLoopCount
+                        : juce::jlimit (1, 99, (int) w.loopCountSlider.getValue());
     for (int i = 0; i < casioxw::kSongLaneCount; ++i)
         row.laneMuted[(size_t) i] = w.muteChips[(size_t) i].getToggleState();
 
@@ -552,7 +604,7 @@ void ArrangerPanel::play()
 
     playing = true;
     songEnded = false;
-    currentPosition = { 0, 0 };
+    currentPosition = { 0, 0, {} };
     runtimeLoadedForRow = -1;
     lastHighlightedRow = -1;
 
@@ -821,6 +873,7 @@ void ArrangerPanel::applyLoadedSong (const casioxw::Song& loaded)
     if (song.rows.empty())
         song.rows.push_back ({});
     tempoSlider.setValue ((double) song.tempoBpm, juce::dontSendNotification);
+    loopArrangementButton.setToggleState (song.loopEnabled, juce::dontSendNotification);
     rebuildRowWidgets();
 }
 
@@ -851,14 +904,17 @@ void ArrangerPanel::applyPreviewDemoState()
     chorus.label = "Chorus";
     chorus.setFile = "demo.xwset";
     chorus.repeatCount = 4;
+    chorus.loopBackRows = 2;   // loop line: jump back to the Verse
+    chorus.loopCount = casioxw::kInfiniteLoopCount;
     song.rows.push_back (chorus);
 
     tempoSlider.setValue ((double) song.tempoBpm, juce::dontSendNotification);
+    loopArrangementButton.setToggleState (song.loopEnabled, juce::dontSendNotification);
     rebuildRowWidgets();
 
     // Show a representative "currently playing" wash on row 2 without actually starting the
     // real-time transport (no MIDI device in a headless snapshot).
-    currentPosition = { 1, 0 };
+    currentPosition = { 1, 0, {} };
     playing = true;
     repaint();
 }

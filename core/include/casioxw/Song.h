@@ -33,6 +33,9 @@ namespace casioxw
         Every file reference is a relative filename (matching the existing .xwset convention, see
         SequencerPanel::saveByKind), resolved against the Song's own directory so a Song stays
         portable alongside the sequences it references. */
+    /** loopCount sentinel meaning "loop forever" rather than a specific number of times. */
+    constexpr int kInfiniteLoopCount = -1;
+
     struct SongRow
     {
         juce::String setFile;
@@ -43,30 +46,48 @@ namespace casioxw
         std::array<bool, kSongLaneCount> laneMuted {};   // false = audible
         int repeatCount = 1;   // 1..99 -- how many times this row plays before the song advances
         juce::String label;    // optional user-facing name, e.g. "Intro"
+
+        /** Elektron-style loop line: once this row's own repeatCount is exhausted, jump BACK
+            `loopBackRows` rows (clamped to row 0) instead of falling through to the next row,
+            `loopCount` times (or forever if `loopCount == kInfiniteLoopCount`) before finally
+            falling through. `loopBackRows == 0` means "no loop line on this row" -- `loopCount` is
+            then unused. Lets an intro play once while a verse/chorus range loops behind it. */
+        int loopBackRows = 0;
+        int loopCount = 1;
     };
 
     /** A full arrangement: an ordered list of rows plus one arrangement-wide tempo. The song's
         tempo overrides whatever tempoBpm is embedded in each row's referenced sequence file(s) --
-        deliberate, so mixing files saved at different tempos doesn't drift the song mid-playback. */
+        deliberate, so mixing files saved at different tempos doesn't drift the song mid-playback.
+        `loopEnabled`: when the last row's last repeat (and any loop lines on it) finish, restart
+        the whole arrangement at row 0 instead of ending -- the "Loop Arrangement" baseline ask,
+        independent of any per-row loop lines. */
     struct Song
     {
         std::vector<SongRow> rows;
         int tempoBpm = 120;
+        bool loopEnabled = false;
     };
 
     /** Where arranger playback currently is: which row, and which repeat-of-that-row (0-based,
-        always < rows[row].repeatCount). */
+        always < rows[row].repeatCount). `loopsTaken[i]` counts how many times row i's loop line
+        has jumped back so far in the CURRENT pass through the song; it resets to 0 for a row the
+        moment that row's loop line falls through (exhausted), so a later pass (via an outer loop
+        line, or the whole-arrangement loop) can take the full count again. Sized/grown to
+        `song.rows.size()` by advanceSongPosition() as needed -- callers can start it empty. */
     struct SongPosition
     {
         int row = 0;
         int repeat = 0;
+        std::vector<int> loopsTaken;
     };
 
     /** Pure row-advance step, called once a row's 16 steps have played through one full time.
-        Returns the position to play next (same row/repeat+1 if the row has repeats left, else row
-        +1/repeat 0), or std::nullopt once the last row's last repeat has just finished -- the song
-        has ended. No I/O, no real time, so the playback engine's row-boundary logic is
-        Catch2-testable headless, same as Sequence.h's pure functions. */
+        Returns the position to play next: same row/repeat+1 if the row has repeats left; else, if
+        the row has an unexhausted loop line, the jump-back target at repeat 0; else the next row at
+        repeat 0; else -- past the last row -- row 0 with every loopsTaken reset if `song.loopEnabled`,
+        or std::nullopt if not (the song has ended). No I/O, no real time, so the playback engine's
+        row-boundary logic is Catch2-testable headless, same as Sequence.h's pure functions. */
     std::optional<SongPosition> advanceSongPosition (const Song& song, SongPosition current);
 
     /** Serialize a Song to a JSON string: every row's file references, lane mutes, repeat count,

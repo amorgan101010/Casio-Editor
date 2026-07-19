@@ -110,6 +110,13 @@ private:
         juce::ComboBox pcmCombo;
         juce::Label fromSetLabel { {}, juce::CharPointer_UTF8 ("\xc2\xb7 from set \xc2\xb7") };   // shown instead of the 3 combos when setCombo != none
         juce::Slider repeatSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxRight };
+
+        // Elektron-style loop line: 0 == no loop line on this row. Count/infinite are hidden
+        // (nothing to configure) while loopBackSlider reads 0.
+        juce::Slider loopBackSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxRight };
+        juce::Slider loopCountSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxRight };
+        juce::TextButton loopInfiniteButton { juce::CharPointer_UTF8 ("\xe2\x88\x9e") };   // "∞"
+
         std::array<juce::TextButton, casioxw::kSongLaneCount> muteChips;
         juce::TextButton removeButton { juce::CharPointer_UTF8 ("\xc3\x97") };
 
@@ -122,6 +129,7 @@ private:
     void configureRowWidgets (RowWidgets& w);        // one-time wiring of a fresh RowWidgets' callbacks
     void syncRowWidgetsFromSong (int rowIndex);      // push song.rows[rowIndex] state into its widgets
     void onRowFieldChanged (RowWidgets& w);          // pull widget state back into song.rows[index-of(w)]
+    void updateLoopWidgetVisibility (RowWidgets& w); // show loopCount/Infinite only when loopBack > 0
     int indexOfWidgets (const RowWidgets* w) const;
     void refreshFileCombos();       // rescan sequenceDirectory, repopulate every row's 4 file combos
     void populateFileCombo (juce::ComboBox& combo, const juce::String& wildcard, const juce::String& currentValue) const;
@@ -149,6 +157,9 @@ private:
 
     juce::Label titleLabel { {}, "ARRANGER" };
     juce::TextButton playStopButton { "Play" };
+    juce::TextButton loopArrangementButton { "Loop" };   // whole-arrangement loop (song.loopEnabled);
+                                                          // per-row loop LINES are the loopBack/loopCount
+                                                          // controls on each RowWidgets instead
     juce::TextButton addRowButton { "+ Row" };
     juce::TextButton refreshButton { "Refresh" };
     juce::TextButton saveButton { "Save Song" };
@@ -161,6 +172,7 @@ private:
     juce::Label colLabelHeader { {}, "LABEL" };
     juce::Label colContentHeader { {}, "CONTENT (SET, or SOLO / DRUMS / MELODY)" };
     juce::Label colRepeatHeader { {}, "REPEAT" };
+    juce::Label colLoopHeader { {}, "LOOP LINE (back / times)" };
     juce::Label colMuteHeader { {}, juce::CharPointer_UTF8 ("MUTE: SYNTH \xc2\xb7 DRUMS 1-5 \xc2\xb7 BASS/SOLO1/SOLO2/CHORDS") };
 
     juce::Viewport viewport;
@@ -170,7 +182,7 @@ private:
     // ---- independent playback state (never touches SequencerPanel's own sequence/tracks) -------
     bool playing = false;
     bool songEnded = false;
-    casioxw::SongPosition currentPosition { 0, 0 };
+    casioxw::SongPosition currentPosition { 0, 0, {} };
     int  runtimeLoadedForRow = -1;   // which song.rows[] index `currentRuntime` was built from, -1 == none yet
     RowRuntime currentRuntime;
     // Every row's files parsed ONCE at play() (disk I/O + JSON parsing), never from inside the
