@@ -110,6 +110,7 @@ namespace casioxw
         root->setProperty ("channel", seq.channel);
         root->setProperty ("tempoBpm", seq.tempoBpm);
         root->setProperty ("stepsPerBeat", seq.stepsPerBeat);
+        root->setProperty ("engineTag", seq.engineTag);
 
         juce::Array<juce::var> lockableArr;
         for (const auto& lp : seq.lockable)
@@ -158,6 +159,7 @@ namespace casioxw
         seq.channel      = (int) parsed.getProperty ("channel", 1);
         seq.tempoBpm     = (int) parsed.getProperty ("tempoBpm", 120);
         seq.stepsPerBeat = (int) parsed.getProperty ("stepsPerBeat", 4);
+        seq.engineTag    = parsed.getProperty ("engineTag", juce::String()).toString();
 
         seq.lockable.clear();
         if (const auto* larr = parsed.getProperty ("lockable", {}).getArray())

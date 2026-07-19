@@ -17,6 +17,17 @@
 #include <vector>
 
 //==============================================================================
+/** Which tone engine the sequencer's solo track currently p-locks. Only one of these three can
+    ever be sounding on the XW-P1 at once (a Performance part's engine assignment is exclusive),
+    so the sequencer mirrors that: one active engine at a time, selected in the synth card, with
+    its own lockable-parameter table (SequencerPanel.cpp's kEngineSets). Switching engines swaps
+    which table `sequence.lockable` is built from; per-step locks stay keyed by paramId in the
+    step data regardless, so old locks for a not-currently-selected engine are simply inert
+    (not deleted) until that engine is reselected -- no data loss on a round trip through another
+    engine. */
+enum class TrackEngine { soloSynth, hexLayer, drawbarOrgan };
+
+//==============================================================================
 /** One step key in the trig grid, painted like a hardware trig button rather than a stock
     text button: rounded cap, underlined monospace numeral, an amber LED dot when the step holds
     any p-lock, and a structurally thicker outline on the quarter-note steps (1/5/9/13) so bar
@@ -81,6 +92,12 @@ public:
         step in P-LOCK mode, a playhead position) so offscreen snapshots can verify the
         state-dependent rendering a fresh panel never shows. Never called by the app itself. */
     void applyPreviewDemoState();
+
+    /** tools/gui-preview only: switch the synth lane to Hex Layer via the same guarded
+        switchEngine() path the engine combo uses, so a snapshot can verify the combo/label swap
+        and the AMP/FILT/PITCH/LFO pages actually populate (a fresh panel only ever shows Solo
+        Synth). Never called by the app itself. */
+    void applyHexLayerPreviewState();
 
     /** tools/gui-preview only: select a step on a PCM track (Bass) with P-LOCK mode on, so an
         offscreen snapshot can verify the screen actually swaps to the NOTE/GATE/VEL step editor
@@ -164,10 +181,29 @@ private:
     void refreshParamControls();               // value + locked flags into the param display
     void refreshStepButtons();                 // selected highlight + has-locks LED
 
-    /** Load the Solo Synth's FLTR/FLT2/ENV/LFO pages into paramDisplay (kLockables-driven). The
-        screen's normal content; ctor calls it once, refreshParamDisplayPages() calls it again
-        whenever a PCM track's step selection is cleared and control returns to the Solo Synth. */
+    /** Load the active engine's lockable pages into paramDisplay (kEngineSets-driven). The
+        screen's normal content; ctor calls it once (for the default engine), applyEngine() calls
+        it on every engine switch, and refreshParamDisplayPages() calls it again whenever a PCM
+        track's step selection is cleared and control returns to the synth lane. */
     void rebuildSynthParamPages();
+
+    /** Populate sequence.lockable (+ sequence.engineTag) from kEngineSets[engine], discarding the
+        previous engine's lockable list -- per-step locks in sequence.steps are untouched (they
+        stay keyed by paramId in the step data, so they're simply inert until that engine is
+        reselected). Pure state, no UI/guard -- both switchEngine() and the load path call this
+        after deciding it's safe/appropriate to switch. */
+    void seedLockableFromEngine (TrackEngine engine);
+
+    /** Full engine switch: seedLockableFromEngine() + refresh the header label/combo + rebuild
+        paramDisplay's pages + reset continuousLockables (sized for the OLD engine's lockable
+        count, so it must not carry over). No playing/sync guard -- callers decide. */
+    void applyEngine (TrackEngine newEngine);
+
+    /** User-driven engine switch (the synth card's engine combo): guarded the same way
+        syncBaseValuesFromSynth() is (refuses mid-playback/mid-sync, since both touch
+        sequence.lockable while the shared timer may be using it) and reverts the combo's
+        selection on refusal. */
+    void switchEngine (TrackEngine newEngine);
 
     /** Swap paramDisplay's page set to match whichever lane currently owns the edit target: the
         Solo Synth's normal pages, or -- if a PCM track has a step selected -- a single-page
@@ -219,7 +255,9 @@ private:
     casioxw::SysExCodec& codec;
     casioxw::MidiIO& midiIO;
 
-    casioxw::Sequence sequence;                // source of truth (Solo Synth track)
+    casioxw::Sequence sequence;                // source of truth (solo track: Solo Synth/Hex Layer/Organ)
+    TrackEngine currentEngine = TrackEngine::soloSynth;
+    juce::ComboBox engineCombo;                // selects which engine's lockable table `sequence.lockable` uses
 
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
     std::unique_ptr<ParamPageDisplay> paramDisplay;   // the pageable p-lock parameter sub-window

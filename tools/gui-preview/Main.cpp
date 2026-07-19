@@ -177,7 +177,8 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    if (mode == "sequencer" || mode == "sequencer-demo" || mode == "sequencer-pcm-demo")
+    if (mode == "sequencer" || mode == "sequencer-demo" || mode == "sequencer-pcm-demo"
+        || mode == "sequencer-hex-demo")
     {
         if (argc < 3)
         {
@@ -192,6 +193,8 @@ int main (int argc, char* argv[])
             panel.applyPreviewDemoState();
         else if (mode == "sequencer-pcm-demo")   // a PCM track's step selected, screen showing NOTE/GATE/VEL
             panel.applyPcmStepEditPreviewState();
+        else if (mode == "sequencer-hex-demo")   // engine switched to Hex Layer, a step p-locked
+            panel.applyHexLayerPreviewState();
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());
