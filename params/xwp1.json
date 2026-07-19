@@ -16868,7 +16868,7 @@
     "hexLayer": {
       "category": "0x08",
       "status": "complete",
-      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 26 'Hex Layer Parameter' (printed p72-73), category 08H (XW-P1 only) -- franky's CTRLR panel has a Hex Layer controller (020_ToneHexLayer.lua) but it drives everything live via NRPN (sendHEXParam/g_mixModMidi['mixHEX'], MSB=0x3e), never SysEx, and only for the small per-layer-level + all-layer-cutoff/detune/attack/release mixer subset -- NOT this section's full per-layer offset/LFO param set. So there is no tone-edit-buffer Lua source to mine here, same situation pcmMelody/drawbarOrgan were in. addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth/pcmMelody/drawbarOrgan already match; SysExCodec needed zero changes, same as every other hand-authored section -- the 8-bit '-128..+127' offset params reuse the EXISTING 'cF' vt (2-byte, MIDI-safe), NOT a new one. [bug-198, 2026-07-19] A first pass invented a broken single-byte 'cf256' (wire=value+128 in one raw byte, illegal per MIDI's high-bit-clear rule for SysEx data bytes) -- owner hardware testing caught it immediately (every affected param synced back as -128 regardless of the real value); fixed by switching those params to 'cF', which already encodes this exact -128..+128 shape correctly (2 bytes, lo7/hi7 split). Split Ui Number (id 0002, per-layer PCM wave# picker) was ADDED 2026-07-19 per owner request as 'hexWaveNumber'/'Wave' -- reuses the existing 'wf' vt/codec path (same mechanism as Solo Synth's OSC3/4 wave picker, waveBaseOffset=326) backed by a purpose-built 'hexLayerWaves' enum (pcm_waves[:789]) so the UI only offers the manual-documented PCM Wave # 0326-1114 sub-range, not the full library. SCOPE: still excludes Pitch Cent (id 0005 -- a genuinely different sign+11-bit-fraction bit-packed encoding with no existing vt and no Lua source to cross-check; owner identified this as the synth's own 'Fine Tune' control and wants it implemented too, tracked separately). Pitch Lock (id 0014) was hand-authored and shipped, then REMOVED 2026-07-19 after owner hardware testing found no effect on pitch bend/transpose and no corresponding setting in the synth's own Hex Layer menu -- see HEXLAYER_GLOBAL_PARAMS' comment above. NOT YET HARDWARE-VERIFIED for the remaining params (owner has not run a full live round-trip on this section) -- given the organPosition precedent (a SysEx write that landed and persisted but did not reach the running voice, needing an NRPN live-fader path instead, see drawbarOrgan's section note), a cat=0x08 write here may face the same issue since the Lua's own live path is NRPN (mixHEX), not SysEx -- budget a midi-probe read/write/audible check before trusting this panel's Sync/edit path, and if writes prove SysEx-inert, the known fallback is the same NRPN-fader pattern app/OrganPanel.cpp already established (sendDrawbarNrpn) rather than a new mechanism. Detune Number (hex-layer-wide, not per-layer) and the entire LFO section (also hex-layer-wide, one shared Pitch/Amp LFO pair for all 6 layers) are taken literally from the PDF's Block column -- see HEXLAYER_LFO_NOTE for the specific caveat.",
+      "note": "HAND-AUTHORED from XWP1_midi_EN.pdf section 26 'Hex Layer Parameter' (printed p72-73), category 08H (XW-P1 only) -- franky's CTRLR panel has a Hex Layer controller (020_ToneHexLayer.lua) but it drives everything live via NRPN (sendHEXParam/g_mixModMidi['mixHEX'], MSB=0x3e), never SysEx, and only for the small per-layer-level + all-layer-cutoff/detune/attack/release mixer subset -- NOT this section's full per-layer offset/LFO param set. So there is no tone-edit-buffer Lua source to mine here, same situation pcmMelody/drawbarOrgan were in. addr/vt follow the general SX frame field layout (midi-spec.md section 2) that soloSynth/pcmMelody/drawbarOrgan already match; SysExCodec needed zero changes, same as every other hand-authored section -- the 8-bit '-128..+127' offset params reuse the EXISTING 'cF' vt (2-byte, MIDI-safe), NOT a new one. [bug-198, 2026-07-19] A first pass invented a broken single-byte 'cf256' (wire=value+128 in one raw byte, illegal per MIDI's high-bit-clear rule for SysEx data bytes) -- owner hardware testing caught it immediately (every affected param synced back as -128 regardless of the real value); fixed by switching those params to 'cF', which already encodes this exact -128..+128 shape correctly (2 bytes, lo7/hi7 split). Split Ui Number (id 0002, per-layer PCM wave# picker) was ADDED 2026-07-19 per owner request as 'hexWaveNumber'/'Wave' -- reuses the existing 'wf' vt/codec path (same mechanism as Solo Synth's OSC3/4 wave picker, waveBaseOffset=326) backed by a purpose-built 'hexLayerWaves' enum (pcm_waves[:789]) so the UI only offers the manual-documented PCM Wave # 0326-1114 sub-range, not the full library. SCOPE: still excludes Pitch Cent (id 0005 -- a genuinely different sign+11-bit-fraction bit-packed encoding with no existing vt and no Lua source to cross-check; owner identified this as the synth's own 'Fine Tune' control and wants it implemented too, tracked separately). Pitch Lock (id 0014) was hand-authored and shipped, REMOVED 2026-07-19 after an initial hardware test (as a Global/1-instance value) found no effect and no matching synth-menu setting, then RE-ADDED the same day once the owner found the real manual scope: a per-layer setting present only on layers 2, 4 and 6, where turning it on for the even layer copies the odd layer's pitch onto it (Layer2<-Layer1, Layer4<-Layer3, Layer6<-Layer5). The original negative test is consistent with the FIRST version targeting the wrong scope (hex-layer-wide instead of per-layer), not with the control being fictitious -- see HEXLAYER_PITCH_LOCK_NOTE for the full re-add rationale, the still-unresolved ai=2 address question, and the correct hardware test procedure. NOT YET HARDWARE-VERIFIED for the remaining params (owner has not run a full live round-trip on this section) -- given the organPosition precedent (a SysEx write that landed and persisted but did not reach the running voice, needing an NRPN live-fader path instead, see drawbarOrgan's section note), a cat=0x08 write here may face the same issue since the Lua's own live path is NRPN (mixHEX), not SysEx -- budget a midi-probe read/write/audible check before trusting this panel's Sync/edit path, and if writes prove SysEx-inert, the known fallback is the same NRPN-fader pattern app/OrganPanel.cpp already established (sendDrawbarNrpn) rather than a new mechanism. Detune Number (hex-layer-wide, not per-layer) and the entire LFO section (also hex-layer-wide, one shared Pitch/Amp LFO pair for all 6 layers) are taken literally from the PDF's Block column -- see HEXLAYER_LFO_NOTE for the specific caveat.",
       "params": [
         {
           "id": "hexOnoff",
@@ -17446,6 +17446,43 @@
               "Layer 6"
             ]
           }
+        },
+        {
+          "id": "hexPitchLock",
+          "name": "Pitch Lock",
+          "block": "Layer",
+          "group": "General",
+          "address": {
+            "ct": 8,
+            "id": 20,
+            "ai": 2,
+            "an": 0
+          },
+          "vt": "nf",
+          "range": {
+            "min": 0,
+            "max": 1
+          },
+          "default": 0,
+          "unit": "",
+          "ui": {
+            "control": "toggle"
+          },
+          "instances": {
+            "count": 6,
+            "blkByteOffset": 6,
+            "addressByteIndex": 10,
+            "idSuffix": false,
+            "labels": [
+              "Layer 1",
+              "Layer 2",
+              "Layer 3",
+              "Layer 4",
+              "Layer 5",
+              "Layer 6"
+            ]
+          },
+          "note": "id 0014, PDF p72 sec 26.1 'Array 03'. Manual (owner re-read 2026-07-19): 'Pitch Lock (Layers 2, 4, and 6 only). When this setting is turned on for Layer 2, the Layer 2 pitch is changed to the same pitch as Layer 1 so both pitches are the same. The same is true for Layers 3 and 4, and Layers 5 and 6.' So this control only exists/applies on the EVEN layer of each pair -- app/HexLayerPanel.cpp hides it for layers 1/3/5 rather than showing a control with no target. REMOVED 2026-07-19 after an initial hardware test (as a Global/1-instance param) found no effect and no matching synth-menu setting, then RE-ADDED same day once the owner found the real per-layer scope in the manual -- the original negative test is fully consistent with the old version targeting the wrong address (hex-layer-wide instead of per-layer), not with the control being fictitious. ADDRESS STILL NOT HARDWARE-VERIFIED: encoded here as ai=2 (literal Array-1, see the Array->ai mapping note above HEXLAYER_LAYER_LABELS), the most literal reading, but an alternative (ai as a 3-slot array keyed 0/1/2 to layers 2/4/6, addressed off a fixed Global block rather than the normal 6-way per-layer block) was considered and rejected only for lack of precedent elsewhere in this codec, not because it's implausible. Correct hardware test: set Layer 1 and Layer 2 to audibly different pitches, toggle Pitch Lock on for Layer 2, confirm Layer 2 snaps to Layer 1's pitch (NOT a pitch-bend/transpose test -- that was the wrong behavior checked the first time)."
         },
         {
           "id": "hexWaveNumber",
