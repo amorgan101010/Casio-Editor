@@ -1,5 +1,6 @@
 #include "SequencerPanel.h"
 
+#include "ArrangerPanel.h"
 #include "EditorLookAndFeel.h"
 #include "casioxw/NoteNames.h"
 #include "casioxw/Scheduler.h"
@@ -535,6 +536,20 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     addAndMakeVisible (loadButton);
     addAndMakeVisible (sequenceDirButton);
 
+    // ---- Arranger sub-view (owner's brief: Digitakt-style song table as a MODE of this tab) ----
+    arrangerPanel = std::make_unique<ArrangerPanel> (codec, midiIO);
+    arrangerPanel->setSequenceDirectory (sequenceDefaultDirectory);
+    // The two transports share one MidiIO output -- only one may schedule at a time. Pressing the
+    // arranger's own Play stops the step editor's transport first; the reverse (this panel's own
+    // play(), below) stops the arranger.
+    arrangerPanel->beforePlay = [this] { if (playing) stop(); };
+    addChildComponent (*arrangerPanel);   // hidden until setShowingArranger(true)
+
+    arrangerModeButton.setClickingTogglesState (true);
+    arrangerModeButton.setTooltip ("Switch between the step editor and the song arranger");
+    arrangerModeButton.onClick = [this] { setShowingArranger (arrangerModeButton.getToggleState()); };
+    addAndMakeVisible (arrangerModeButton);
+
     // Rate / time-scale. Item id == steps-per-beat, so the combo maps straight onto the model.
     rateCombo.addItem ("1/4", 1);
     rateCombo.addItem ("1/8", 2);
@@ -872,6 +887,12 @@ void SequencerPanel::applyPcmStepEditPreviewState()
     updateStatusLabel();
 }
 
+void SequencerPanel::applyArrangerPreviewState()
+{
+    setShowingArranger (true);
+    arrangerPanel->applyPreviewDemoState();
+}
+
 bool SequencerPanel::verifyPcmRoundTripForPreview()
 {
     if (pcmTrackControls[0] == nullptr || pcmTrackControls[1] == nullptr)
@@ -920,6 +941,9 @@ bool SequencerPanel::verifyPcmRoundTripForPreview()
 void SequencerPanel::paint (juce::Graphics& g)
 {
     g.fillAll (EditorColours::chassisBg);
+
+    if (showingArranger)
+        return;   // arrangerPanel paints its own content; the step-editor cards below are hidden
 
     // Right-side control cards: a surface between chassis and widget fill, so panel-coloured
     // buttons/combos still read against them. (Quarter-step cues live on the trig keys
@@ -1478,6 +1502,8 @@ void SequencerPanel::chooseSequenceDirectory()
 
             sequenceDefaultDirectory = dir.getFullPathName();
             saveSequenceSettings();
+            if (arrangerPanel != nullptr)
+                arrangerPanel->setSequenceDirectory (sequenceDefaultDirectory);
             statusLabel.setText ("Sequence folder: " + dir.getFullPathName(), juce::dontSendNotification);
         });
 }
@@ -1933,10 +1959,45 @@ void SequencerPanel::updateStatusLabel()
     paramDisplay->setStatus (text);
 }
 
+void SequencerPanel::setShowingArranger (bool shouldShow)
+{
+    if (showingArranger == shouldShow)
+        return;
+
+    showingArranger = shouldShow;
+    arrangerModeButton.setButtonText (showingArranger ? "Editor" : "Arranger");
+    arrangerModeButton.setToggleState (showingArranger, juce::dontSendNotification);
+
+    // The rest of the transport toolbar is step-editor-specific (tempo/rate/channel belong to
+    // `sequence`, STEP/P-LOCK/Clear/Save/Load act on the live pattern) and sits ABOVE arrangerPanel's
+    // own bounds, so z-order alone can't hide it -- explicitly hide it in Arranger mode so nothing
+    // implies it still applies, and Save/Load/Clear can't be mistaken for arranger actions.
+    juce::Component* const editorOnlyToolbarWidgets[] = {
+        &tempoLabel, &tempoSlider, &rateLabel, &rateCombo, &channelLabel, &channelSlider,
+        &stepModeButton, &editButton, &clearLocksButton, &clearAllButton,
+        &saveButton, &loadButton, &sequenceDirButton
+    };
+    for (auto* c : editorOnlyToolbarWidgets)
+        c->setVisible (! showingArranger);
+
+    arrangerPanel->setVisible (showingArranger);
+    if (showingArranger)
+        arrangerPanel->toFront (false);   // everything else was added as a child EARLIER in the ctor,
+                                          // so without this it would paint UNDER those widgets, not over
+
+    resized();
+    repaint();
+}
+
 void SequencerPanel::play()
 {
     if (playing)
         return;
+
+    // The step editor and the arranger share one MidiIO output -- only one transport may schedule
+    // at a time (see ArrangerPanel::beforePlay for the reverse direction).
+    if (arrangerPanel != nullptr && arrangerPanel->isPlaying())
+        arrangerPanel->stop();
 
     if (! midiIO.isOutputOpen())
     {
@@ -2210,6 +2271,7 @@ void SequencerPanel::resized()
         struct Item { juce::Component* c; int w; int gapAfter; };
         const Item items[] = {
             { &playStopButton, 72, 12 },
+            { &arrangerModeButton, 90, 20 },
             { &tempoLabel, 34, 2 }, { &tempoSlider, 150, 12 },
             { &rateLabel, 38, 2 }, { &rateCombo, 74, 12 },
             { &channelLabel, 26, 2 }, { &channelSlider, 118, 20 },
@@ -2230,6 +2292,12 @@ void SequencerPanel::resized()
             x += item.w + item.gapAfter;
         }
         bounds.removeFromTop ((y + kToolbarRowHeight) - bounds.getY() + 6);
+    }
+
+    if (showingArranger)
+    {
+        arrangerPanel->setBounds (bounds);
+        return;   // the step-editor's own cards/grid below are hidden while in Arranger mode
     }
 
     const bool showDrumControls = drumControlsButton.getToggleState();

@@ -22,6 +22,7 @@ target_sources(CasioXWEditor PRIVATE
     SoloSynthPanel.cpp
     EnvelopeDisplay.cpp
     SequencerPanel.cpp
+    ArrangerPanel.cpp
     PCMEnginePanel.cpp
     OrganPanel.cpp
     HexLayerPanel.cpp
