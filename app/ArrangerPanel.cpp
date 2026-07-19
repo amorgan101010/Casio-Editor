@@ -701,23 +701,19 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
         {
             // Row boundary: swap in the new row's ALREADY-parsed runtime (preloadedRuntimes, built
             // once in play() -- never disk I/O/JSON parsing from inside this real-time feeder loop,
-            // which used to stall the message thread long enough to cause audible lateness) and
-            // reset the OLD row's params to base first, so a p-lock from the previous row can never
-            // bleed into this one. Queued into THIS step's buffer (timestamped for right now, same
-            // as the new row's own first-step events below) instead of resetCurrentRuntimeToBase()'s
-            // blocking sendMessageNow-per-param -- that used to stall the feeder for the OLD runtime's
-            // entire lockable list (dozens of params for engines like Hex Layer) at every single row
-            // transition, which is exactly why switching rows lagged worse the more than a bare drum
-            // pattern was loaded. resetCurrentRuntimeToBase() itself is still used by stop(), where a
-            // blocking send is correct (the timestamped output thread has already been stopped there).
-            if (currentRuntime.solo.has_value())
-            {
-                const int samplePos = (int) std::llround (nextStepStartMs);
-                for (const auto& lp : currentRuntime.solo->lockable)
-                    for (const auto& m : paramMessages (lp.paramId, lp.instance, lp.baseValue))
-                        buffer.addEvent (m, samplePos);
-            }
-
+            // which used to stall the message thread long enough to cause audible lateness).
+            //
+            // Deliberately NOT resetting the old row's lockable params to base here (owner's call,
+            // for now): even queued through the non-blocking scheduled path, sending a whole
+            // lockable list's worth of param messages at every row transition was still enough
+            // traffic to cause audible lag switching rows, worse the larger the previous row's
+            // engine's lockable set was (e.g. Hex Layer's ~90 params) and worse still with loop
+            // lines bouncing between rows repeatedly. The new row's OWN lockable params still fully
+            // re-establish correctly regardless (prevStepIndex is reset to kPrevStepFresh below,
+            // which forces scheduleStep() to emit every one of ITS lockable params on its first
+            // step) -- the only gap this leaves is a param the OLD row locked away from base that
+            // the NEW row doesn't itself touch, which can be left sitting at the old row's value
+            // rather than snapping back to base. Revisit if that's audible in practice.
             currentRuntime = preloadedRuntimes[(size_t) currentPosition.row];
             runtimeLoadedForRow = currentPosition.row;
             prevStepIndex = casioxw::kPrevStepFresh;   // unknown device state relative to the new lane set
