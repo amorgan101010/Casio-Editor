@@ -554,6 +554,16 @@ void ArrangerPanel::play()
     songEnded = false;
     currentPosition = { 0, 0 };
     runtimeLoadedForRow = -1;
+    lastHighlightedRow = -1;
+
+    // Parse every row's file(s) ONCE, here, before the real-time clock starts -- disk I/O + JSON
+    // parsing is fine as a one-time pause on Play, but doing it from inside the feeder at every row
+    // boundary (the old approach) stalled the message thread long enough to cause audible lateness.
+    preloadedRuntimes.clear();
+    preloadedRuntimes.reserve (song.rows.size());
+    for (const auto& row : song.rows)
+        preloadedRuntimes.push_back (loadRowRuntime (row));
+
     midiIO.startPlaybackThread();
 
     transportStartMs = (double) juce::Time::getMillisecondCounter() + kStartLeadMs;
@@ -605,7 +615,19 @@ void ArrangerPanel::timerCallback()
         return;
 
     feedLookahead (kLookaheadMs);
-    repaint();
+
+    // Repaint only when the highlighted row actually changes, not on every 12ms tick -- a full
+    // repaint recomposites every row widget (comboboxes/sliders/buttons across potentially many
+    // rows), which is real work on this SAME message thread the feeder runs on. Repainting
+    // unconditionally here was stealing enough time from the feeder to starve its look-ahead
+    // window, which read as audible lateness ("lurching") that got worse with more rows -- more
+    // widgets to repaint each tick. Same fix SequencerPanel's own updatePlayheadStep() already uses
+    // (repaint only on an actual playhead change).
+    if (currentPosition.row != lastHighlightedRow)
+    {
+        lastHighlightedRow = currentPosition.row;
+        repaint();
+    }
 
     if (songEnded && (double) juce::Time::getMillisecondCounter() >= transportStartMs + nextStepStartMs)
     {
@@ -623,11 +645,13 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
     {
         if (currentPosition.row != runtimeLoadedForRow)
         {
-            // Row boundary: load the new row's files fresh (independent copy, never touching
-            // SequencerPanel's own live sequence/tracks) and reset the OLD row's params to base
-            // first, so a p-lock from the previous row can never bleed into this one.
+            // Row boundary: swap in the new row's ALREADY-parsed runtime (preloadedRuntimes, built
+            // once in play() -- never disk I/O/JSON parsing from inside this real-time feeder loop,
+            // which used to stall the message thread long enough to cause audible lateness) and
+            // reset the OLD row's params to base first, so a p-lock from the previous row can never
+            // bleed into this one.
             resetCurrentRuntimeToBase();
-            currentRuntime = loadRowRuntime (song.rows[(size_t) currentPosition.row]);
+            currentRuntime = preloadedRuntimes[(size_t) currentPosition.row];
             runtimeLoadedForRow = currentPosition.row;
             prevStepIndex = casioxw::kPrevStepFresh;   // unknown device state relative to the new lane set
         }

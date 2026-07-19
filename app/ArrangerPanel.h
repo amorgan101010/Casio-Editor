@@ -173,6 +173,12 @@ private:
     casioxw::SongPosition currentPosition { 0, 0 };
     int  runtimeLoadedForRow = -1;   // which song.rows[] index `currentRuntime` was built from, -1 == none yet
     RowRuntime currentRuntime;
+    // Every row's files parsed ONCE at play() (disk I/O + JSON parsing), never from inside the
+    // real-time feeder -- loadRowRuntime() used to be called mid-feed at every row boundary, which
+    // stalled the message thread long enough to cause audible lateness ("lurching"), worse with
+    // more/shorter rows (more boundaries hit during playback).
+    std::vector<RowRuntime> preloadedRuntimes;
+    int lastHighlightedRow = -1;   // paints only when the playing row actually changes, not every tick
     double transportStartMs = 0.0;
     double nextStepStartMs  = 0.0;
     int    nextStepIndex    = 0;
