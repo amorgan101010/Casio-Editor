@@ -8,16 +8,19 @@ Linux-native JUCE editor for the Casio XW-P1 synth, with:
 
 ## Current status
 
-- App version: `0.19.0` (source: `app/AppVersion.h`)
-- Core version: `0.1.0` (source: `core/include/casioxw/CoreVersion.h`)
+- Project version: `0.26.0` (source: `core/include/casioxw/Version.h`, one number for app + core)
 - CI: build + test on every push/PR to `main`
-- Test suite: Catch2 via CTest (core codec/model/MIDI/sequencer coverage), 92/92 test cases passing
+- Test suite: Catch2 via CTest (core codec/model/MIDI/sequencer coverage), 110/110 test cases passing
 
-## Versioning rule
+## Versioning and releases
 
-- Feature branches merged into `main` must bump `app/AppVersion.h` using semantic versioning
-  (`MAJOR.MINOR.PATCH` with optional prerelease/build metadata).
-- CI enforces this on PRs where the source branch name starts with `feature/`.
+- `core/include/casioxw/Version.h`'s `kVersion` is the single source of truth for both the app
+  and `casioxw_core` -- there is one release train, not separate app/core version tracks.
+- Any non-doc PR into `main` must bump `kVersion` using semantic versioning (`MAJOR.MINOR.PATCH`
+  with optional prerelease/build metadata); CI's `version-policy` job enforces this.
+- Every push to `main` (i.e. every merged PR) that carries a new `kVersion` triggers CI's
+  `release` job: a Release-mode build of the standalone app is packaged into a tarball and
+  published to the repo's [Releases page](../../releases) tagged `v<version>`.
 
 ## Features
 
