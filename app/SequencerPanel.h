@@ -98,6 +98,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
 
     /** tools/gui-preview only: seed a representative editing state (trigs, p-locks, a selected
         step in P-LOCK mode, a playhead position) so offscreen snapshots can verify the
@@ -124,6 +125,12 @@ public:
         app itself. */
     void applyPolyPreviewState();
 
+    /** tools/gui-preview only: focuses Drum 2 (no step selected) via the same setFocusedTrack()
+        path a real label click uses, so a snapshot can verify the focused-row highlight wash and
+        the LCD screen swapping to that lane's NOTE/VEL base page (a fresh panel starts focused on
+        the solo lane, showing neither). Never called by the app itself. */
+    void applyFocusPreviewState();
+
     /** tools/gui-preview only: headless correctness check for the PCM tracks save/load path (the
         one genuinely new bit of logic in that feature -- everything else reuses already-tested
         casioxw_core functions). Seeds two PCM tracks with distinct data, serializes, clobbers the
@@ -145,6 +152,13 @@ private:
         pcm,
         sequenceSet
     };
+
+    /** Which lane the shift arrows + the LCD's "Base" display currently act on -- set by clicking
+        a track's label or by selecting a step on any of its lanes (see setFocusedTrack()). One
+        value across the WHOLE panel, not per-voice: a poly-capable track's sub-voices follow their
+        parent's focus, they don't introduce a separate focus target. Defaults to soloSynth so the
+        pre-existing shift-arrow behaviour (always the solo lane) is unchanged for a fresh panel. */
+    enum class FocusedTrackKind { soloSynth, drum, pcm };
 
     // Note/gate/velocity for the solo lane's own primary voice are NOT edited here -- selecting a
     // step in P-LOCK mode swaps the screen to a NOTE page (then this engine's own p-lock pages),
@@ -168,6 +182,10 @@ private:
         int baseVelocity = 100;
         std::array<std::optional<int>, 16> velocityLocks;
         int selectedStep = -1; // per-track p-lock selection target, -1 means base
+
+        // This row's full extent (label through step keys), captured by resized() before it's
+        // sliced up -- paint() uses it to wash the row when it's the focused track.
+        juce::Rectangle<int> rowBounds;
     };
 
     // Poly mode's voice cap: a PRODUCT constant, not hardware-derived (the manual has no
@@ -224,6 +242,10 @@ private:
         bool subTracksExpanded = false;
         juce::TextButton polyToggle { "Poly" };
         juce::TextButton subTrackArrow;
+
+        // This row's full extent (label through step keys), captured by resized() before it's
+        // sliced up -- paint() uses it to wash the row when it's the focused track.
+        juce::Rectangle<int> rowBounds;
     };
 
     void timerCallback() override;
@@ -240,6 +262,25 @@ private:
 
     void selectStep (int step);                // -1 == Base
     void setPLockMode (bool pLockMode);        // STEP / P-LOCK mode keys both land here
+
+    /** Sets the panel-wide focused track (see FocusedTrackKind's doc comment) and refreshes the
+        row highlight + LCD display to match. Called both from a track label's click (pure focus,
+        no step selection change) and from every step button's click handler (so focus always
+        follows whatever lane you're actively editing). */
+    void setFocusedTrack (FocusedTrackKind kind, int index);
+
+    /** Shift arrows' handler: rotates whichever lane setFocusedTrack() last pointed at (+ its poly
+        sub-tracks, if any) by delta -- the arrows themselves are unchanged, only their target
+        varies with focus. */
+    void shiftFocusedTrack (int delta);
+
+    /** Rotates one drum lane's 16-step pattern (trigger on/off + velocity locks) by delta, wrapping
+        -- the manual equivalent of casioxw::shiftSteps() for a lane that has no casioxw::Sequence
+        backing it (a drum step's state lives on the StepKeyButton's own toggle state + the row's
+        velocityLocks array, see DrumTrackControl's doc comment). Same rotation direction/formula as
+        casioxw::shiftSteps so drum shifting feels identical to every other lane's. */
+    void shiftDrumTrack (DrumTrackControl& row, int delta);
+
     void onParamEdited (int lockableIndex, int value);
     /** A p-lock cell's double-click reset: clears the selected step's lock on this param
         (reverting it to the base value) when the cell is currently locked; a no-op otherwise
@@ -303,6 +344,11 @@ private:
         onParamEdited()'s raw-cell branch (write). */
     casioxw::Step* melodicStepForTarget (int target);
     void refreshMelodicStepCellValues (int target);   // push the selected step's note/gate/vel into the screen
+    /** Pushes a focused drum lane's base NOTE/VEL (row.note's slider value + row.baseVelocity)
+        into the LCD's raw NOTE/VEL cells -- the drum-focus counterpart of
+        refreshMelodicStepCellValues(), used when refreshParamDisplayPages() shows a drum lane's
+        base page (see kDrumNoteCell/kDrumVelCell in SequencerPanel.cpp). */
+    void refreshDrumBaseCellValues (int drumIndex);
     void updateStatusLabel();                  // edit-target readout in the display header
     void randomizeSequence();                  // Randomize button -> casioxw::randomize + resync widgets
     void showRandomizeOptions();               // call-out editing randomizeOptions in place
@@ -480,6 +526,13 @@ private:
     int playheadStep = -1;                     // -1 == hidden (stopped / before first step)
     juce::Rectangle<int> playheadLaneBounds;   // shared aligned step columns (drums + synth row)
     juce::File sequenceDefaultDirectory;
+
+    // See FocusedTrackKind's doc comment. synthFocusBounds is the solo lane's counterpart to
+    // DrumTrackControl/PcmTrackControl's own rowBounds (it has no per-row array to hold one),
+    // captured by resized() and painted by paint() when soloSynth is the focused kind.
+    FocusedTrackKind focusedTrackKind = FocusedTrackKind::soloSynth;
+    int focusedTrackIndex = -1;                // meaningful only when focusedTrackKind != soloSynth
+    juce::Rectangle<int> synthFocusBounds;
 
     // ---- Arranger sub-view (owner's brief: a Digitakt-style song table, reached as a MODE of
     // this tab rather than a separate top-level tab) --------------------------------------------
