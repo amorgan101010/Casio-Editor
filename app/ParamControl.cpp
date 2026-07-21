@@ -206,6 +206,12 @@ ParamControl::ParamControl (const casioxw::ParamModel& model, const casioxw::Par
                 slider = std::make_unique<juce::Slider> (sliderStyle, textBoxPos);
             slider->setRange ((double) info.range.min, (double) info.range.max, 1.0);
             slider->onValueChange = [this] { notify ((int) slider->getValue()); };
+            // Double-click resets to the last value pushed via setValueFromSync() (a hardware
+            // sync reply, or the JSON default seeded just below) -- range.min is only the
+            // fallback for the (currently nonexistent, per params/xwp1.json) case where a param
+            // has no JSON default and no sync has happened yet. Kept in sync with reality by
+            // setValueFromSync() re-arming this on every call, not just here at construction.
+            slider->setDoubleClickReturnValue (true, (double) info.range.min);
             if (compact)
                 slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false,
                                          kCompactCellWidth - 8, kCompactTextBoxHeight);
@@ -306,9 +312,14 @@ void ParamControl::setValueFromSync (int value)
             // juce::Slider clamps to its own setRange() bounds internally, so this is defensive
             // consistency with the combo cases above rather than a required fix on its own.
             if (slider != nullptr)
-                slider->setValue (juce::jlimit ((double) info.range.min, (double) info.range.max,
-                                                (double) value),
-                                  juce::dontSendNotification);
+            {
+                const double clamped = juce::jlimit ((double) info.range.min, (double) info.range.max,
+                                                      (double) value);
+                slider->setValue (clamped, juce::dontSendNotification);
+                // Re-arm the double-click reset target on every sync push (construction-time
+                // default AND every later hardware read-back) -- see the constructor's comment.
+                slider->setDoubleClickReturnValue (true, clamped);
+            }
             break;
 
         case ControlKind::Disabled:
