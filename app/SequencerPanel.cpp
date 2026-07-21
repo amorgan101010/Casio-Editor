@@ -798,6 +798,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     paramDisplay = std::make_unique<ParamPageDisplay> (codec.model());
     rebuildSynthParamPages();
     paramDisplay->onValueEdited = [this] (int index, int value) { onParamEdited (index, value); };
+    paramDisplay->onValueReset  = [this] (int index) { onParamReset (index); };
     addAndMakeVisible (*paramDisplay);
 
     setSize (8 + kStepGridWidth + kSectionGap + kLaneLabelWidth + kSectionGap + kCardWidth + 8,
@@ -1685,6 +1686,29 @@ void SequencerPanel::onParamEdited (int lockableIndex, int value)
     // next comes round (<= one loop), which is the correct p-lock feel anyway.
     if (! playing || selectedStep < 0)
         sendParamNow (lp.paramId, lp.instance, value);
+
+    refreshParamControls();
+    refreshStepButtons();
+}
+
+void SequencerPanel::onParamReset (int lockableIndex)
+{
+    if (lockableIndex < 0)
+        return;   // PCM track's step NOTE/GATE/VEL raw cells -- no lock to clear, no reset defined
+
+    const auto& lp = sequence.lockable[(size_t) lockableIndex];
+    if (selectedStep < 0)
+        return;   // base mode: the cell already IS the base value, nothing to reset it against
+
+    if (casioxw::findStepLock (sequence.steps[(size_t) selectedStep], lp.paramId, lp.instance) == nullptr)
+        return;   // unlocked on this step -- already inheriting base, nothing to clear
+
+    casioxw::clearStepLock (sequence, selectedStep, lp.paramId, lp.instance);
+
+    // Audition immediately only when stopped -- same look-ahead-bleed reason as onParamEdited's
+    // lock edits: a mid-playback unlock shouldn't jump the whole pattern back to base early.
+    if (! playing)
+        sendParamNow (lp.paramId, lp.instance, lp.baseValue);
 
     refreshParamControls();
     refreshStepButtons();

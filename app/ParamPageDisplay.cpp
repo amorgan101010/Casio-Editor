@@ -11,6 +11,24 @@ namespace
     constexpr int kHeaderHeight  = 22;
     constexpr int kGridCols      = 4;
     constexpr int kGridRows      = 2;
+
+    // A double-click reset here isn't "set this value" (juce::Slider::setDoubleClickReturnValue's
+    // usual job) -- it's an ACTION the owner must interpret against p-lock state (clear the lock
+    // if the cell is currently locked; see SequencerPanel::onParamReset). Overriding
+    // mouseDoubleClick intercepts it entirely rather than letting Slider turn it into a value
+    // change that would flow through onValueEdited and (while a step is selected) create a NEW
+    // lock at that value instead of clearing the existing one.
+    class ResetOnDoubleClickSlider : public juce::Slider
+    {
+    public:
+        using juce::Slider::Slider;
+        std::function<void()> onDoubleClick;
+        void mouseDoubleClick (const juce::MouseEvent&) override
+        {
+            if (onDoubleClick)
+                onDoubleClick();
+        }
+    };
 }
 
 //==============================================================================
@@ -39,6 +57,11 @@ struct ParamPageDisplay::Cell : public juce::Component
             repaint();
             if (owner.onValueEdited != nullptr)
                 owner.onValueEdited (spec.lockableIndex, (int) knob.getValue());
+        };
+        knob.onDoubleClick = [this]
+        {
+            if (owner.onValueReset != nullptr)
+                owner.onValueReset (spec.lockableIndex);
         };
         addAndMakeVisible (knob);
         applyColours();
@@ -125,7 +148,7 @@ struct ParamPageDisplay::Cell : public juce::Component
     int pageIndex = 0;
     casioxw::ControlKind kind = casioxw::ControlKind::Slider;
     const std::vector<casioxw::EnumEntry>* enumTable = nullptr;
-    juce::Slider knob;
+    ResetOnDoubleClickSlider knob;
     bool locked = false;
 };
 
