@@ -293,6 +293,19 @@ void ArrangerPanel::paint (juce::Graphics& g)
         g.setColour (EditorColours::playhead.withAlpha (0.22f));
         g.fillRect (rowBoundsInViewport.withX (viewport.getX()).withWidth (viewport.getWidth()));
     }
+
+    // Drop-zone highlight while a row is being dragged (see beginRowDrag()/updateRowDrag()) --
+    // computed from dragTargetIndex's GRID slot, not any rowWidgets[]->getBounds(), since the row
+    // actually being dragged no longer sits at its grid position for the gesture's duration.
+    if (dragRowIndex >= 0 && dragTargetIndex >= 0 && dragTargetIndex < (int) rowWidgets.size())
+    {
+        juce::Rectangle<int> slotBounds (0, dragTargetIndex * (kRowHeight + kRowGap),
+                                         rowContainer.getWidth(), kRowHeight);
+        auto onScreen = slotBounds + rowContainer.getPosition() + viewport.getPosition()
+                      - juce::Point<int> (viewport.getViewPositionX(), viewport.getViewPositionY());
+        g.setColour (EditorColours::selected.withAlpha (0.25f));
+        g.fillRect (onScreen.withX (viewport.getX()).withWidth (viewport.getWidth()));
+    }
 }
 
 void ArrangerPanel::resized()
@@ -401,6 +414,64 @@ void ArrangerPanel::moveRow (RowWidgets* widgets, int direction)
     rebuildRowWidgets();
 }
 
+void ArrangerPanel::beginRowDrag (RowWidgets& w, const juce::MouseEvent& e)
+{
+    dragRowIndex = indexOfWidgets (&w);
+    if (dragRowIndex < 0)
+        return;
+    dragTargetIndex = dragRowIndex;
+    // Offset from the ROW's own top, not the handle's -- e originates on indexLabel, which sits at
+    // a fixed offset within w, so re-target it to w's coordinate space once here rather than
+    // re-deriving it on every drag update.
+    dragGrabOffsetY = e.getEventRelativeTo (&w).getPosition().y;
+    w.toFront (false);   // paint above sibling rows while being dragged
+}
+
+void ArrangerPanel::updateRowDrag (RowWidgets& w, const juce::MouseEvent& e)
+{
+    if (dragRowIndex < 0)
+        return;
+
+    // w is a direct child of rowContainer, so this is the same coordinate space layoutRowContainer()
+    // positions every row in -- re-deriving the drop target from raw pixels (not a delta) so a drag
+    // that overshoots the viewport and comes back still lands where the cursor actually is.
+    const int newTop = e.getEventRelativeTo (&rowContainer).getPosition().y - dragGrabOffsetY;
+    w.setTopLeftPosition (w.getX(), newTop);
+
+    // Target flips at the midpoint between two row slots (the row's CENTRE, not its top), so the
+    // drop zone changes at a predictable point instead of at each slot's leading edge.
+    const int centreY = newTop + kRowHeight / 2;
+    const int target = juce::jlimit (0, (int) rowWidgets.size() - 1, centreY / (kRowHeight + kRowGap));
+    if (target != dragTargetIndex)
+    {
+        dragTargetIndex = target;
+        repaint();   // drop-zone highlight, drawn in paint()
+    }
+}
+
+void ArrangerPanel::endRowDrag (RowWidgets&, const juce::MouseEvent&)
+{
+    if (dragRowIndex < 0)
+        return;
+
+    const bool moved = dragTargetIndex != dragRowIndex;
+    if (moved)
+    {
+        auto row = song.rows[(size_t) dragRowIndex];
+        song.rows.erase (song.rows.begin() + dragRowIndex);
+        song.rows.insert (song.rows.begin() + dragTargetIndex, row);
+    }
+
+    dragRowIndex = -1;
+    dragTargetIndex = -1;
+
+    if (moved)
+        rebuildRowWidgets();   // new order -- every row's widgets need re-syncing anyway
+    else
+        layoutRowContainer();  // no reorder -- just snap the dragged row's widget back to its slot
+    repaint();
+}
+
 int ArrangerPanel::indexOfWidgets (const RowWidgets* w) const
 {
     for (int i = 0; i < (int) rowWidgets.size(); ++i)
@@ -432,6 +503,11 @@ void ArrangerPanel::configureRowWidgets (RowWidgets& w)
     w.indexLabel.setFont (EditorFonts::mono (13.0f, true));
     w.indexLabel.setColour (juce::Label::textColourId, EditorColours::textHeader);
     w.indexLabel.setJustificationType (juce::Justification::centred);
+    w.indexLabel.setMouseCursor (juce::MouseCursor::DraggingHandCursor);
+    w.indexLabel.setTooltip ("Drag to reorder this row");
+    w.indexLabel.onHandleMouseDown = [this, &w] (const juce::MouseEvent& e) { beginRowDrag (w, e); };
+    w.indexLabel.onHandleMouseDrag = [this, &w] (const juce::MouseEvent& e) { updateRowDrag (w, e); };
+    w.indexLabel.onHandleMouseUp   = [this, &w] (const juce::MouseEvent& e) { endRowDrag (w, e); };
     w.addAndMakeVisible (w.indexLabel);
 
     w.labelEditor.setFont (EditorFonts::mono (12.0f));

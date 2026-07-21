@@ -98,12 +98,25 @@ private:
         std::array<std::optional<casioxw::Sequence>, 4> pcm {};
     };
 
+    /** The row's index-number cell doubles as its drag-to-reorder handle. A plain juce::Label
+        doesn't forward mouseDown/Drag/Up anywhere useful; overriding them here (rather than teaching
+        the whole RowWidgets component to distinguish "click over an interactive child" from "click
+        on blank space") keeps the drag surface small and predictable -- it can never steal a click
+        from the combos/sliders/chips that cover the rest of the row. */
+    struct DragHandleLabel : public juce::Label
+    {
+        std::function<void (const juce::MouseEvent&)> onHandleMouseDown, onHandleMouseDrag, onHandleMouseUp;
+        void mouseDown (const juce::MouseEvent& e) override { if (onHandleMouseDown) onHandleMouseDown (e); }
+        void mouseDrag (const juce::MouseEvent& e) override { if (onHandleMouseDrag) onHandleMouseDrag (e); }
+        void mouseUp   (const juce::MouseEvent& e) override { if (onHandleMouseUp)   onHandleMouseUp (e); }
+    };
+
     /** One row's widgets. `owner` lets each widget's callback find its own row index by scanning
         `rowWidgets` for `this` at call time (rather than capturing an index that would go stale the
         moment an earlier row is removed). */
     struct RowWidgets : public juce::Component
     {
-        juce::Label indexLabel;
+        DragHandleLabel indexLabel;
         juce::TextEditor labelEditor;
         juce::ComboBox setCombo;
         juce::ComboBox soloCombo;
@@ -137,6 +150,18 @@ private:
         no-op if that would go out of bounds. Rebuilds the row widgets same as add/remove, since
         every row's index (and therefore its callbacks' owner lookup) shifts. */
     void moveRow (RowWidgets* widgets, int direction);
+
+    /** Drag-to-reorder gesture on a row's indexLabel handle (DragHandleLabel::onHandleMouseDown/
+        Drag/Up, wired in configureRowWidgets()). The dragged row's own widget is repositioned to
+        follow the cursor vertically for the duration of the gesture (see updateRowDrag()); every
+        OTHER row stays at its normal grid position -- this is a "pick up and see a drop-zone
+        highlight" interaction, not a live-reflowing list, which would need recomputing every other
+        row's position on every pixel of drag. dragRowIndex/dragTargetIndex/dragGrabOffsetY are the
+        gesture's state, valid only while dragRowIndex >= 0. */
+    void beginRowDrag (RowWidgets& w, const juce::MouseEvent& e);
+    void updateRowDrag (RowWidgets& w, const juce::MouseEvent& e);
+    void endRowDrag (RowWidgets& w, const juce::MouseEvent& e);
+
     void rebuildRowWidgets();       // full teardown+rebuild of rowWidgets from song.rows (add/remove only)
     void configureRowWidgets (RowWidgets& w);        // one-time wiring of a fresh RowWidgets' callbacks
     void syncRowWidgetsFromSong (int rowIndex);      // push song.rows[rowIndex] state into its widgets
@@ -230,6 +255,13 @@ private:
     // more/shorter rows (more boundaries hit during playback).
     std::vector<RowRuntime> preloadedRuntimes;
     int lastHighlightedRow = -1;   // paints only when the playing row actually changes, not every tick
+
+    // ---- row drag-to-reorder gesture state (see beginRowDrag/updateRowDrag/endRowDrag) ----------
+    int dragRowIndex = -1;      // song.rows index being dragged, -1 == no drag in progress
+    int dragTargetIndex = -1;   // index it would land at if dropped right now
+    int dragGrabOffsetY = 0;    // where within the row it was grabbed, so the row's top follows
+                                // (mouseY - this) instead of jumping so the grab point stays under
+                                // the cursor
 
     // What this engine believes is currently on the device for each lockable param, keyed
     // "paramId#instance" (matching SequencerPanel::outstandingBaseSync's key convention). Updated
