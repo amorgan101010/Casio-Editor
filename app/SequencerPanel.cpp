@@ -63,22 +63,23 @@ namespace
     // patch defaults to "no effect" (open filter, zero depths) rather than 0-means-silence.
     // Adding a lockable param = one row in the active engine's table below; pages, playback, and
     // lock UI all derive from it.
-    struct Lockable { const char* paramId; int instance; int base; const char* shortName; int page; };
+    struct Lockable { juce::String paramId; int instance; int base; juce::String shortName; int page; };
 
     // One lockable table + page-name set per TrackEngine (see SequencerPanel.h's TrackEngine doc
-    // comment for why only one engine is ever active). kEngineSets is indexed by
-    // static_cast<size_t>(TrackEngine) -- keep the array order in sync with the enum.
+    // comment for why only one engine is ever active). Solo Synth/Drawbar Organ tables are fixed
+    // (built once, below); Hex Layer's depends on which of its 6 layers is currently selected, so
+    // its set is built fresh by buildHexLayerLockableSet() -- resolveEngineLockableSet() is the
+    // one seam that picks the right source per engine, used by both seedLockableFromEngine() and
+    // rebuildSynthParamPages() so they can never disagree about the table's shape.
     struct EngineLockableSet
     {
-        const char* displayName;             // synthLabel text while this engine is selected
-        const char* const* pageNames;
-        size_t pageCount;
-        const Lockable* lockables;
-        size_t lockableCount;
+        juce::String displayName;             // synthLabel text while this engine is selected
+        std::vector<juce::String> pageNames;
+        std::vector<Lockable> lockables;
     };
 
-    const char* const kSoloSynthPageNames[] = { "FLTR", "FLT2", "ENV", "LFO" };
-    const Lockable kSoloSynthLockables[] = {
+    const std::vector<juce::String> kSoloSynthPageNames = { "FLTR", "FLT2", "ENV", "LFO" };
+    const std::vector<Lockable> kSoloSynthLockables = {
         // FLTR — the live filter page.
         { "tssFLTFcoff",  1, 127, "CUT",  0 },   // cutoff fully open
         { "tssFLTFreso",  1, 0,   "RES",  0 },
@@ -115,13 +116,25 @@ namespace
         { "tssLFOclk",   1, 0,  "CLK",  3 },
     };
 
-    // Hex Layer (category 0x08) — Layer 1 + Global only (owner's call: mirrors the Solo Synth
-    // table's own precedent of covering global/single-instance blocks rather than every
-    // instance of a per-oscillator one; a per-layer selector for Layers 2-6 is a later
-    // extension once Layer 1 p-locks are hardware-proven). Every param here is an *offset*
-    // applied to the layer's own tone-editor setting (params/xwp1.json default=0 for all but the
-    // two LFO rates), so base=0 is already the correct "no effect" neutral -- no hand-derived
-    // musical default needed the way Solo Synth's raw params required.
+    // Hex Layer (category 0x08) — FULL 6-layer coverage (owner's explicit call, superseding the
+    // earlier Layer-1-only v1): every one of the 33 logical hexLayer params from params/xwp1.json,
+    // at whichever layer SequencerPanel::currentHexLayer currently selects (per-layer params only
+    // -- the Global/LFO params are hex-layer-wide already and appear regardless of layer). Built
+    // from codec.model() rather than hand-transcribed (33 logical params reused across 6 layers,
+    // not 33*6 -- hand-curation stays tractable; see buildHexLayerLockableSet() below), unlike
+    // Solo Synth's still-hand-authored table above.
+    //
+    // shortName is the one thing the model can't give us (no "3-4 char LCD label" field in the
+    // JSON) -- kHexLayerShortNames hand-picks one per logical param (not per layer, so still only
+    // 33 judgment calls). kHexLayerPageOf assigns each param to one of 5 pages; the actual
+    // in-page CELL ORDER falls out of model.all()'s own JSON iteration order for free (verified:
+    // it already matches the pre-existing AMP/FILT/PITCH/LFO ordering below, plus a new LFO2 page
+    // for the wave-type/delay/rise params the old curated v1 excluded).
+    //
+    // Every param here is an *offset* applied to the layer's own tone-editor setting (JSON
+    // default=0 for all but the two LFO rates), so base=0 is already the correct "no effect"
+    // neutral for the whole table -- no hand-derived musical default needed the way Solo Synth's
+    // raw params require (see resolveSoloSynthBase() note once that expansion lands).
     //
     // TRUST NOTE: none of hexLayer's params are hardware-verified (see HexLayerPanel.h's own
     // provenance comment) and its Lua live path is NRPN-only, never SysEx -- same shape as the
@@ -129,37 +142,68 @@ namespace
     // the running voice. A p-lock write lands just before the step's note-on though, so params
     // only consulted at note-on/envelope-stage time (Amp env offsets, Pitch Key, Detune) are the
     // most likely to work even if continuously-modulated ones (Cutoff/Pan/Volume offset, LFO
-    // depths) turn out to need a live path like the drawbars did. Hardware-gated; see the
-    // sequencer handoff notes for the owner's test procedure before trusting the FILT/AMP pages
-    // the way Solo Synth's are trusted.
-    const char* const kHexLayerPageNames[] = { "AMP", "FILT", "PITCH", "LFO" };
-    const Lockable kHexLayerLockables[] = {
-        // AMP — Layer 1 volume/pan + amp envelope offsets.
-        { "hexVolumeOfs",     1, 0, "VOL", 0 },
-        { "hexPanOffset",     1, 0, "PAN", 0 },
-        { "hexAmpAttackOfs",  1, 0, "ATK", 0 },
-        { "hexAmpDecayOfs",   1, 0, "DEC", 0 },
-        { "hexAmpSustainOfs", 1, 0, "SUS", 0 },
-        { "hexAmpReleaseOfs", 1, 0, "REL", 0 },
-        // FILT — Layer 1 filter + effects-send offsets (one page, room to spare).
-        { "hexCutoffOfs",     1, 0, "CUT", 1 },
-        { "hexTouchSenseOfs", 1, 0, "TCH", 1 },
-        { "hexReverbSendOfs", 1, 0, "REV", 1 },
-        { "hexChorusSendOfs", 1, 0, "CHO", 1 },
-        // PITCH — Layer 1 pitch key offset + the Global Detune Number.
-        { "hexPitchKey",     1, 0, "PTCH", 2 },
-        { "hexDetuneNumber", 1, 0, "DET",  2 },
-        // LFO — Global block, shared across all 6 layers (PDF sec 26.2): one Pitch LFO + Amp LFO
-        // pair, fills a page exactly (8 cells).
-        { "hexPitchLfoRate",    1, 64, "P.RT", 3 },
-        { "hexPitchAutoDepth",  1, 0,  "P.AD", 3 },
-        { "hexPitchModDepth",   1, 0,  "P.MD", 3 },
-        { "hexPitchAfterDepth", 1, 0,  "P.AF", 3 },
-        { "hexAmpLfoRate",      1, 64, "A.RT", 3 },
-        { "hexAmpAutoDepth",    1, 0,  "A.AD", 3 },
-        { "hexAmpModDepth",     1, 0,  "A.MD", 3 },
-        { "hexAmpAfterDepth",   1, 0,  "A.AF", 3 },
+    // depths) turn out to need a live path like the drawbars did. Hardware-gated; the owner chose
+    // to expand to full 6-layer coverage knowing this -- see the sequencer handoff notes for the
+    // test procedure before trusting any page the way Solo Synth's are trusted.
+    const std::map<juce::String, juce::String> kHexLayerShortNames = {
+        { "hexOnoff",         "ON"   }, { "hexVolumeOfs",      "VOL"  }, { "hexPanOffset",     "PAN"  },
+        { "hexAmpAttackOfs",  "ATK"  }, { "hexAmpDecayOfs",    "DEC"  }, { "hexAmpSustainOfs", "SUS"  },
+        { "hexAmpReleaseOfs", "REL"  },
+        { "hexCutoffOfs",     "CUT"  }, { "hexTouchSenseOfs",  "TCH"  }, { "hexReverbSendOfs", "REV"  },
+        { "hexChorusSendOfs", "CHO"  }, { "hexKeyRangeLow",    "KR.L" }, { "hexKeyRangeHigh",  "KR.H" },
+        { "hexVelRangeLow",   "VR.L" }, { "hexVelRangeHigh",   "VR.H" },
+        { "hexPitchKey",      "PTCH" }, { "hexPitchLock",      "PLCK" }, { "hexWaveNumber",    "WAVE" },
+        { "hexDetuneNumber",  "DET"  },
+        { "hexPitchLfoRate",  "P.RT" }, { "hexPitchLfoWave",   "P.WV" }, { "hexPitchAutoDelay","P.DL" },
+        { "hexPitchAutoRise", "P.RS" }, { "hexPitchAutoDepth", "P.AD" }, { "hexPitchModDepth", "P.MD" },
+        { "hexPitchAfterDepth","P.AF" },
+        { "hexAmpLfoRate",    "A.RT" }, { "hexAmpLfoWave",     "A.WV" }, { "hexAmpAutoDelay",  "A.DL" },
+        { "hexAmpAutoRise",   "A.RS" }, { "hexAmpAutoDepth",   "A.AD" }, { "hexAmpModDepth",   "A.MD" },
+        { "hexAmpAfterDepth", "A.AF" },
     };
+    const std::vector<juce::String> kHexLayerPageNames = { "AMP", "FILT", "PITCH", "LFO", "LFO2" };
+    const std::map<juce::String, int> kHexLayerPageOf = {
+        { "hexOnoff", 0 }, { "hexVolumeOfs", 0 }, { "hexPanOffset", 0 }, { "hexAmpAttackOfs", 0 },
+        { "hexAmpDecayOfs", 0 }, { "hexAmpSustainOfs", 0 }, { "hexAmpReleaseOfs", 0 },
+        { "hexCutoffOfs", 1 }, { "hexTouchSenseOfs", 1 }, { "hexReverbSendOfs", 1 }, { "hexChorusSendOfs", 1 },
+        { "hexKeyRangeLow", 1 }, { "hexKeyRangeHigh", 1 }, { "hexVelRangeLow", 1 }, { "hexVelRangeHigh", 1 },
+        { "hexPitchKey", 2 }, { "hexPitchLock", 2 }, { "hexWaveNumber", 2 }, { "hexDetuneNumber", 2 },
+        { "hexPitchLfoRate", 3 }, { "hexPitchAutoDepth", 3 }, { "hexPitchModDepth", 3 }, { "hexPitchAfterDepth", 3 },
+        { "hexAmpLfoRate", 3 }, { "hexAmpAutoDepth", 3 }, { "hexAmpModDepth", 3 }, { "hexAmpAfterDepth", 3 },
+        { "hexPitchLfoWave", 4 }, { "hexPitchAutoDelay", 4 }, { "hexPitchAutoRise", 4 },
+        { "hexAmpLfoWave", 4 }, { "hexAmpAutoDelay", 4 }, { "hexAmpAutoRise", 4 },
+    };
+
+    EngineLockableSet buildHexLayerLockableSet (const casioxw::ParamModel& model, int layer)
+    {
+        std::vector<Lockable> lockables;
+        for (const auto& info : model.all())
+        {
+            if (info.section != "hexLayer")
+                continue;
+
+            // Pitch Lock only exists on the even layer of each pair (manual: turning it on for
+            // Layer 2/4/6 copies Layer 1/3/5's pitch onto it) -- skip entirely on odd layers,
+            // same gate HexLayerPanel::buildLayerGrid() already applies to its own controls.
+            if (info.id == "hexPitchLock" && (layer % 2) != 0)
+                continue;
+
+            const auto pageIt = kHexLayerPageOf.find (info.id);
+            jassert (pageIt != kHexLayerPageOf.end());   // every hexLayer param needs a page slot
+            if (pageIt == kHexLayerPageOf.end())
+                continue;
+
+            const auto nameIt = kHexLayerShortNames.find (info.id);
+            jassert (nameIt != kHexLayerShortNames.end());
+
+            const bool perLayer = (info.block == "Layer");   // else "Global" (Detune Number/LFO)
+            lockables.push_back ({ info.id, perLayer ? layer : 1, 0,
+                                    nameIt != kHexLayerShortNames.end() ? nameIt->second
+                                                                         : info.id.substring (0, 4).toUpperCase(),
+                                    pageIt->second });
+        }
+        return { "HEX LAYER", kHexLayerPageNames, lockables };
+    }
 
     // Drawbar Organ (category 0x07) — deliberately EMPTY for now. Its one obviously-interesting
     // lockable (organPosition, the 9 drawbar faders) does NOT reach the running voice via the
@@ -168,15 +212,21 @@ namespace
     // writes persist to the edit buffer but never sound). paramMessages() below only knows the
     // SysEx path, so routing a drawbar through it here would silently "work" (no error, no
     // effect) rather than fail loudly. Needs its own transport branch in paramMessages() before
-    // any Organ param is added to this table -- not attempted in this pass since the owner asked
-    // to start with Hex Layer.
-    const EngineLockableSet kEngineSets[] = {
-        { "SOLO SYNTH",    kSoloSynthPageNames, std::size (kSoloSynthPageNames),
-                            kSoloSynthLockables, std::size (kSoloSynthLockables) },
-        { "HEX LAYER",     kHexLayerPageNames,  std::size (kHexLayerPageNames),
-                            kHexLayerLockables,  std::size (kHexLayerLockables) },
-        { "DRAWBAR ORGAN", nullptr, 0, nullptr, 0 },
-    };
+    // any Organ param is added to this table -- owner's call this pass was Solo Synth + Hex Layer
+    // only (Organ/PCM Melody p-locks explicitly deferred, see project memory).
+    EngineLockableSet resolveEngineLockableSet (TrackEngine engine, const casioxw::ParamModel& model, int hexLayer)
+    {
+        switch (engine)
+        {
+            case TrackEngine::hexLayer:
+                return buildHexLayerLockableSet (model, hexLayer);
+            case TrackEngine::drawbarOrgan:
+                return { "DRAWBAR ORGAN", {}, {} };
+            case TrackEngine::soloSynth:
+                break;
+        }
+        return { "SOLO SYNTH", kSoloSynthPageNames, kSoloSynthLockables };
+    }
 
     // engineTag()'s strings are the on-disk vocabulary sequenceToJson()/sequenceFromJson() carry
     // in Sequence::engineTag (core stores it opaquely, doesn't interpret it) -- keep in sync with
@@ -420,6 +470,12 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         switchEngine (static_cast<TrackEngine> (engineCombo.getSelectedId() - 1));
     };
     addAndMakeVisible (engineCombo);
+
+    for (int layer = 1; layer <= 6; ++layer)
+        hexLayerCombo.addItem ("Layer " + juce::String (layer), layer);
+    hexLayerCombo.setSelectedId (currentHexLayer, juce::dontSendNotification);
+    hexLayerCombo.onChange = [this] { setHexLayer (hexLayerCombo.getSelectedId()); };
+    addAndMakeVisible (hexLayerCombo);
 
     // ---- step grid -------------------------------------------------------------------------
     for (int i = 0; i < 16; ++i)
@@ -1266,8 +1322,11 @@ bool SequencerPanel::applySoloSequenceText (const juce::String& text)
         applyEngine (loadedEngine);
 
     // Adopt the loaded musical content, but keep THIS panel's lockable set + controls intact
-    // (they're fixed by kEngineSets and already have the metadata min/max seeded). Only import
-    // each known lockable param's base value, matched by id.
+    // (fixed by resolveEngineLockableSet() for the now-current engine/layer, already has the
+    // metadata min/max seeded). Only import each known lockable param's base value, matched by
+    // id+instance -- for Hex Layer this means a saved file's per-layer bases only land if
+    // currentHexLayer already matches whatever layer was selected when it was saved (same
+    // one-active-selector limitation switchEngine() already has for engines).
     sequence.steps        = loaded->steps;
     sequence.channel      = loaded->channel;
     sequence.tempoBpm     = loaded->tempoBpm;
@@ -1740,12 +1799,9 @@ void SequencerPanel::refreshParamControls()
 void SequencerPanel::seedLockableFromEngine (TrackEngine engine)
 {
     sequence.lockable.clear();
-    const auto& set = kEngineSets[(size_t) engine];
-    for (size_t i = 0; i < set.lockableCount; ++i)
-    {
-        const auto& l = set.lockables[i];
+    const auto set = resolveEngineLockableSet (engine, codec.model(), currentHexLayer);
+    for (const auto& l : set.lockables)
         sequence.lockable.push_back (casioxw::LockableParam { l.paramId, l.instance, l.base });
-    }
     sequence.engineTag = engineTag (engine);
 }
 
@@ -1755,10 +1811,12 @@ void SequencerPanel::applyEngine (TrackEngine newEngine)
     seedLockableFromEngine (currentEngine);
     continuousLockables.clear();   // indices were sized for the OLD engine's lockable count
 
-    synthLabel.setText (kEngineSets[(size_t) currentEngine].displayName, juce::dontSendNotification);
+    synthLabel.setText (resolveEngineLockableSet (currentEngine, codec.model(), currentHexLayer).displayName,
+                         juce::dontSendNotification);
     engineCombo.setSelectedId ((int) currentEngine + 1, juce::dontSendNotification);
 
     rebuildSynthParamPages();   // also re-seeds continuousLockables + min/max for the new table
+    resized();   // hexLayerCombo's visibility depends on currentEngine
 }
 
 void SequencerPanel::switchEngine (TrackEngine newEngine)
@@ -1782,20 +1840,44 @@ void SequencerPanel::switchEngine (TrackEngine newEngine)
     updateClearLocksEnabled();
 }
 
+void SequencerPanel::setHexLayer (int layer)
+{
+    if (layer == currentHexLayer || layer < 1 || layer > 6)
+        return;
+
+    // Same race as switchEngine() -- both playback and a base-value sync iterate sequence.lockable
+    // on the shared timer.
+    if (playing || ! outstandingBaseSync.empty())
+    {
+        statusLabel.setText ("Stop playback/sync before switching layer", juce::dontSendNotification);
+        hexLayerCombo.setSelectedId (currentHexLayer, juce::dontSendNotification);   // revert
+        return;
+    }
+
+    currentHexLayer = layer;
+    seedLockableFromEngine (currentEngine);   // only reachable while currentEngine == hexLayer
+    continuousLockables.clear();
+    rebuildSynthParamPages();
+    refreshParamControls();
+    refreshStepButtons();
+    updateStatusLabel();
+    updateClearLocksEnabled();
+}
+
 void SequencerPanel::rebuildSynthParamPages()
 {
-    const auto& set = kEngineSets[(size_t) currentEngine];
+    const auto set = resolveEngineLockableSet (currentEngine, codec.model(), currentHexLayer);
 
     std::vector<ParamPageDisplay::Page> pages;
-    for (size_t p = 0; p < set.pageCount; ++p)
-        pages.push_back ({ set.pageNames[p], {} });
+    for (const auto& pageName : set.pageNames)
+        pages.push_back ({ pageName, {} });
 
     const auto& model = codec.model();
     for (size_t i = 0; i < sequence.lockable.size(); ++i)
     {
         const auto& l = set.lockables[i];
         const auto* info = model.find (l.paramId);
-        jassert (info != nullptr);   // kEngineSets ids must exist in xwp1.json
+        jassert (info != nullptr);   // every lockable id must exist in xwp1.json
         if (info == nullptr)
             continue;
 
@@ -2435,6 +2517,15 @@ void SequencerPanel::resized()
     synthLabel.setBounds (synthHeader.removeFromLeft (140));
     engineCombo.setBounds (synthHeader.removeFromLeft (140).reduced (2, 1));
     synthHeader.removeFromLeft (4);
+    if (currentEngine == TrackEngine::hexLayer)
+    {
+        hexLayerCombo.setBounds (synthHeader.removeFromLeft (90).reduced (2, 1));
+        synthHeader.removeFromLeft (4);
+    }
+    else
+    {
+        hexLayerCombo.setBounds (0, 0, 0, 0);
+    }
     synthControlsButton.setBounds (synthHeader.removeFromLeft (22));
     bounds.removeFromTop (4);
 

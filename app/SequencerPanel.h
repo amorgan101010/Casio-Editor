@@ -216,6 +216,11 @@ private:
         selection on refusal. */
     void switchEngine (TrackEngine newEngine);
 
+    /** User-driven Hex Layer selector change (hexLayerCombo, only reachable while
+        currentEngine == hexLayer). Same guard as switchEngine() (refuses mid-playback/mid-sync,
+        reverts the combo on refusal) since it also rebuilds sequence.lockable. */
+    void setHexLayer (int layer);
+
     /** Swap paramDisplay's page set to match whichever lane currently owns the edit target: the
         Solo Synth's normal pages, or -- if a PCM track has a step selected -- a single-page
         NOTE/GATE/VEL editor for that step (raw cells, no ParamInfo/SysEx address). Cheap to call
@@ -269,6 +274,14 @@ private:
     casioxw::Sequence sequence;                // source of truth (solo track: Solo Synth/Hex Layer/Organ)
     TrackEngine currentEngine = TrackEngine::soloSynth;
     juce::ComboBox engineCombo;                // selects which engine's lockable table `sequence.lockable` uses
+
+    // Hex Layer's lockable table covers all 6 layers, but only ONE layer's per-layer params are
+    // ever loaded into sequence.lockable at a time (same "one active selector" shape as
+    // engineCombo itself) -- this combo picks which. Global/LFO params (shared across all 6
+    // layers) are always present regardless of this selection. Zero-sized/inert while
+    // currentEngine != hexLayer (see resized()).
+    int currentHexLayer = 1;                   // 1-6
+    juce::ComboBox hexLayerCombo;
 
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
     std::unique_ptr<ParamPageDisplay> paramDisplay;   // the pageable p-lock parameter sub-window
