@@ -143,14 +143,11 @@ void ArrangerPanel::RowWidgets::resized()
     labelEditor.setBounds (x, midY - 11, kLabelWidth, 22); x += kLabelWidth + kColGap;
 
     setCombo.setBounds (x, midY - 11, kFileComboWidth, 22);
-    const int contentX = x;
     x += kFileComboWidth + kColGap;
 
     soloCombo.setBounds (x, midY - 11, kFileComboWidth, 22); x += kFileComboWidth + kColGap;
     drumsCombo.setBounds (x, midY - 11, kFileComboWidth, 22); x += kFileComboWidth + kColGap;
     pcmCombo.setBounds (x, midY - 11, kFileComboWidth, 22); x += kFileComboWidth + kColGap;
-    fromSetLabel.setBounds (contentX + kFileComboWidth + kColGap, midY - 11,
-                            kFileComboWidth * 3 + kColGap * 2, 22);
 
     repeatSlider.setBounds (x, midY - 11, kRepeatWidth, 22); x += kRepeatWidth + kColGap;
 
@@ -486,11 +483,9 @@ void ArrangerPanel::configureRowWidgets (RowWidgets& w)
 
     w.setCombo.onChange = [this, &w]
     {
-        const bool setActive = w.setCombo.getSelectedId() > 1;
-        w.soloCombo.setVisible (! setActive);
-        w.drumsCombo.setVisible (! setActive);
-        w.pcmCombo.setVisible (! setActive);
-        w.fromSetLabel.setVisible (setActive);
+        // solo/drums/pcm stay visible/usable regardless of whether a set is also loaded -- a set is
+        // a BASELINE, not exclusive; picking an individual file overrides just that one part (see
+        // loadRowRuntime()). setCombo.getSelectedId() no longer changes any other widget's visibility.
         w.setCombo.setTooltip (w.setCombo.getText());   // full name on hover even when the column
                                                         // itself can't fit it (see kFileComboWidth)
         onRowFieldChanged (w);
@@ -502,12 +497,6 @@ void ArrangerPanel::configureRowWidgets (RowWidgets& w)
         combo->onChange = [this, &w, combo] { combo->setTooltip (combo->getText()); onRowFieldChanged (w); };
         w.addAndMakeVisible (*combo);
     }
-
-    w.fromSetLabel.setFont (EditorFonts::mono (11.0f, true));
-    w.fromSetLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
-    w.fromSetLabel.setJustificationType (juce::Justification::centred);
-    w.fromSetLabel.setVisible (false);
-    w.addAndMakeVisible (w.fromSetLabel);
 
     // Explicit setTextBoxStyle() on all three IncDecButtons sliders below -- JUCE's own default
     // textBoxWidth is 80px, which getSliderLayout() clamps to (columnWidth - 30), leaving as little
@@ -592,11 +581,6 @@ void ArrangerPanel::syncRowWidgetsFromSong (int rowIndex)
     for (int i = 0; i < casioxw::kSongLaneCount; ++i)
         w.muteChips[(size_t) i].setToggleState (row.laneMuted[(size_t) i], juce::dontSendNotification);
 
-    const bool setActive = row.setFile.isNotEmpty();
-    w.soloCombo.setVisible (! setActive);
-    w.drumsCombo.setVisible (! setActive);
-    w.pcmCombo.setVisible (! setActive);
-    w.fromSetLabel.setVisible (setActive);
 }
 
 void ArrangerPanel::onRowFieldChanged (RowWidgets& w)
@@ -767,6 +751,9 @@ ArrangerPanel::RowRuntime ArrangerPanel::loadRowRuntime (const casioxw::SongRow&
 {
     RowRuntime runtime;
 
+    // A loaded set is the BASELINE, not exclusive -- soloFile/drumsFile/pcmFile below (if any are
+    // also set) OVERRIDE just their one part, so a row can load a whole .xwset and still swap out
+    // e.g. only its drums for a different saved pattern, rather than the set being all-or-nothing.
     if (row.setFile.isNotEmpty())
     {
         const auto file = resolveFile (row.setFile);
@@ -778,7 +765,6 @@ ArrangerPanel::RowRuntime ArrangerPanel::loadRowRuntime (const casioxw::SongRow&
             runtime.hasDrums = parseDrumTracks (juce::JSON::toString (obj->getProperty ("drums")), runtime.drums);
             runtime.hasPcm = parsePcmTracks (juce::JSON::toString (obj->getProperty ("pcm")), runtime.pcm);
         }
-        return runtime;
     }
 
     if (row.soloFile.isNotEmpty())

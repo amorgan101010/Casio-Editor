@@ -23,12 +23,14 @@ namespace casioxw
         this row, which of the 10 fixed lanes are muted, and how many times the row's 16 steps
         repeat before the song advances to the next row.
 
-        A row is in one of two mutually-exclusive modes:
-          - `setFile` non-empty: the row loads a sequence SET (.xwset, SequencerPanel::SaveKind::
-            sequenceSet) -- solo+drums+pcm all come from that one bundle and `soloFile`/`drumsFile`/
-            `pcmFile` below are ignored (a set "can't load anything else", per the arranger brief).
-          - `setFile` empty: `soloFile`/`drumsFile`/`pcmFile` are each independently optional --
-            any combination of a solo (.xwseq), drums (.xwdrm), and pcm (.xwpcm) file, or none.
+        `setFile`, if non-empty, loads a sequence SET (.xwset, SequencerPanel::SaveKind::
+        sequenceSet) as this row's BASELINE -- solo+drums+pcm all come from that one bundle.
+        `soloFile`/`drumsFile`/`pcmFile` are each independently optional on top of that: whichever
+        of them is non-empty OVERRIDES just that one part instead of the set's own version of it
+        (e.g. a set plus a `drumsFile` plays the set's solo/pcm but this row's own drums). With
+        `setFile` empty, they behave the same way against nothing -- any combination of a solo
+        (.xwseq), drums (.xwdrm), and pcm (.xwpcm) file, or none. Applied in ArrangerPanel::
+        loadRowRuntime(), not here -- this struct is just the saved intent.
 
         Every file reference is a relative filename (matching the existing .xwset convention, see
         SequencerPanel::saveByKind), resolved against the Song's own directory so a Song stays

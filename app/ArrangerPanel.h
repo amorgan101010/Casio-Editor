@@ -17,12 +17,14 @@
 #include <vector>
 
 //==============================================================================
-/** Digitakt-style song arranger: a scrollable table of rows, each row loading either one bundled
-    sequence SET (.xwset -- solo+drums+pcm together, exclusive of anything else) or any combination
-    of an independently-picked solo (.xwseq), drums (.xwdrm), and melody/pcm (.xwpcm) file, plus a
-    per-row repeat count and a strip of 10 lane mutes (Solo Synth + Drum 1-5 + Bass/Solo1/Solo2/
-    Chords -- SequencerPanel's own fixed lane roster, mirrored via casioxw::kSongLaneCount so a
-    row's mute state means the same thing regardless of which files it loads).
+/** Digitakt-style song arranger: a scrollable table of rows, each row loading a bundled sequence
+    SET (.xwset -- solo+drums+pcm together) as a BASELINE, an independently-picked solo (.xwseq),
+    drums (.xwdrm), and/or melody/pcm (.xwpcm) file, or both at once -- a row can load a whole .xwset
+    and still override just one or two of its parts with a different saved file, rather than the set
+    being all-or-nothing (see loadRowRuntime()). Plus a per-row repeat count and a strip of 10 lane
+    mutes (Solo Synth + Drum 1-5 + Bass/Solo1/Solo2/Chords -- SequencerPanel's own fixed lane roster,
+    mirrored via casioxw::kSongLaneCount so a row's mute state means the same thing regardless of
+    which files it loads).
 
     Deliberately an INDEPENDENT playback engine (owner's explicit choice over reusing the live step
     editor's state): this panel parses its own `casioxw::Sequence`/track copies from whichever
@@ -122,7 +124,6 @@ private:
         juce::ComboBox soloCombo;
         juce::ComboBox drumsCombo;
         juce::ComboBox pcmCombo;
-        juce::Label fromSetLabel { {}, juce::CharPointer_UTF8 ("\xc2\xb7 from set \xc2\xb7") };   // shown instead of the 3 combos when setCombo != none
         juce::Slider repeatSlider { juce::Slider::IncDecButtons, juce::Slider::TextBoxRight };
 
         // Elektron-style loop line: 0 == no loop line on this row. Count/infinite are hidden
@@ -211,7 +212,7 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     juce::Label colLabelHeader { {}, "LABEL" };
-    juce::Label colContentHeader { {}, "CONTENT (SET, or SOLO / DRUMS / MELODY)" };
+    juce::Label colContentHeader { {}, "CONTENT (SET + optional SOLO/DRUMS/MELODY overrides)" };
     juce::Label colRepeatHeader { {}, "REPEAT" };
     juce::Label colLoopHeader { {}, "LOOP LINE (back / times)" };
     juce::Label colMuteHeader { {}, juce::CharPointer_UTF8 ("MUTE: SYNTH \xc2\xb7 DRUMS 1-5 \xc2\xb7 BASS/SOLO1/SOLO2/CHORDS") };
