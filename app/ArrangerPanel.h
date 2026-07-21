@@ -191,6 +191,18 @@ private:
     juce::Label colLoopHeader { {}, "LOOP LINE (back / times)" };
     juce::Label colMuteHeader { {}, juce::CharPointer_UTF8 ("MUTE: SYNTH \xc2\xb7 DRUMS 1-5 \xc2\xb7 BASS/SOLO1/SOLO2/CHORDS") };
 
+    /** Arrangement-wide mute strip (song.globalLaneMuted), pinned above the scrolling row table --
+        NOT part of rowWidgets/rowContainer, since it applies across every row rather than to one.
+        Laid out with the exact same per-lane x-offsets as RowWidgets::muteChips (both go through
+        the shared layoutLaneChips() helper in ArrangerPanel.cpp) so it visually aligns as a "master
+        row" sitting directly above the per-row mute chips it overrides. No caption label -- the
+        band + alignment with the per-row chips it sits above is what identifies it. */
+    std::array<juce::TextButton, casioxw::kSongLaneCount> globalMuteChips;
+    // Full-width strip behind globalMuteChips, painted in paint() -- gives the global row its own
+    // visually distinct band instead of reading as one more line of header text stacked against
+    // colLoopHeader/colMuteHeader above it.
+    juce::Rectangle<int> globalMuteRowBounds;
+
     juce::Viewport viewport;
     juce::Component rowContainer;
     std::vector<std::unique_ptr<RowWidgets>> rowWidgets;

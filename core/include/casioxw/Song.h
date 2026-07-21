@@ -67,6 +67,13 @@ namespace casioxw
         std::vector<SongRow> rows;
         int tempoBpm = 120;
         bool loopEnabled = false;
+
+        /** Arrangement-wide lane mute, independent of every row's own `laneMuted`: a lane muted
+            here is silent for the WHOLE song regardless of what any individual row says, rather
+            than needing to be muted on every row one at a time (e.g. silencing the drums across an
+            entire arrangement while auditioning the melody). A lane is only audible when BOTH this
+            AND the current row's own `laneMuted` say so. */
+        std::array<bool, kSongLaneCount> globalLaneMuted {};
     };
 
     /** Where arranger playback currently is: which row, and which repeat-of-that-row (0-based,

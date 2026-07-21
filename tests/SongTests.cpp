@@ -188,6 +188,24 @@ TEST_CASE ("songToJson/songFromJson: round-trips loop-line fields and loopEnable
     CHECK (parsed->rows[0].loopCount == casioxw::kInfiniteLoopCount);
 }
 
+TEST_CASE ("songToJson/songFromJson: round-trips globalLaneMuted independently of per-row laneMuted", "[song]")
+{
+    casioxw::Song song;
+    song.globalLaneMuted[casioxw::kSongDrumLaneStart + 1] = true;   // globally silence Drum 2
+
+    casioxw::SongRow row;
+    row.laneMuted[casioxw::kSongSynthLane] = true;   // this row ALSO mutes the synth on its own
+    song.rows.push_back (row);
+
+    const auto parsed = casioxw::songFromJson (casioxw::songToJson (song));
+    REQUIRE (parsed.has_value());
+    CHECK (parsed->globalLaneMuted[casioxw::kSongDrumLaneStart + 1] == true);
+    CHECK (parsed->globalLaneMuted[casioxw::kSongSynthLane] == false);
+    REQUIRE (parsed->rows.size() == 1);
+    CHECK (parsed->rows[0].laneMuted[casioxw::kSongSynthLane] == true);
+    CHECK (parsed->rows[0].laneMuted[casioxw::kSongDrumLaneStart + 1] == false);   // row's OWN mute, unaffected
+}
+
 TEST_CASE ("songToJson/songFromJson: round-trips an independent-slot row", "[song]")
 {
     casioxw::Song song;

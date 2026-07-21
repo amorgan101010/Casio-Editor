@@ -57,6 +57,11 @@ namespace casioxw
         root->setProperty ("tempoBpm", song.tempoBpm);
         root->setProperty ("loopEnabled", song.loopEnabled);
 
+        juce::Array<juce::var> globalMuteArr;
+        for (const bool m : song.globalLaneMuted)
+            globalMuteArr.add (juce::var (m));
+        root->setProperty ("globalLaneMuted", globalMuteArr);
+
         juce::Array<juce::var> rowsArr;
         for (const auto& row : song.rows)
         {
@@ -91,6 +96,13 @@ namespace casioxw
         Song song;
         song.tempoBpm = (int) parsed.getProperty ("tempoBpm", 120);
         song.loopEnabled = (bool) parsed.getProperty ("loopEnabled", false);
+
+        if (const auto* gmarr = parsed.getProperty ("globalLaneMuted", {}).getArray())
+        {
+            const int n = juce::jmin (kSongLaneCount, gmarr->size());
+            for (int i = 0; i < n; ++i)
+                song.globalLaneMuted[(size_t) i] = (bool) gmarr->getReference (i);
+        }
 
         if (const auto* rarr = parsed.getProperty ("rows", {}).getArray())
         {

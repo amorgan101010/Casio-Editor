@@ -14,9 +14,13 @@ namespace
     constexpr int kRowHeight       = 44;
     constexpr int kRowGap          = 4;
     constexpr int kHeaderHeight    = 20;
+    constexpr int kGlobalMuteRowHeight = 30;
     constexpr int kIndexWidth      = 28;
     constexpr int kLabelWidth      = 120;
-    constexpr int kFileComboWidth  = 108;
+    // Widened from 108 -- owner reported saved sequence filenames getting cut off in these combos.
+    // 1465px of row width is available (viewport width) against ~1315px actually needed at the old
+    // width, so there was slack to spend here without pushing the mute/remove columns off-screen.
+    constexpr int kFileComboWidth  = 136;
     constexpr int kRepeatWidth     = 100;
     constexpr int kLoopBackWidth   = 84;
     constexpr int kLoopCountWidth  = 84;
@@ -35,6 +39,23 @@ namespace
         { "D1", "Drum 1" }, { "D2", "Drum 2" }, { "D3", "Drum 3" }, { "D4", "Drum 4" }, { "D5", "Drum 5" },
         { "B",  "Bass" }, { "S1", "Solo 1" }, { "S2", "Solo 2" }, { "CH", "Chords" },
     };
+
+    // Lays out kSongLaneCount mute-chip buttons starting at `startX`, with the same per-lane width/
+    // gap/group-boundary spacing used by BOTH the per-row mute chips (RowWidgets::resized()) and
+    // the arrangement-wide global mute row (ArrangerPanel::resized()) -- shared here so the two rows
+    // of chips always land in the same columns, one factored-out geometry instead of two copies that
+    // could drift apart.
+    void layoutLaneChips (juce::TextButton* chips, int startX, int y, int height)
+    {
+        int x = startX;
+        for (int i = 0; i < casioxw::kSongLaneCount; ++i)
+        {
+            chips[i].setBounds (x, y, kMuteChipWidth, height);
+            x += kMuteChipWidth + 3;
+            if (i == 0 || i == 5)   // group boundary after the synth lane, and after the 5 drum lanes
+                x += kMuteGroupGap;
+        }
+    }
 
     constexpr double kSchedulerTickMs    = 12.0;
     // Steady-state look-ahead horizon. SequencerPanel keeps this small (60ms) ONLY to keep live
@@ -136,13 +157,7 @@ void ArrangerPanel::RowWidgets::resized()
     loopCountSlider.setBounds (x, midY - 11, kLoopCountWidth, 22); x += kLoopCountWidth + 3;
     loopInfiniteButton.setBounds (x, midY - 11, kLoopInfWidth, 22); x += kLoopInfWidth + kColGap;
 
-    for (int i = 0; i < casioxw::kSongLaneCount; ++i)
-    {
-        muteChips[(size_t) i].setBounds (x, midY - 13, kMuteChipWidth, 26);
-        x += kMuteChipWidth + 3;
-        if (i == 0 || i == 5)   // group boundary after the synth lane, and after the 5 drum lanes
-            x += kMuteGroupGap;
-    }
+    layoutLaneChips (muteChips.data(), x, midY - 13, 26);
 
     removeButton.setBounds (b.getWidth() - kRemoveWidth, midY - 11, kRemoveWidth, 22);
 }
@@ -192,6 +207,28 @@ ArrangerPanel::ArrangerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& mid
     statusLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
     addAndMakeVisible (statusLabel);
 
+    for (int i = 0; i < casioxw::kSongLaneCount; ++i)
+    {
+        auto& chip = globalMuteChips[(size_t) i];
+        chip.setButtonText (kLanes[i].caption);
+        chip.setTooltip (juce::String ("Mute ") + kLanes[i].tooltip
+                         + " across the WHOLE arrangement, regardless of any row's own mute state");
+        chip.setClickingTogglesState (true);
+        // Same "toggled-on == muted" data semantic as the per-row chips, but a distinct ON colour
+        // (red, not idleStep) -- this row overrides every other row's own mute state, so an active
+        // global mute should read as visually different/more emphatic than an ordinary row mute.
+        chip.setColour (juce::TextButton::buttonColourId, EditorColours::filledStep);
+        chip.setColour (juce::TextButton::buttonOnColourId, EditorColours::red);
+        chip.setColour (juce::TextButton::textColourOffId, EditorColours::base03);
+        chip.setColour (juce::TextButton::textColourOnId, EditorColours::base03);
+        const int laneIndex = i;
+        chip.onClick = [this, laneIndex]
+        {
+            song.globalLaneMuted[(size_t) laneIndex] = globalMuteChips[(size_t) laneIndex].getToggleState();
+        };
+        addAndMakeVisible (chip);
+    }
+
     viewport.setViewedComponent (&rowContainer, false);
     viewport.setScrollBarsShown (true, false);
     addAndMakeVisible (viewport);
@@ -213,6 +250,18 @@ ArrangerPanel::~ArrangerPanel()
 void ArrangerPanel::paint (juce::Graphics& g)
 {
     g.fillAll (EditorColours::chassisBg);
+
+    // A distinct panel-toned band behind the whole global-mute strip -- otherwise it read as just
+    // another line of small text stacked directly under colLoopHeader/colMuteHeader, with nothing
+    // to visually mark it as its own control (part of the "chaotic" feedback alongside the
+    // alignment bug above). Painted here (behind every child component) so it never overlaps the
+    // label/chip widgets, only frames them. Owner explicitly didn't want a divider line under it --
+    // the band alone is enough separation.
+    if (! globalMuteRowBounds.isEmpty())
+    {
+        g.setColour (EditorColours::panelBg);
+        g.fillRect (globalMuteRowBounds);
+    }
 
     // Currently-playing row: a translucent playhead wash across the row's full width, same
     // technique/colour SequencerPanel uses for its step-grid playhead (EditorColours::playhead),
@@ -257,11 +306,32 @@ void ArrangerPanel::resized()
     colContentHeader.setBounds (x, colHeaderRow.getY(), kFileComboWidth * 4 + kColGap * 3, kHeaderHeight);
     x += kFileComboWidth * 4 + kColGap * 3 + kColGap;
     colRepeatHeader.setBounds (x, colHeaderRow.getY(), kRepeatWidth, kHeaderHeight); x += kRepeatWidth + kColGap;
-    constexpr int kLoopClusterWidth = kLoopBackWidth + kLoopCountWidth + kLoopInfWidth + 3;
+    // Span from loopBackSlider's own left edge to loopInfiniteButton's own right edge -- i.e. the
+    // exact same three widget widths AND the same two internal gaps RowWidgets::resized() actually
+    // lays out between them (kColGap after loopBackSlider, then only 3px after loopCountSlider).
+    // The previous formula (kLoopBackWidth+kLoopCountWidth+kLoopInfWidth+3, missing that first
+    // kColGap) undercounted by 8px, which cascaded into colMuteHeader AND the global mute row
+    // landing 8px short of where the per-row mute chips actually start -- caught by the owner
+    // ("global mutes are misaligned with the line mutes"), not by gui-preview, since a solid-colour
+    // chip row makes an 8px offset far more visually obvious than it ever was under plain header text.
+    constexpr int kLoopClusterWidth = kLoopBackWidth + kColGap + kLoopCountWidth + 3 + kLoopInfWidth;
     colLoopHeader.setBounds (x, colHeaderRow.getY(), kLoopClusterWidth, kHeaderHeight); x += kLoopClusterWidth + kColGap;
     colMuteHeader.setBounds (x, colHeaderRow.getY(), colHeaderRow.getRight() - x, kHeaderHeight);
+    const int muteColX = x;   // same column start the global mute row's chips align to below
 
-    b.removeFromTop (4);
+    b.removeFromTop (6);
+
+    // Arrangement-wide mute row, pinned here (above the scrolling viewport) rather than living
+    // inside a row -- it applies to every row, not one. Aligned to the exact same column as the
+    // per-row mute chips (muteColX, via the shared layoutLaneChips() helper) so it visually reads
+    // as a "master" row sitting directly above them -- that alignment plus the painted background
+    // band (globalMuteRowBounds, see paint()) is what identifies it; no caption label (owner
+    // flagged a prior label attempt as misleading regardless of how it was sized/positioned).
+    globalMuteRowBounds = b.removeFromTop (kGlobalMuteRowHeight);
+    auto globalMuteRow = globalMuteRowBounds.reduced (0, 2);
+    layoutLaneChips (globalMuteChips.data(), muteColX, globalMuteRow.getY(), globalMuteRow.getHeight());
+
+    b.removeFromTop (6);
     viewport.setBounds (b);
     layoutRowContainer();
 }
@@ -344,13 +414,15 @@ void ArrangerPanel::configureRowWidgets (RowWidgets& w)
         w.drumsCombo.setVisible (! setActive);
         w.pcmCombo.setVisible (! setActive);
         w.fromSetLabel.setVisible (setActive);
+        w.setCombo.setTooltip (w.setCombo.getText());   // full name on hover even when the column
+                                                        // itself can't fit it (see kFileComboWidth)
         onRowFieldChanged (w);
     };
     w.addAndMakeVisible (w.setCombo);
 
     for (auto* combo : { &w.soloCombo, &w.drumsCombo, &w.pcmCombo })
     {
-        combo->onChange = [this, &w] { onRowFieldChanged (w); };
+        combo->onChange = [this, &w, combo] { combo->setTooltip (combo->getText()); onRowFieldChanged (w); };
         w.addAndMakeVisible (*combo);
     }
 
@@ -360,14 +432,23 @@ void ArrangerPanel::configureRowWidgets (RowWidgets& w)
     w.fromSetLabel.setVisible (false);
     w.addAndMakeVisible (w.fromSetLabel);
 
+    // Explicit setTextBoxStyle() on all three IncDecButtons sliders below -- JUCE's own default
+    // textBoxWidth is 80px, which getSliderLayout() clamps to (columnWidth - 30), leaving as little
+    // as ~13px per +/- button on these narrow (84-100px) columns. At that width, drawFittedText()
+    // can't fit even a single "+" glyph at any legible scale and silently substitutes the WHOLE
+    // button label with "..." (the "-" glyph is narrow enough to survive, which is why only the "+"
+    // side looked broken). Narrowing the text box to just what the value actually needs leaves the
+    // buttons a legible, comfortable width instead.
     w.repeatSlider.setRange (1.0, 99.0, 1.0);
     w.repeatSlider.setValue (1.0, juce::dontSendNotification);
     w.repeatSlider.setTextValueSuffix ("x");
+    w.repeatSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 40, 22);
     w.repeatSlider.onValueChange = [this, &w] { onRowFieldChanged (w); };
     w.addAndMakeVisible (w.repeatSlider);
 
     w.loopBackSlider.setRange (0.0, 99.0, 1.0);
     w.loopBackSlider.setValue (0.0, juce::dontSendNotification);
+    w.loopBackSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 34, 22);
     w.loopBackSlider.setTooltip ("Loop line: jump back this many rows once this row's own repeats "
                                  "finish (0 = no loop line on this row)");
     w.loopBackSlider.onValueChange = [this, &w] { onRowFieldChanged (w); updateLoopWidgetVisibility (w); };
@@ -376,6 +457,7 @@ void ArrangerPanel::configureRowWidgets (RowWidgets& w)
     w.loopCountSlider.setRange (1.0, 99.0, 1.0);
     w.loopCountSlider.setValue (1.0, juce::dontSendNotification);
     w.loopCountSlider.setTextValueSuffix ("x");
+    w.loopCountSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 36, 22);
     w.loopCountSlider.setTooltip ("How many times to take the loop line before falling through");
     w.loopCountSlider.onValueChange = [this, &w] { onRowFieldChanged (w); };
     w.addAndMakeVisible (w.loopCountSlider);
@@ -498,6 +580,11 @@ void ArrangerPanel::populateFileCombo (juce::ComboBox& combo, const juce::String
         combo.setSelectedId (1, juce::dontSendNotification);
     else
         combo.setText (keep, juce::dontSendNotification);
+
+    // Widening the column (see kFileComboWidth) helps most filenames fit, but a long one can still
+    // get truncated with an ellipsis -- a tooltip is the general-case fix, since no fixed column
+    // width can guarantee every possible saved-file name fits.
+    combo.setTooltip (keep.isEmpty() ? juce::String ("(none)") : keep);
 }
 
 void ArrangerPanel::refreshFileCombos()
@@ -854,7 +941,12 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
                                              // empty) -- queueDiffEstablish() already covered it
         }
 
-        if (currentRuntime.solo.has_value() && ! row.laneMuted[(size_t) casioxw::kSongSynthLane])
+        // A lane only sounds when BOTH this row's own mute AND the arrangement-wide global mute
+        // (song.globalLaneMuted -- "GLOBAL MUTE" row in the UI) say it's audible, so the global
+        // strip can silence a lane across the whole song without having to mute it on every row.
+        const bool synthAudible = ! row.laneMuted[(size_t) casioxw::kSongSynthLane]
+                                 && ! song.globalLaneMuted[(size_t) casioxw::kSongSynthLane];
+        if (currentRuntime.solo.has_value() && synthAudible)
         {
             // paramChange events are collected here, not sent immediately -- scheduleStep() stamps
             // every paramChange at the SAME instant as this step's own note-on (its contract only
@@ -898,7 +990,8 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
         {
             for (int i = 0; i < (int) currentRuntime.drums.size(); ++i)
             {
-                if (row.laneMuted[(size_t) (casioxw::kSongDrumLaneStart + i)])
+                if (row.laneMuted[(size_t) (casioxw::kSongDrumLaneStart + i)]
+                    || song.globalLaneMuted[(size_t) (casioxw::kSongDrumLaneStart + i)])
                     continue;
                 const auto& t = currentRuntime.drums[(size_t) i];
                 if (! t.steps[(size_t) nextStepIndex])
@@ -920,7 +1013,9 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
         {
             for (int i = 0; i < (int) currentRuntime.pcm.size(); ++i)
             {
-                if (row.laneMuted[(size_t) (casioxw::kSongPcmLaneStart + i)] || ! currentRuntime.pcm[(size_t) i].has_value())
+                if (row.laneMuted[(size_t) (casioxw::kSongPcmLaneStart + i)]
+                    || song.globalLaneMuted[(size_t) (casioxw::kSongPcmLaneStart + i)]
+                    || ! currentRuntime.pcm[(size_t) i].has_value())
                     continue;
 
                 for (const auto& e : casioxw::scheduleStep (*currentRuntime.pcm[(size_t) i], nextStepIndex,
@@ -1011,6 +1106,8 @@ void ArrangerPanel::applyLoadedSong (const casioxw::Song& loaded)
         song.rows.push_back ({});
     tempoSlider.setValue ((double) song.tempoBpm, juce::dontSendNotification);
     loopArrangementButton.setToggleState (song.loopEnabled, juce::dontSendNotification);
+    for (int i = 0; i < casioxw::kSongLaneCount; ++i)
+        globalMuteChips[(size_t) i].setToggleState (song.globalLaneMuted[(size_t) i], juce::dontSendNotification);
     rebuildRowWidgets();
 }
 
