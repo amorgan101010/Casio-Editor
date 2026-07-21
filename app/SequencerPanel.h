@@ -185,6 +185,10 @@ private:
     void selectStep (int step);                // -1 == Base
     void setPLockMode (bool pLockMode);        // STEP / P-LOCK mode keys both land here
     void onParamEdited (int lockableIndex, int value);
+    /** A p-lock cell's double-click reset: clears the selected step's lock on this param
+        (reverting it to the base value) when the cell is currently locked; a no-op otherwise
+        (base mode, or an already-unlocked step, has nothing step-specific to clear). */
+    void onParamReset (int lockableIndex);
     void refreshParamControls();               // value + locked flags into the param display
     void refreshStepButtons();                 // selected highlight + has-locks LED
 

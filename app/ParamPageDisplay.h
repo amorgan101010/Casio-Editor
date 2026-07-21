@@ -79,6 +79,12 @@ public:
     /** Fired once per user-driven knob edit: (lockableIndex, new UI-space value). */
     std::function<void (int lockableIndex, int value)> onValueEdited;
 
+    /** Fired on a cell's double-click, INSTEAD of onValueEdited -- resetting is an action the
+        owner must interpret (e.g. SequencerPanel: clear the step's p-lock if this cell is
+        currently locked, reverting it to the base value), not a value ParamPageDisplay could
+        compute itself. Never fired for a raw cell with no lockableIndex semantics of its own. */
+    std::function<void (int lockableIndex)> onValueReset;
+
     void paint (juce::Graphics&) override;
     void resized() override;
 
