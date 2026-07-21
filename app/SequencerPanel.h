@@ -414,9 +414,6 @@ private:
     juce::TextButton clearAllButton { "Clear All" };  // wipe every lane's pattern (testing aid)
     juce::TextButton shiftLeftButton  { "<" };
     juce::TextButton shiftRightButton { ">" };
-    juce::TextButton drumControlsButton;
-    juce::TextButton synthControlsButton;
-    juce::TextButton pcmControlsButton;
     juce::Label statusLabel;                          // footer: file/save/load messages only
     juce::Label drumTracksLabel { {}, "DRUM TRACKS" };
     juce::Label pcmTracksLabel { {}, "PCM TRACKS" };

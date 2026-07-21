@@ -665,8 +665,8 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         updateStatusLabel();
         resized();
         repaint();   // resized() alone leaves the synth card's painted background (synthCardBounds,
-                     // drawn in paint()) stale at its old Y when this shifts it -- see initArrowToggle's
-                     // identical resized()+repaint() pair above for the established fix.
+                     // drawn in paint()) stale at its old Y when this shifts it -- see the Arranger-mode
+                     // switch's identical resized()+repaint() pair (further down) for the same fix.
     };
     addAndMakeVisible (synthPolyToggle);
 
@@ -804,25 +804,6 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         l->setFont (EditorFonts::header (11.0f));
         addAndMakeVisible (*l);
     }
-
-    auto initArrowToggle = [this] (juce::TextButton& button, const juce::String& tooltip)
-    {
-        button.setClickingTogglesState (true);
-        button.setToggleState (true, juce::dontSendNotification);
-        button.setButtonText (juce::String::fromUTF8 ("▼"));
-        button.setTooltip (tooltip);
-        button.onClick = [this, &button]
-        {
-            button.setButtonText (button.getToggleState() ? juce::String::fromUTF8 ("▼")
-                                                          : juce::String::fromUTF8 ("▶"));
-            resized();
-            repaint();
-        };
-        addAndMakeVisible (button);
-    };
-    initArrowToggle (drumControlsButton, "Toggle drum controls");
-    initArrowToggle (pcmControlsButton, "Toggle PCM track controls");
-    initArrowToggle (synthControlsButton, "Toggle synth controls");
 
     // ---- transport -------------------------------------------------------------------------
     playStopButton.onClick = [this] { playing ? stop() : play(); };
@@ -1097,7 +1078,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                 resized();
                 repaint();   // resized() alone leaves pcmCardBounds/synthCardBounds's painted background
                              // stale at the old Y once this row's height change shifts everything below it
-                             // -- see initArrowToggle's identical resized()+repaint() pair (ctor) for precedent.
+                             // -- see the Arranger-mode switch's identical resized()+repaint() pair for precedent.
             };
             addAndMakeVisible (row->polyToggle);
 
@@ -3207,14 +3188,11 @@ void SequencerPanel::resized()
         return;   // the step-editor's own cards/grid below are hidden while in Arranger mode
     }
 
-    const bool showDrumControls = drumControlsButton.getToggleState();
-    const bool showSynthControls = synthControlsButton.getToggleState();
     const int cardX = bounds.getX() + kStepGridWidth + kSectionGap + kLaneLabelWidth + kSectionGap;
 
     // ---- drum section ----------------------------------------------------------------------
     auto drumHeader = bounds.removeFromTop (20);
     drumTracksLabel.setBounds (drumHeader.removeFromLeft (140));
-    drumControlsButton.setBounds (drumHeader.removeFromLeft (22));
     bounds.removeFromTop (4);
 
     const int playheadTop = bounds.getY();
@@ -3229,28 +3207,17 @@ void SequencerPanel::resized()
         row->trackLabel.setBounds (r.removeFromLeft (kLaneLabelWidth));
         r.removeFromLeft (kSectionGap);
 
-        if (showDrumControls)
-        {
-            auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
-            row->mute.setBounds (controls.removeFromLeft (46).withSizeKeepingCentre (46, 24));
-            controls.removeFromLeft (6);
-            row->channel.setBounds (controls.removeFromLeft (58).withSizeKeepingCentre (58, 24));
-            controls.removeFromLeft (8);
-            auto noteVel = controls;
-            row->note.setBounds (noteVel.removeFromTop (23));
-            noteVel.removeFromTop (2);
-            auto velRow = noteVel.removeFromTop (23);
-            row->velocityMarker.setBounds (velRow.removeFromRight (58));
-            row->velocity.setBounds (velRow);
-        }
-        else
-        {
-            row->mute.setBounds (0, 0, 0, 0);
-            row->channel.setBounds (0, 0, 0, 0);
-            row->note.setBounds (0, 0, 0, 0);
-            row->velocity.setBounds (0, 0, 0, 0);
-            row->velocityMarker.setBounds (0, 0, 0, 0);
-        }
+        auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
+        row->mute.setBounds (controls.removeFromLeft (46).withSizeKeepingCentre (46, 24));
+        controls.removeFromLeft (6);
+        row->channel.setBounds (controls.removeFromLeft (58).withSizeKeepingCentre (58, 24));
+        controls.removeFromLeft (8);
+        auto noteVel = controls;
+        row->note.setBounds (noteVel.removeFromTop (23));
+        noteVel.removeFromTop (2);
+        auto velRow = noteVel.removeFromTop (23);
+        row->velocityMarker.setBounds (velRow.removeFromRight (58));
+        row->velocity.setBounds (velRow);
 
         for (auto& b : row->steps)
         {
@@ -3260,18 +3227,14 @@ void SequencerPanel::resized()
 
         bounds.removeFromTop (2);
     }
-    drumCardBounds = showDrumControls
-        ? juce::Rectangle<int> (cardX, drumTop - 2, kCardWidth, bounds.getY() - drumTop + 2)
-        : juce::Rectangle<int>();
+    drumCardBounds = juce::Rectangle<int> (cardX, drumTop - 2, kCardWidth, bounds.getY() - drumTop + 2);
 
     bounds.removeFromTop (10);
 
     // ---- PCM-track section: own lane per track (label/mute/channel + 16 step keys), same shape
     // as a drum row -- note/gate/velocity for the selected step live in the screen, not here. ----
-    const bool showPcmControls = pcmControlsButton.getToggleState();
     auto pcmHeader = bounds.removeFromTop (20);
     pcmTracksLabel.setBounds (pcmHeader.removeFromLeft (140));
-    pcmControlsButton.setBounds (pcmHeader.removeFromLeft (22));
     bounds.removeFromTop (4);
 
     const int pcmTop = bounds.getY();
@@ -3285,29 +3248,19 @@ void SequencerPanel::resized()
         row->trackLabel.setBounds (r.removeFromLeft (kLaneLabelWidth));
         r.removeFromLeft (kSectionGap);
 
-        if (showPcmControls)
+        auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
+        row->mute.setBounds (controls.removeFromLeft (46).withSizeKeepingCentre (46, 24));
+        controls.removeFromLeft (6);
+        row->channel.setBounds (controls.removeFromLeft (58).withSizeKeepingCentre (58, 24));
+        if (row->polyCapable)
         {
-            auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
-            row->mute.setBounds (controls.removeFromLeft (46).withSizeKeepingCentre (46, 24));
-            controls.removeFromLeft (6);
-            row->channel.setBounds (controls.removeFromLeft (58).withSizeKeepingCentre (58, 24));
-            if (row->polyCapable)
-            {
-                controls.removeFromLeft (10);
-                row->polyToggle.setBounds (controls.removeFromLeft (54).withSizeKeepingCentre (54, 24));
-                controls.removeFromLeft (4);
-                row->subTrackArrow.setBounds (controls.removeFromLeft (26).withSizeKeepingCentre (26, 24));
-            }
-            else
-            {
-                row->polyToggle.setBounds (0, 0, 0, 0);
-                row->subTrackArrow.setBounds (0, 0, 0, 0);
-            }
+            controls.removeFromLeft (10);
+            row->polyToggle.setBounds (controls.removeFromLeft (54).withSizeKeepingCentre (54, 24));
+            controls.removeFromLeft (4);
+            row->subTrackArrow.setBounds (controls.removeFromLeft (26).withSizeKeepingCentre (26, 24));
         }
         else
         {
-            row->mute.setBounds (0, 0, 0, 0);
-            row->channel.setBounds (0, 0, 0, 0);
             row->polyToggle.setBounds (0, 0, 0, 0);
             row->subTrackArrow.setBounds (0, 0, 0, 0);
         }
@@ -3344,9 +3297,7 @@ void SequencerPanel::resized()
                     b.setBounds (0, 0, 0, 0);
         }
     }
-    pcmCardBounds = showPcmControls
-        ? juce::Rectangle<int> (cardX, pcmTop - 2, kCardWidth, bounds.getY() - pcmTop + 2)
-        : juce::Rectangle<int>();
+    pcmCardBounds = juce::Rectangle<int> (cardX, pcmTop - 2, kCardWidth, bounds.getY() - pcmTop + 2);
 
     bounds.removeFromTop (10);
 
@@ -3397,7 +3348,6 @@ void SequencerPanel::resized()
         synthPolyToggle.setBounds (0, 0, 0, 0);
         synthSubTrackArrow.setBounds (0, 0, 0, 0);
     }
-    synthControlsButton.setBounds (synthHeader.removeFromLeft (22));
     bounds.removeFromTop (4);
 
     // synthSection's height reserves room for the solo lane's poly sub-track rows (below the
@@ -3429,34 +3379,23 @@ void SequencerPanel::resized()
     auto cardInner = card.reduced (8);
     auto headerRow = cardInner.removeFromTop (24);
 
-    if (showSynthControls)
-    {
-        shiftRightButton.setBounds (headerRow.removeFromRight (28));
-        headerRow.removeFromRight (2);
-        shiftLeftButton.setBounds (headerRow.removeFromRight (28));
-        headerRow.removeFromRight (6);
-        rndOptionsButton.setBounds (headerRow.removeFromRight (22));   // reads as one "Rnd ▾" pair
-        randomizeButton.setBounds (headerRow.removeFromRight (42));
-        headerRow.removeFromRight (6);
-        muteSynthButton.setBounds (headerRow.removeFromRight (50));
-        headerRow.removeFromRight (6);
-        syncBaseButton.setBounds (headerRow.removeFromRight (50));
-        headerRow.removeFromRight (6);
-        baseButton.setBounds (headerRow.removeFromRight (50));
+    shiftRightButton.setBounds (headerRow.removeFromRight (28));
+    headerRow.removeFromRight (2);
+    shiftLeftButton.setBounds (headerRow.removeFromRight (28));
+    headerRow.removeFromRight (6);
+    rndOptionsButton.setBounds (headerRow.removeFromRight (22));   // reads as one "Rnd ▾" pair
+    randomizeButton.setBounds (headerRow.removeFromRight (42));
+    headerRow.removeFromRight (6);
+    muteSynthButton.setBounds (headerRow.removeFromRight (50));
+    headerRow.removeFromRight (6);
+    syncBaseButton.setBounds (headerRow.removeFromRight (50));
+    headerRow.removeFromRight (6);
+    baseButton.setBounds (headerRow.removeFromRight (50));
 
-        cardInner.removeFromTop (6);
-        paramDisplay->setBounds (cardInner);
-        paramDisplay->setVisible (true);
-        synthCardBounds = card;
-    }
-    else
-    {
-        for (auto* b : { &baseButton, &syncBaseButton, &muteSynthButton, &randomizeButton,
-                         &rndOptionsButton, &shiftLeftButton, &shiftRightButton })
-            b->setBounds (0, 0, 0, 0);
-        paramDisplay->setVisible (false);
-        synthCardBounds = card.withHeight (24 + 16);
-    }
+    cardInner.removeFromTop (6);
+    paramDisplay->setBounds (cardInner);
+    paramDisplay->setVisible (true);
+    synthCardBounds = card;
 
     for (int i = 0; i < 16; ++i)
     {
