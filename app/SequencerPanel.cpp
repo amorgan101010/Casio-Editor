@@ -45,6 +45,26 @@ namespace
     constexpr int kStepColumnHeight = kSelectKeyHeight;
     constexpr int kSynthSectionHeight = 306;              // fits the card (header + LCD display + page keys)
     constexpr int kSynthStepTopInset = 9;                 // visually match drum/PCM header-to-keys spacing
+
+    // Every step button (parent row or poly sub-row) renders at the same fixed height
+    // (kDrumKeyHeight, 34px), vertically centred in whatever cell it's given -- but parent rows
+    // and sub-rows use DIFFERENT cell heights (52px vs 40px), so a plain, flat "2px gap after
+    // every row" leaves visibly UNEQUAL whitespace between the button BOXES themselves: a PCM/
+    // drum row's own 9px built-in padding ((52-34)/2) plus a 2px gap plus a sub-row's 3px padding
+    // ((40-34)/2) reads as ~14px of whitespace, but two sub-rows back to back only had ~8px
+    // (3+2+3) -- a visible, uneven pitch the owner flagged live. These two constants instead
+    // target a consistent ~14px of visible whitespace between step-button boxes anywhere poly
+    // sub-track rows appear (tighter than the ~20px between two ordinary rows -- "closer together
+    // is fine, just be consistent", per the owner) by compensating for each row type's own
+    // padding: kPolySubRowGap (8 = 14 - 3 - 3) is the gap BETWEEN two sub-rows; a PCM/drum row's
+    // OWN padding (9px) already reaches ~14px with the standard 2px inter-row gap, so that
+    // transition needs no special constant. The solo lane's trig row has NO padding of its own
+    // (its cell height now exactly equals its button height, since the always-visible note/gate/
+    // vel knob rows were removed) so kSynthTrigToPolyGap (11 = 14 - 0 - 3) makes up the difference
+    // there specifically.
+    constexpr int kPolySubRowGap = 8;
+    constexpr int kSynthTrigToPolyGap = 11;
+
     constexpr int kToolbarRowHeight = 30;                 // transport toolbar rows (wrapping flow)
     constexpr int kFooterHeight = 18;                     // file save/load message line
     constexpr int kSectionGap = 6;
@@ -1159,7 +1179,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     // unconditionally; resized() only actually lays out sub-rows while a lane is poly+expanded,
     // so collapsed/mono states just leave unused space above the bottom-anchored statusLabel
     // rather than needing a live resize.
-    const int kPolyReserve = (kMaxPolyVoices - 1) * (kPolyVoiceRowHeight + 2);
+    const int kPolyReserve = (kMaxPolyVoices - 1) * (kPolyVoiceRowHeight + kPolySubRowGap);
     setSize (8 + kStepGridWidth + kSectionGap + kLaneLabelWidth + kSectionGap + kCardWidth + 8,
              8 + kToolbarRowHeight + 8 + 20 + 4
                  + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
@@ -3255,7 +3275,7 @@ void SequencerPanel::resized()
                     auto cell = vStepCells.removeFromLeft (kStepWidth);
                     b.setBounds (cell.withSizeKeepingCentre (kStepWidth - 6, kPolyVoiceRowHeight - 6));
                 }
-                bounds.removeFromTop (2);
+                bounds.removeFromTop (kPolySubRowGap);
             }
         }
         else
@@ -3323,7 +3343,7 @@ void SequencerPanel::resized()
     // kPolyReserve comment for why a collapsed/mono state safely leaves that space unused rather
     // than needing a live window resize.
     const int synthPolyRowsHeight = (synthPolyMode && synthSubTracksExpanded)
-        ? (int) synthExtraVoices.size() * (kPolyVoiceRowHeight + 2) : 0;
+        ? (int) synthExtraVoices.size() * (kPolyVoiceRowHeight + kPolySubRowGap) : 0;
     auto synthSection = bounds.removeFromTop (juce::jmax (kStepColumnHeight + synthPolyRowsHeight, kSynthSectionHeight));
     const int playheadBottom = synthSection.getY() + kSynthStepTopInset + kStepColumnHeight;
 
@@ -3334,12 +3354,13 @@ void SequencerPanel::resized()
     // Poly sub-track rows sit directly under the select-key row now (not bottom-anchored) --
     // that row is the column's only other content once note/gate/vel aren't always-visible knobs
     // here anymore. See setSize()'s kPolyReserve comment for why a collapsed/mono state is safe to
-    // just leave the space below unused rather than needing a live window resize. The 2px gap
-    // before the first sub-row matches the gap BETWEEN sub-rows (and every other row-to-row gap
-    // in this panel) -- without it the trig row butted straight up against the first sub-row while
-    // the sub-rows below it stayed evenly spaced, an inconsistent gap the owner flagged live.
+    // just leave the space below unused rather than needing a live window resize. Uses
+    // kSynthTrigToPolyGap, not the standard "2", because the trig row's cell has no padding of
+    // its own to contribute (see that constant's doc comment) -- a flat "2" here left visibly
+    // less whitespace before the first sub-row than between sub-rows themselves, an inconsistent
+    // gap the owner flagged live.
     if (synthPolyRowsHeight > 0)
-        stepCols.removeFromTop (2);
+        stepCols.removeFromTop (kSynthTrigToPolyGap);
     auto synthPolyRowsArea = synthPolyRowsHeight > 0 ? stepCols.removeFromTop (synthPolyRowsHeight)
                                                       : juce::Rectangle<int>();
     synthSection.removeFromLeft (kSectionGap);
@@ -3389,7 +3410,7 @@ void SequencerPanel::resized()
                 auto cell = vr.removeFromLeft (kStepWidth);
                 b.setBounds (cell.withSizeKeepingCentre (kStepWidth - 6, kPolyVoiceRowHeight - 6));
             }
-            pr.removeFromTop (2);
+            pr.removeFromTop (kPolySubRowGap);
         }
     }
     else
