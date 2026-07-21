@@ -3334,7 +3334,12 @@ void SequencerPanel::resized()
     // Poly sub-track rows sit directly under the select-key row now (not bottom-anchored) --
     // that row is the column's only other content once note/gate/vel aren't always-visible knobs
     // here anymore. See setSize()'s kPolyReserve comment for why a collapsed/mono state is safe to
-    // just leave the space below unused rather than needing a live window resize.
+    // just leave the space below unused rather than needing a live window resize. The 2px gap
+    // before the first sub-row matches the gap BETWEEN sub-rows (and every other row-to-row gap
+    // in this panel) -- without it the trig row butted straight up against the first sub-row while
+    // the sub-rows below it stayed evenly spaced, an inconsistent gap the owner flagged live.
+    if (synthPolyRowsHeight > 0)
+        stepCols.removeFromTop (2);
     auto synthPolyRowsArea = synthPolyRowsHeight > 0 ? stepCols.removeFromTop (synthPolyRowsHeight)
                                                       : juce::Rectangle<int>();
     synthSection.removeFromLeft (kSectionGap);
