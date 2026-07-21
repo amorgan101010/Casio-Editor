@@ -146,12 +146,14 @@ private:
         sequenceSet
     };
 
+    // Note/gate/velocity for the solo lane's own primary voice are NOT edited here -- selecting a
+    // step in P-LOCK mode swaps the screen to a NOTE page (then this engine's own p-lock pages),
+    // the same select-then-edit mechanism PCM/poly tracks already use (see PcmTrackControl's doc
+    // comment and refreshParamDisplayPages()). Previously this held always-visible per-step note/
+    // gate/velocity knobs; owner asked for those to go in favour of one consistent mechanism.
     struct StepControl
     {
         StepKeyButton select;                 // shows step number; click selects/toggles it
-        juce::Slider note { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
-        juce::Slider gate { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
-        juce::Slider velocity { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
     };
 
     struct DrumTrackControl
@@ -246,10 +248,14 @@ private:
     void refreshParamControls();               // value + locked flags into the param display
     void refreshStepButtons();                 // selected highlight + has-locks LED
 
-    /** Load the active engine's lockable pages into paramDisplay (kEngineSets-driven). The
-        screen's normal content; ctor calls it once (for the default engine), applyEngine() calls
-        it on every engine switch, and refreshParamDisplayPages() calls it again whenever a PCM
-        track's step selection is cleared and control returns to the synth lane. */
+    /** Rebuild lockablePages from the active engine's lockable set (kEngineSets-driven) --
+        includes the range-seeding/continuousLockables side effects, so unlike
+        refreshParamDisplayPages() this should only run when the engine/table itself changed, not
+        on every step-selection change. Ends by handing off to refreshParamDisplayPages() so
+        paramDisplay's actual page set (lockablePages alone, or with a NOTE page prepended) stays
+        correct for whatever's currently selected. Ctor calls it once for the default engine;
+        applyEngine()/setHexLayer()/setSoloSynthBlock()/setSoloSynthInstance() call it on every
+        engine/table switch. */
     void rebuildSynthParamPages();
 
     /** Populate sequence.lockable (+ sequence.engineTag) from kEngineSets[engine], discarding the
@@ -283,10 +289,13 @@ private:
     /** Solo Synth instance combo change. Same guard as setHexLayer()/switchEngine(). */
     void setSoloSynthInstance (int instance);
 
-    /** Swap paramDisplay's page set to match whichever lane currently owns the edit target: the
-        Solo Synth's normal pages, or -- if a PCM track has a step selected -- a single-page
-        NOTE/GATE/VEL editor for that step (raw cells, no ParamInfo/SysEx address). Cheap to call
-        liberally; it only rebuilds when the target lane actually changed. Called from the tail of
+    /** Swap paramDisplay's page set to match whichever lane currently owns the edit target:
+        lockablePages alone (Base mode, nothing selected anywhere), a NOTE page followed by
+        lockablePages (the solo lane's own primary voice selected), or -- if a PCM/poly voice has
+        a step selected -- a single-page NOTE/GATE/VEL editor for that step (raw cells, no
+        ParamInfo/SysEx address; PCM/poly voices have no lockable params of their own). Cheap to
+        call liberally; it only rebuilds paramDisplay's page SET when the target lane actually
+        changed (cell values still refresh on every call). Called from the tail of
         refreshStepButtons() so every selection-changing action stays in sync automatically. */
     void refreshParamDisplayPages();
     /** Resolves displayedMelodicTarget's encoding to the actual casioxw::Step -- nullptr if
@@ -297,7 +306,6 @@ private:
     void updateStatusLabel();                  // edit-target readout in the display header
     void randomizeSequence();                  // Randomize button -> casioxw::randomize + resync widgets
     void showRandomizeOptions();               // call-out editing randomizeOptions in place
-    void syncStepWidgetsFromSequence();        // push sequence's note/enable back into the step widgets
     void syncTransportWidgetsFromSequence();   // push channel/tempo/rate back into their widgets
     void saveSequenceToFile();
     void loadSequenceFromFile();
@@ -419,10 +427,6 @@ private:
     juce::Label pcmTracksLabel { {}, "PCM TRACKS" };
     juce::Label synthLabel { {}, "SOLO SYNTH" };
 
-    juce::Label pitchRowLabel { {}, "Pitch" };
-    juce::Label gateRowLabel  { {}, "Gate" };
-    juce::Label velocityRowLabel { {}, "Velocity" };
-
     // Card regions computed by resized(), painted by paint().
     juce::Rectangle<int> drumCardBounds;
     juce::Rectangle<int> pcmCardBounds;
@@ -452,14 +456,24 @@ private:
     std::map<juce::String, int> outstandingBaseSync;
     juce::uint32 baseSyncStartedMs = 0;
 
-    // Which lane+voice paramDisplay currently shows: -1 == Solo Synth's normal (p-lock) pages;
-    // 0-3 == a PCM track's (kPcmTracks index) single-page NOTE/GATE/VEL step editor for its
-    // PRIMARY voice; 10 + row*4 + voice (voice 1..3) == that PCM row's poly extraVoices[voice-1];
-    // 100 + voice (voice 1..3) == the solo lane's own poly synthExtraVoices[voice-1]. Purely a
-    // cache so refreshParamDisplayPages() can skip rebuilding pages when the target hasn't
-    // actually changed (still needs a distinct value per VOICE, not just per row/lane, since
-    // switching voices within the same row needs a real page-name/cell-source refresh).
+    // Which lane+voice paramDisplay currently shows: -1 == nothing melodic selected (Base mode,
+    // or a step selected on a lane with no NOTE page -- just this engine's p-lock pages, from
+    // lockablePages); 0-3 == a PCM track's (kPcmTracks index) single-page NOTE/GATE/VEL step
+    // editor for its PRIMARY voice; 10 + row*4 + voice (voice 1..3) == that PCM row's poly
+    // extraVoices[voice-1]; 100 == the solo lane's OWN primary voice (sequence.steps) -- a NOTE
+    // page followed by this engine's own p-lock pages, since unlike PCM/poly voices the solo lane
+    // still has a real lockable set to page through; 100 + voice (voice 1..3) == the solo lane's
+    // poly synthExtraVoices[voice-1]. Purely a cache so refreshParamDisplayPages() can skip
+    // rebuilding pages when the target hasn't actually changed (still needs a distinct value per
+    // VOICE, not just per row/lane, since switching voices within the same row needs a real
+    // page-name/cell-source refresh).
     int displayedMelodicTarget = -1;
+
+    // This engine's own p-lock pages (FILT/OSC/etc, built from sequence.lockable), cached by
+    // rebuildSynthParamPages() so refreshParamDisplayPages() can prepend a NOTE page to it (solo
+    // lane primary voice selected) or use it bare (Base mode / no step selected) without redoing
+    // the range-seeding/continuousLockables side effects on every step-selection change.
+    std::vector<ParamPageDisplay::Page> lockablePages;
 
     bool playing = false;
     int selectedStep = -1;                     // -1 == Base

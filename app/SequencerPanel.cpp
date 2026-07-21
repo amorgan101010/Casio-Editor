@@ -39,8 +39,10 @@ namespace
                                                            // mute/channel/knobs -- note/gate/vel live in the screen)
     constexpr int kDrumKeyHeight = 34;                    // drum trig keys, tall enough to read as keys
     constexpr int kSelectKeyHeight = kDrumKeyHeight;      // synth select/trig row (match drum/PCM key size)
-    constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
-    constexpr int kStepColumnHeight = kSelectKeyHeight + 2 + kKnobCell * 3;   // select + note + gate + velocity
+    // Just the select/trig row now -- note/gate/vel for the solo lane's primary voice no longer
+    // live as always-visible per-step knobs here; selecting a step in P-LOCK mode swaps the screen
+    // to a NOTE page instead (same mechanism PCM/poly tracks already use).
+    constexpr int kStepColumnHeight = kSelectKeyHeight;
     constexpr int kSynthSectionHeight = 306;              // fits the card (header + LCD display + page keys)
     constexpr int kSynthStepTopInset = 9;                 // visually match drum/PCM header-to-keys spacing
     constexpr int kToolbarRowHeight = 30;                 // transport toolbar rows (wrapping flow)
@@ -405,6 +407,20 @@ namespace
         { "Chords", 16 },
     };
 
+    // The shared 3-cell NOTE/GATE/VEL page (raw kPcmNoteCell/GateCell/VelCell cells, see above) --
+    // used both for PCM/poly voices (their only page) and, prepended to lockablePages, for the
+    // solo lane's own primary voice (see refreshParamDisplayPages()).
+    ParamPageDisplay::Page buildNoteGateVelPage (const juce::String& name)
+    {
+        ParamPageDisplay::CellSpec note, gate, vel;
+        note.rawMin = 0;   note.rawMax = 127; note.rawFormat = ParamPageDisplay::ValueFormat::Note;
+        note.shortName = "NOTE"; note.lockableIndex = kPcmNoteCell;
+        gate.rawMin = 1;   gate.rawMax = 100; gate.rawFormat = ParamPageDisplay::ValueFormat::Percent;
+        gate.shortName = "GATE"; gate.lockableIndex = kPcmGateCell;
+        vel.rawMin  = 1;   vel.rawMax  = 127; vel.rawFormat  = ParamPageDisplay::ValueFormat::Plain;
+        vel.shortName  = "VEL";  vel.lockableIndex  = kPcmVelCell;
+        return { name, { note, gate, vel } };
+    }
 }
 
 //==============================================================================
@@ -747,54 +763,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         };
         addAndMakeVisible (sc->select);
 
-        sc->note.setRange (0.0, 127.0, 1.0);
-        sc->note.setValue (60.0, juce::dontSendNotification);
-        sc->note.textFromValueFunction = [] (double v) { return casioxw::midiNoteName ((int) v); };
-        sc->note.valueFromTextFunction = [] (const juce::String& t) -> double
-        {
-            const auto n = casioxw::noteNameToMidi (t);
-            return n.has_value() ? (double) *n : 0.0;
-        };
-        sc->note.updateText();
-        sc->note.onValueChange = [this, i]
-        {
-            sequence.steps[(size_t) i].note = (int) stepControls[(size_t) i]->note.getValue();
-        };
-        sc->note.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
-        addAndMakeVisible (sc->note);
-
-        sc->gate.setRange (1.0, 100.0, 1.0);
-        sc->gate.setValue (90.0, juce::dontSendNotification);
-        sc->gate.textFromValueFunction = [] (double v) { return juce::String ((int) v) + "%"; };
-        sc->gate.onValueChange = [this, i]
-        {
-            sequence.steps[(size_t) i].gatePercent = (int) stepControls[(size_t) i]->gate.getValue();
-        };
-        sc->gate.updateText();
-        sc->gate.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
-        addAndMakeVisible (sc->gate);
-
-        sc->velocity.setRange (1.0, 127.0, 1.0);
-        sc->velocity.setValue (100.0, juce::dontSendNotification);
-        sc->velocity.textFromValueFunction = [] (double v) { return juce::String ((int) v); };
-        sc->velocity.onValueChange = [this, i]
-        {
-            sequence.steps[(size_t) i].velocity = (int) stepControls[(size_t) i]->velocity.getValue();
-        };
-        sc->velocity.updateText();
-        sc->velocity.setTextBoxStyle (juce::Slider::TextBoxBelow, false, kStepWidth - 6, 16);
-        addAndMakeVisible (sc->velocity);
-
         stepControls[(size_t) i] = std::move (sc);
-    }
-
-    for (auto* l : { &pitchRowLabel, &gateRowLabel, &velocityRowLabel })
-    {
-        l->setJustificationType (juce::Justification::centredLeft);
-        l->setColour (juce::Label::textColourId, EditorColours::textMuted);
-        l->setFont (EditorFonts::header (11.0f));
-        l->setText (l->getText().toUpperCase(), juce::dontSendNotification);
-        addAndMakeVisible (*l);
     }
 
     for (auto* l : { &tempoLabel, &rateLabel, &channelLabel })
@@ -911,8 +880,8 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     clearAllButton.onClick = [this] { clearAllSteps(); };
     addAndMakeVisible (clearAllButton);
 
-    shiftLeftButton.onClick  = [this] { casioxw::shiftSteps (sequence, -1); syncStepWidgetsFromSequence(); refreshParamControls(); refreshStepButtons(); };
-    shiftRightButton.onClick = [this] { casioxw::shiftSteps (sequence,  1); syncStepWidgetsFromSequence(); refreshParamControls(); refreshStepButtons(); };
+    shiftLeftButton.onClick  = [this] { casioxw::shiftSteps (sequence, -1); refreshParamControls(); refreshStepButtons(); };
+    shiftRightButton.onClick = [this] { casioxw::shiftSteps (sequence,  1); refreshParamControls(); refreshStepButtons(); };
     addAndMakeVisible (shiftLeftButton);
     addAndMakeVisible (shiftRightButton);
 
@@ -1237,7 +1206,6 @@ void SequencerPanel::applyPreviewDemoState()
         row->velocityLocks[10] = 45;
     }
 
-    syncStepWidgetsFromSequence();
     refreshParamControls();
     refreshStepButtons();
     updateStatusLabel();
@@ -1522,7 +1490,6 @@ void SequencerPanel::randomizeSequence()
     options.lockableIndices = randomizeComboParams ? std::vector<int>{}   // empty == all eligible
                                                    : continuousLockables;
     casioxw::randomize (sequence, rng, options);
-    syncStepWidgetsFromSequence();
     refreshParamControls();   // selected step's locks may have changed
     refreshStepButtons();     // has-locks markers
 }
@@ -1533,23 +1500,6 @@ void SequencerPanel::showRandomizeOptions()
     activeCallout = &juce::CallOutBox::launchAsynchronously (std::move (content),
                                                              rndOptionsButton.getScreenBounds(),
                                                              nullptr);
-}
-
-void SequencerPanel::syncStepWidgetsFromSequence()
-{
-    for (int i = 0; i < 16; ++i)
-    {
-        auto& sc = *stepControls[(size_t) i];
-        const auto& step = sequence.steps[(size_t) i];
-        // dontSendNotification: these are display updates, not user edits — don't fire the
-        // onClick/onValueChange handlers that would write straight back into `sequence`.
-        sc.note.setValue ((double) step.note, juce::dontSendNotification);
-        sc.note.updateText();
-        sc.gate.setValue ((double) step.gatePercent, juce::dontSendNotification);
-        sc.gate.updateText();
-        sc.velocity.setValue ((double) step.velocity, juce::dontSendNotification);
-        sc.velocity.updateText();
-    }
 }
 
 void SequencerPanel::syncTransportWidgetsFromSequence()
@@ -2093,7 +2043,6 @@ bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File
         return false;
     }
 
-    syncStepWidgetsFromSequence();
     syncTransportWidgetsFromSequence();
     selectStep (-1);   // back to Base; also refreshes param controls, step markers, status
     clearDrumSelections();
@@ -2269,13 +2218,12 @@ void SequencerPanel::clearAllSteps()
             step = casioxw::Step {};
 
     // Drop every edit target so nothing points at now-empty data, then refresh. selectStep(-1)
-    // handles param controls / step buttons / status / clear-locks enablement; only the synth
-    // step knobs (note/gate/vel) need the extra push.
+    // handles param controls / step buttons / status / clear-locks enablement (including the
+    // NOTE page, since it's just another consequence of selectedStep going to -1 now).
     clearDrumSelections();
     clearPcmSelections();
     clearSynthPolySelection();
     selectStep (-1);
-    syncStepWidgetsFromSequence();
 
     statusLabel.setText ("Cleared all steps", juce::dontSendNotification);
 }
@@ -2571,8 +2519,16 @@ void SequencerPanel::rebuildSynthParamPages()
     if (pages.empty())   // e.g. Drawbar Organ: no lockable params wired up yet
         pages.push_back ({ "NO LOCKS", {} });
 
-    paramDisplay->setPages (std::move (pages));
-    displayedMelodicTarget = -1;
+    lockablePages = std::move (pages);
+    // Force refreshParamDisplayPages() below to rebuild paramDisplay's actual page set even if the
+    // freshly-computed target comes out the same as before -- lockablePages just changed (new
+    // engine/table), so a stale early-return would leave the OLD engine's pages showing (or, on
+    // the very first call from the ctor, leave paramDisplay with NO pages at all: target and
+    // displayedMelodicTarget would both start at -1 and look "unchanged"). -2 is never a real
+    // target (every real one is >= -1), so it can't collide with "nothing selected" (-1) the way
+    // resetting to -1 here did.
+    displayedMelodicTarget = -2;
+    refreshParamDisplayPages();
 }
 
 // Decodes displayedMelodicTarget (see its doc comment in SequencerPanel.h) into a pointer at the
@@ -2595,6 +2551,8 @@ casioxw::Step* SequencerPanel::melodicStepForTarget (int target)
         auto& r = *pcmTrackControls[row];
         return r.selectedStep >= 0 ? &r.extraVoices[voice - 1].track.steps[(size_t) r.selectedStep] : nullptr;
     }
+    if (target == 100)   // the solo lane's OWN primary voice
+        return selectedStep >= 0 ? &sequence.steps[(size_t) selectedStep] : nullptr;
     // The solo lane's own poly extra voice.
     const size_t voice = (size_t) (target - 100);   // 1..3
     return synthPolyStep >= 0 ? &synthExtraVoices[voice - 1].track.steps[(size_t) synthPolyStep] : nullptr;
@@ -2614,8 +2572,9 @@ void SequencerPanel::refreshParamDisplayPages()
 {
     // The current melodic edit target across every possible source, encoded per
     // displayedMelodicTarget's doc comment. PCM rows (any voice) take priority over the solo
-    // lane's poly voice, matching the pre-poly sweep's own order -- moot in practice since every
-    // selection site clears the other two, so at most one of these ever finds anything.
+    // lane's poly voice, which in turn takes priority over the solo lane's own primary voice --
+    // moot in practice since every selection site clears the others, so at most one of these ever
+    // finds anything.
     int target = -1;
     for (size_t i = 0; i < pcmTrackControls.size(); ++i)
     {
@@ -2628,18 +2587,37 @@ void SequencerPanel::refreshParamDisplayPages()
     }
     if (target < 0 && synthPolyStep >= 0)
         target = 100 + synthSelectedVoice;
+    if (target < 0 && selectedStep >= 0)
+        target = 100;   // the solo lane's own primary voice
 
     if (target == displayedMelodicTarget)
     {
-        refreshMelodicStepCellValues (target);   // same target -- but the selected step may differ
+        if (target >= 0)
+            refreshMelodicStepCellValues (target);   // same target -- but the selected step may differ
         return;
     }
 
     displayedMelodicTarget = target;
-    if (target < 0)
+
+    if (target < 0)   // Base mode: nothing selected anywhere -- just this engine's p-lock pages
     {
-        rebuildSynthParamPages();   // rebuildSynthParamPages() also resets displayedMelodicTarget to -1
-        refreshParamControls();     // freshly-built cells default to range min -- populate real values
+        paramDisplay->setPages (lockablePages);
+        refreshParamControls();   // freshly-set cells default to range min -- populate real values
+        return;
+    }
+
+    if (target == 100)
+    {
+        // The solo lane's own primary voice: a NOTE/GATE/VEL page, THEN this engine's own p-lock
+        // pages right after it -- unlike PCM/poly voices (no lockable params of their own), the
+        // solo lane still has a real lockable set (FILT/OSC/etc) to page through.
+        std::vector<ParamPageDisplay::Page> pages;
+        pages.push_back (buildNoteGateVelPage ("NOTE"));
+        for (const auto& p : lockablePages)
+            pages.push_back (p);
+        paramDisplay->setPages (std::move (pages));
+        refreshMelodicStepCellValues (target);
+        refreshParamControls();
         return;
     }
 
@@ -2654,17 +2632,7 @@ void SequencerPanel::refreshParamDisplayPages()
         pageName = "SYNTH V" + juce::String (target - 100);
 
     std::vector<ParamPageDisplay::Page> pages;
-    ParamPageDisplay::Page page { pageName, {} };
-    ParamPageDisplay::CellSpec note, gate, vel;
-    note.rawMin = 0;   note.rawMax = 127; note.rawFormat = ParamPageDisplay::ValueFormat::Note;
-    note.shortName = "NOTE"; note.lockableIndex = kPcmNoteCell;
-    gate.rawMin = 1;   gate.rawMax = 100; gate.rawFormat = ParamPageDisplay::ValueFormat::Percent;
-    gate.shortName = "GATE"; gate.lockableIndex = kPcmGateCell;
-    vel.rawMin  = 1;   vel.rawMax  = 127; vel.rawFormat  = ParamPageDisplay::ValueFormat::Plain;
-    vel.shortName  = "VEL";  vel.lockableIndex  = kPcmVelCell;
-    page.cells = { note, gate, vel };
-    pages.push_back (std::move (page));
-
+    pages.push_back (buildNoteGateVelPage (pageName));
     paramDisplay->setPages (std::move (pages));
     refreshMelodicStepCellValues (target);
 }
@@ -3362,17 +3330,19 @@ void SequencerPanel::resized()
     auto stepCols = synthSection.removeFromLeft (kStepGridWidth);
     const int gridX = stepCols.getX();
     stepCols.removeFromTop (kSynthStepTopInset);
-    auto synthPolyRowsArea = synthPolyRowsHeight > 0 ? stepCols.removeFromBottom (synthPolyRowsHeight)
+    auto trigRow = stepCols.removeFromTop (kStepColumnHeight);
+    // Poly sub-track rows sit directly under the select-key row now (not bottom-anchored) --
+    // that row is the column's only other content once note/gate/vel aren't always-visible knobs
+    // here anymore. See setSize()'s kPolyReserve comment for why a collapsed/mono state is safe to
+    // just leave the space below unused rather than needing a live window resize.
+    auto synthPolyRowsArea = synthPolyRowsHeight > 0 ? stepCols.removeFromTop (synthPolyRowsHeight)
                                                       : juce::Rectangle<int>();
     synthSection.removeFromLeft (kSectionGap);
 
-    // Lane label gutter: row labels aligned to the Pitch / Gate / Velocity knob rows, same
-    // column as the drum track names.
-    auto labelCol = synthSection.removeFromLeft (kLaneLabelWidth);
-    labelCol.removeFromTop (kSynthStepTopInset + kSelectKeyHeight + 2);
-    pitchRowLabel.setBounds (labelCol.removeFromTop (kKnobCell));
-    gateRowLabel.setBounds (labelCol.removeFromTop (kKnobCell));
-    velocityRowLabel.setBounds (labelCol.removeFromTop (kKnobCell));
+    // Lane label gutter: kept (unpopulated) purely so the card's left edge stays aligned with the
+    // drum/PCM cards' (same column width feeding the same cardX) -- no label text lives here now
+    // that the Pitch/Gate/Velocity knob rows are gone.
+    synthSection.removeFromLeft (kLaneLabelWidth);
     synthSection.removeFromLeft (kSectionGap);
 
     auto card = synthSection.removeFromLeft (kCardWidth);
@@ -3399,12 +3369,8 @@ void SequencerPanel::resized()
 
     for (int i = 0; i < 16; ++i)
     {
-        auto col = stepCols.removeFromLeft (kStepWidth).reduced (3, 0);
-        stepControls[(size_t) i]->select.setBounds (col.removeFromTop (kSelectKeyHeight));
-        col.removeFromTop (2);
-        stepControls[(size_t) i]->note.setBounds (col.removeFromTop (kKnobCell));
-        stepControls[(size_t) i]->gate.setBounds (col.removeFromTop (kKnobCell));
-        stepControls[(size_t) i]->velocity.setBounds (col.removeFromTop (kKnobCell));
+        auto col = trigRow.removeFromLeft (kStepWidth).reduced (3, 0);
+        stepControls[(size_t) i]->select.setBounds (col);
     }
 
     if (synthPolyRowsHeight > 0)
