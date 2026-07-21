@@ -664,6 +664,9 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         refreshStepButtons();
         updateStatusLabel();
         resized();
+        repaint();   // resized() alone leaves the synth card's painted background (synthCardBounds,
+                     // drawn in paint()) stale at its old Y when this shifts it -- see initArrowToggle's
+                     // identical resized()+repaint() pair above for the established fix.
     };
     addAndMakeVisible (synthPolyToggle);
 
@@ -676,6 +679,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         synthSubTrackArrow.setButtonText (synthSubTracksExpanded ? juce::String::fromUTF8 ("▼")
                                                                    : juce::String::fromUTF8 ("▶"));
         resized();
+        repaint();   // see synthPolyToggle.onClick above
     };
     addAndMakeVisible (synthSubTrackArrow);
 
@@ -1091,6 +1095,9 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                 refreshStepButtons();
                 updateStatusLabel();
                 resized();
+                repaint();   // resized() alone leaves pcmCardBounds/synthCardBounds's painted background
+                             // stale at the old Y once this row's height change shifts everything below it
+                             // -- see initArrowToggle's identical resized()+repaint() pair (ctor) for precedent.
             };
             addAndMakeVisible (row->polyToggle);
 
@@ -1103,6 +1110,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                 rowPtr->subTrackArrow.setButtonText (rowPtr->subTracksExpanded ? juce::String::fromUTF8 ("▼")
                                                                                 : juce::String::fromUTF8 ("▶"));
                 resized();
+                repaint();   // see row->polyToggle.onClick above
             };
             addAndMakeVisible (row->subTrackArrow);
 
@@ -1878,6 +1886,7 @@ bool SequencerPanel::applySoloSequenceText (const juce::String& text)
         }
 
     resized();   // synthSubTrackArrow visibility/text and the sub-row reservation depend on the above
+    repaint();   // a loaded file's poly state can shift synthCardBounds -- see synthPolyToggle.onClick
     return true;
 }
 
@@ -2007,6 +2016,8 @@ bool SequencerPanel::applyPcmTracksText (const juce::String& text)
             }
     }
     resized();   // polyToggle/subTrackArrow visibility and the sub-row reservation depend on the above
+    repaint();   // a loaded file's poly state can shift pcmCardBounds/synthCardBounds -- see
+                 // synthPolyToggle.onClick above
     return true;
 }
 
