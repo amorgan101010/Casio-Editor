@@ -32,11 +32,14 @@ enum class TrackEngine { soloSynth, hexLayer, drawbarOrgan };
 //==============================================================================
 /** One step key in the trig grid, painted like a hardware trig button rather than a stock
     text button: rounded cap, underlined monospace numeral, an amber LED dot when the step holds
-    any p-lock, and a structurally thicker outline on the quarter-note steps (1/5/9/13) so bar
+    any p-lock, a cyan LED dot (opposite corner, distinct colour so the two are never confused)
+    when a poly-capable track's step sounds more than one note there but its sub-track rows are
+    collapsed, and a structurally thicker outline on the quarter-note steps (1/5/9/13) so bar
     orientation never depends on fill colour alone.
 
     State model: juce::Button's own toggle state IS the trig on/off (several owners persist it
-    from getToggleState()); hasLock/selected are display-only flags pushed via setLockState(). */
+    from getToggleState()); hasLock/selected/hasChord are display-only flags pushed via
+    setLockState()/setChordState(). */
 class StepKeyButton : public juce::Button
 {
 public:
@@ -45,12 +48,18 @@ public:
     void setStepIndex (int index) { stepIndex = index; }
     void setLockState (bool hasLockIn, bool selectedIn);
 
+    /** Whether this step currently sounds more than one note on a poly-capable track (any
+        extra-voice step here is enabled) -- irrelevant/always false for non-poly-capable tracks
+        (drums, mono PCM tracks, Solo Synth). */
+    void setChordState (bool hasChordIn);
+
     void paintButton (juce::Graphics&, bool isMouseOver, bool isMouseDown) override;
 
 private:
     int stepIndex = 0;
     bool hasLock = false;
     bool selected = false;
+    bool hasChord = false;
 };
 
 //==============================================================================
@@ -107,12 +116,21 @@ public:
         itself. */
     void applyPcmStepEditPreviewState();
 
+    /** tools/gui-preview only: turns on poly mode + expands sub-tracks on the Chords row and the
+        solo lane (switched to Hex Layer first, since Solo Synth can't go poly), seeds a chord on
+        one step of each, and selects an extra voice's step so the screen shows its NOTE/GATE/VEL
+        editor -- so a snapshot can verify the Poly toggle/arrow, sub-track rows, and the amber/
+        cyan step-key dots all render (a fresh panel never shows any of them). Never called by the
+        app itself. */
+    void applyPolyPreviewState();
+
     /** tools/gui-preview only: headless correctness check for the PCM tracks save/load path (the
         one genuinely new bit of logic in that feature -- everything else reuses already-tested
         casioxw_core functions). Seeds two PCM tracks with distinct data, serializes, clobbers the
         live tracks, reloads, and compares. Returns true iff every seeded field round-trips.
         Never called by the app itself; no display/JUCE peer required. */
     bool verifyPcmRoundTripForPreview();
+    bool verifySoloPolyRoundTripForPreview();
 
     /** tools/gui-preview only: switch into Arranger mode and seed the sub-panel's representative
         demo rows (see ArrangerPanel::applyPreviewDemoState), so an offscreen snapshot can verify
@@ -128,12 +146,14 @@ private:
         sequenceSet
     };
 
+    // Note/gate/velocity for the solo lane's own primary voice are NOT edited here -- selecting a
+    // step in P-LOCK mode swaps the screen to a NOTE page (then this engine's own p-lock pages),
+    // the same select-then-edit mechanism PCM/poly tracks already use (see PcmTrackControl's doc
+    // comment and refreshParamDisplayPages()). Previously this held always-visible per-step note/
+    // gate/velocity knobs; owner asked for those to go in favour of one consistent mechanism.
     struct StepControl
     {
         StepKeyButton select;                 // shows step number; click selects/toggles it
-        juce::Slider note { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
-        juce::Slider gate { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
-        juce::Slider velocity { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxBelow };
     };
 
     struct DrumTrackControl
@@ -150,6 +170,28 @@ private:
         int selectedStep = -1; // per-track p-lock selection target, -1 means base
     };
 
+    // Poly mode's voice cap: a PRODUCT constant, not hardware-derived (the manual has no
+    // per-track "chord width" figure -- its only bounded "simultaneous notes from one trigger"
+    // concept is the Arpeggiator's own Polyphony(P) setting, a different subsystem, so borrowing
+    // a number from it would be a guess dressed as a manual fact). 4 covers a standard triad/7th
+    // without the sub-track UI getting unreasonably tall; owner can revisit if that's too tight.
+    static constexpr int kMaxPolyVoices = 4;
+
+    /** One additional simultaneous note-lane on a poly-capable track (PCM Chords, or the solo
+        lane while its engine is Hex Layer/Drawbar Organ -- see SequencerPanel.h's TrackEngine doc
+        and PcmTrackControl::polyMode). Reuses casioxw::Sequence per the project's own PCM-tracks
+        precedent (`track` mirrors channel/tempo from its parent the same way a PcmTrackControl
+        does from the main sequence) rather than a bespoke struct -- gets scheduleStep()/
+        sequenceToJson()/FromJson() for free. `track.lockable` is intentionally left EMPTY: hardware
+        has one filter/envelope per PART, not per simultaneous note, so p-locks stay on the
+        parent's own lockable table (sequence's, for the solo lane) -- a voice is note/gate/
+        velocity/enabled only, same as a PCM track's own step shape. */
+    struct PolyVoice
+    {
+        casioxw::Sequence track;
+        std::array<StepKeyButton, 16> steps;
+    };
+
     /** One melodic PCM/Melody track (Bass, Solo 1, Solo 2, or Chords — the Step Sequencer note
         parts that aren't Drum 1-5 or the Solo Synth's own Zone Part 1, XWP1_1B_EN.pdf p.E-49). Its
         own lane, structured like DrumTrackControl (label/mute/channel/16 step keys), NOT a shared
@@ -159,7 +201,13 @@ private:
         tempoBpm/stepsPerBeat are mirrored from the main `sequence` every playback tick. A step's
         note/gate/velocity are always-defined (no base-vs-lock inheritance the way FLTR/ENV params
         have) — selecting a step in P-LOCK mode swaps the screen to a 3-cell NOTE/GATE/VEL editor
-        for it (see refreshParamDisplayPages()), not a per-row knob column. */
+        for it (see refreshParamDisplayPages()), not a per-row knob column.
+
+        Only the Chords row (kPcmTracks index 3) is ever poly-capable in practice -- Bass/Solo 1/
+        Solo 2 keep polyMode permanently false/unwired (per owner's explicit scope: PCM Chords +
+        the solo lane while Hex Layer/Drawbar Organ, not the other PCM tracks, not Solo Synth) --
+        but the fields live on every row uniformly rather than a separate struct, matching this
+        codebase's general preference for one data shape over a conditional one. */
     struct PcmTrackControl
     {
         juce::Label trackLabel;
@@ -167,7 +215,15 @@ private:
         juce::ComboBox channel;
         std::array<StepKeyButton, 16> steps;
         int selectedStep = -1;   // -1 == none; which step's note/gate/vel the screen currently edits
+        int selectedVoice = 0;   // which voice selectedStep refers to: 0 == track, 1..N == extraVoices[v-1]
         casioxw::Sequence track;
+
+        bool polyCapable = false;   // true only for the Chords row -- set once in the ctor
+        bool polyMode = false;
+        std::array<PolyVoice, kMaxPolyVoices - 1> extraVoices;
+        bool subTracksExpanded = false;
+        juce::TextButton polyToggle { "Poly" };
+        juce::TextButton subTrackArrow;
     };
 
     void timerCallback() override;
@@ -192,10 +248,14 @@ private:
     void refreshParamControls();               // value + locked flags into the param display
     void refreshStepButtons();                 // selected highlight + has-locks LED
 
-    /** Load the active engine's lockable pages into paramDisplay (kEngineSets-driven). The
-        screen's normal content; ctor calls it once (for the default engine), applyEngine() calls
-        it on every engine switch, and refreshParamDisplayPages() calls it again whenever a PCM
-        track's step selection is cleared and control returns to the synth lane. */
+    /** Rebuild lockablePages from the active engine's lockable set (kEngineSets-driven) --
+        includes the range-seeding/continuousLockables side effects, so unlike
+        refreshParamDisplayPages() this should only run when the engine/table itself changed, not
+        on every step-selection change. Ends by handing off to refreshParamDisplayPages() so
+        paramDisplay's actual page set (lockablePages alone, or with a NOTE page prepended) stays
+        correct for whatever's currently selected. Ctor calls it once for the default engine;
+        applyEngine()/setHexLayer()/setSoloSynthBlock()/setSoloSynthInstance() call it on every
+        engine/table switch. */
     void rebuildSynthParamPages();
 
     /** Populate sequence.lockable (+ sequence.engineTag) from kEngineSets[engine], discarding the
@@ -216,23 +276,47 @@ private:
         selection on refusal. */
     void switchEngine (TrackEngine newEngine);
 
-    /** Swap paramDisplay's page set to match whichever lane currently owns the edit target: the
-        Solo Synth's normal pages, or -- if a PCM track has a step selected -- a single-page
-        NOTE/GATE/VEL editor for that step (raw cells, no ParamInfo/SysEx address). Cheap to call
-        liberally; it only rebuilds when the target lane actually changed. Called from the tail of
+    /** User-driven Hex Layer selector change (hexLayerCombo, only reachable while
+        currentEngine == hexLayer). Same guard as switchEngine() (refuses mid-playback/mid-sync,
+        reverts the combo on refusal) since it also rebuilds sequence.lockable. */
+    void setHexLayer (int layer);
+
+    /** Solo Synth block combo change (soloSynthBlockCombo, only reachable while
+        currentEngine == soloSynth). Repopulates soloSynthInstanceCombo for the new block's
+        instance count/labels and resets to instance 1, then behaves like setSoloSynthInstance(). */
+    void setSoloSynthBlock (const juce::String& block);
+
+    /** Solo Synth instance combo change. Same guard as setHexLayer()/switchEngine(). */
+    void setSoloSynthInstance (int instance);
+
+    /** Swap paramDisplay's page set to match whichever lane currently owns the edit target:
+        lockablePages alone (Base mode, nothing selected anywhere), a NOTE page followed by
+        lockablePages (the solo lane's own primary voice selected), or -- if a PCM/poly voice has
+        a step selected -- a single-page NOTE/GATE/VEL editor for that step (raw cells, no
+        ParamInfo/SysEx address; PCM/poly voices have no lockable params of their own). Cheap to
+        call liberally; it only rebuilds paramDisplay's page SET when the target lane actually
+        changed (cell values still refresh on every call). Called from the tail of
         refreshStepButtons() so every selection-changing action stays in sync automatically. */
     void refreshParamDisplayPages();
-    void refreshPcmStepCellValues (int pcmRow);   // push the selected step's note/gate/vel into the screen
+    /** Resolves displayedMelodicTarget's encoding to the actual casioxw::Step -- nullptr if
+        nothing is selected there. Shared by refreshMelodicStepCellValues() (read) and
+        onParamEdited()'s raw-cell branch (write). */
+    casioxw::Step* melodicStepForTarget (int target);
+    void refreshMelodicStepCellValues (int target);   // push the selected step's note/gate/vel into the screen
     void updateStatusLabel();                  // edit-target readout in the display header
     void randomizeSequence();                  // Randomize button -> casioxw::randomize + resync widgets
     void showRandomizeOptions();               // call-out editing randomizeOptions in place
-    void syncStepWidgetsFromSequence();        // push sequence's note/enable back into the step widgets
     void syncTransportWidgetsFromSequence();   // push channel/tempo/rate back into their widgets
     void saveSequenceToFile();
     void loadSequenceFromFile();
     void saveByKind (SaveKind kind);
     juce::String serializeDrumsToJson() const;
     juce::String serializePcmTracksToJson() const;
+    /** casioxw::sequenceToJson(sequence) plus the app-level poly fields core doesn't know about
+        (synthPolyMode/synthExtraVoices) -- see its .cpp doc comment. Use this instead of a bare
+        sequenceToJson(sequence) call for every SAVE path (loading still goes through
+        applySoloSequenceText(), which reads both the core fields and these). */
+    juce::String serializeSoloSequenceToJson() const;
     juce::String serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile,
                                              const juce::String& pcmFile) const;
     bool applySoloSequenceText (const juce::String& text);
@@ -247,6 +331,7 @@ private:
     bool hasAnyPcmStepSelected() const;
     void clearDrumSelections();
     void clearPcmSelections();
+    void clearSynthPolySelection();   // deselects the solo lane's poly sub-voice edit target
     void clearAllSteps();   // reset every lane's pattern (trigs + per-step notes/gate/vel + locks);
                             // keeps sound setup: channels, tempo/rate, mutes, and lockable base values
     void updateClearLocksEnabled();
@@ -269,6 +354,36 @@ private:
     casioxw::Sequence sequence;                // source of truth (solo track: Solo Synth/Hex Layer/Organ)
     TrackEngine currentEngine = TrackEngine::soloSynth;
     juce::ComboBox engineCombo;                // selects which engine's lockable table `sequence.lockable` uses
+
+    // Hex Layer's lockable table covers all 6 layers, but only ONE layer's per-layer params are
+    // ever loaded into sequence.lockable at a time (same "one active selector" shape as
+    // engineCombo itself) -- this combo picks which. Global/LFO params (shared across all 6
+    // layers) are always present regardless of this selection. Zero-sized/inert while
+    // currentEngine != hexLayer (see resized()).
+    int currentHexLayer = 1;                   // 1-6
+    juce::ComboBox hexLayerCombo;
+
+    // Solo Synth's lockable table covers every param in xwp1.json's soloSynth section, but only
+    // ONE (block, instance) pair's params are loaded into sequence.lockable at a time -- mirrors
+    // SoloSynthPanel's own blockCombo/instanceCombo (OSC's 6 instances, PWM/LFO's 2, Etc/
+    // TotalFilter's 1). Zero-sized/inert while currentEngine != soloSynth (see resized()).
+    juce::String currentSoloSynthBlock;         // e.g. "OSC", "TotalFilter" -- populated from the model in the ctor
+    int currentSoloSynthInstance = 1;
+    juce::ComboBox soloSynthBlockCombo;
+    juce::ComboBox soloSynthInstanceCombo;
+    juce::StringArray soloSynthBlockOrder;      // blockCombo item index -> block name, built once
+
+    // The solo lane's own poly mode -- only reachable while currentEngine is hexLayer or
+    // drawbarOrgan (forced false/hidden for soloSynth, per owner's explicit "disabled for Solo
+    // Synth" scope; see switchEngine()/applyEngine()). synthPolyStep/synthSelectedVoice are a
+    // THIRD selection axis alongside selectedStep (see clearSynthPolySelection()'s doc comment).
+    bool synthPolyMode = false;
+    std::array<PolyVoice, kMaxPolyVoices - 1> synthExtraVoices;
+    bool synthSubTracksExpanded = false;
+    int synthPolyStep = -1;        // -1 == none; which step of synthSelectedVoice the screen edits
+    int synthSelectedVoice = 0;    // 1..N == synthExtraVoices[v-1]; meaningful only while synthPolyStep >= 0
+    juce::TextButton synthPolyToggle { "Poly" };
+    juce::TextButton synthSubTrackArrow;
 
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
     std::unique_ptr<ParamPageDisplay> paramDisplay;   // the pageable p-lock parameter sub-window
@@ -307,17 +422,10 @@ private:
     juce::TextButton clearAllButton { "Clear All" };  // wipe every lane's pattern (testing aid)
     juce::TextButton shiftLeftButton  { "<" };
     juce::TextButton shiftRightButton { ">" };
-    juce::TextButton drumControlsButton;
-    juce::TextButton synthControlsButton;
-    juce::TextButton pcmControlsButton;
     juce::Label statusLabel;                          // footer: file/save/load messages only
     juce::Label drumTracksLabel { {}, "DRUM TRACKS" };
     juce::Label pcmTracksLabel { {}, "PCM TRACKS" };
     juce::Label synthLabel { {}, "SOLO SYNTH" };
-
-    juce::Label pitchRowLabel { {}, "Pitch" };
-    juce::Label gateRowLabel  { {}, "Gate" };
-    juce::Label velocityRowLabel { {}, "Velocity" };
 
     // Card regions computed by resized(), painted by paint().
     juce::Rectangle<int> drumCardBounds;
@@ -348,10 +456,24 @@ private:
     std::map<juce::String, int> outstandingBaseSync;
     juce::uint32 baseSyncStartedMs = 0;
 
-    // Which lane paramDisplay currently shows: -1 == Solo Synth's normal pages, 0-3 == a PCM
-    // track's single-page NOTE/GATE/VEL step editor. Purely a cache so refreshParamDisplayPages()
-    // can skip rebuilding pages when the target lane hasn't actually changed.
-    int displayedPcmRow = -1;
+    // Which lane+voice paramDisplay currently shows: -1 == nothing melodic selected (Base mode,
+    // or a step selected on a lane with no NOTE page -- just this engine's p-lock pages, from
+    // lockablePages); 0-3 == a PCM track's (kPcmTracks index) single-page NOTE/GATE/VEL step
+    // editor for its PRIMARY voice; 10 + row*4 + voice (voice 1..3) == that PCM row's poly
+    // extraVoices[voice-1]; 100 == the solo lane's OWN primary voice (sequence.steps) -- a NOTE
+    // page followed by this engine's own p-lock pages, since unlike PCM/poly voices the solo lane
+    // still has a real lockable set to page through; 100 + voice (voice 1..3) == the solo lane's
+    // poly synthExtraVoices[voice-1]. Purely a cache so refreshParamDisplayPages() can skip
+    // rebuilding pages when the target hasn't actually changed (still needs a distinct value per
+    // VOICE, not just per row/lane, since switching voices within the same row needs a real
+    // page-name/cell-source refresh).
+    int displayedMelodicTarget = -1;
+
+    // This engine's own p-lock pages (FILT/OSC/etc, built from sequence.lockable), cached by
+    // rebuildSynthParamPages() so refreshParamDisplayPages() can prepend a NOTE page to it (solo
+    // lane primary voice selected) or use it bare (Base mode / no step selected) without redoing
+    // the range-seeding/continuousLockables side effects on every step-selection change.
+    std::vector<ParamPageDisplay::Page> lockablePages;
 
     bool playing = false;
     int selectedStep = -1;                     // -1 == Base

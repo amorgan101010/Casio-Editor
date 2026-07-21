@@ -185,7 +185,7 @@ int main (int argc, char* argv[])
     }
 
     if (mode == "sequencer" || mode == "sequencer-demo" || mode == "sequencer-pcm-demo"
-        || mode == "sequencer-hex-demo" || mode == "sequencer-arranger-demo")
+        || mode == "sequencer-hex-demo" || mode == "sequencer-arranger-demo" || mode == "sequencer-poly-demo")
     {
         if (argc < 3)
         {
@@ -204,6 +204,8 @@ int main (int argc, char* argv[])
             panel.applyHexLayerPreviewState();
         else if (mode == "sequencer-arranger-demo")   // Arranger mode, a few representative rows
             panel.applyArrangerPreviewState();
+        else if (mode == "sequencer-poly-demo")   // Chords row poly mode expanded with a triad
+            panel.applyPolyPreviewState();
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());
@@ -264,6 +266,20 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-hex-demo|sequencer-arranger-demo|sequencer-pcm-roundtrip|wavepicker-bench)\n", mode.toRawUTF8());
+    if (mode == "sequencer-solo-poly-roundtrip")
+    {
+        // Headless correctness check for the solo lane's poly save/load path, which is separate
+        // code from the PCM check above (serializeSoloSequenceToJson()/applySoloSequenceText()).
+        auto model = casioxw::ParamModel::fromFile (jsonPath);
+        casioxw::SysExCodec codec (std::move (model));
+        casioxw::MidiIO midiIO;
+        SequencerPanel panel (codec, midiIO);
+        const bool ok = panel.verifySoloPolyRoundTripForPreview();
+        std::printf (ok ? "PASS: solo-lane poly state round-trips through serialize/apply intact\n"
+                         : "FAIL: solo-lane poly state round-trip lost data\n");
+        return ok ? 0 : 1;
+    }
+
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-hex-demo|sequencer-arranger-demo|sequencer-poly-demo|sequencer-pcm-roundtrip|sequencer-solo-poly-roundtrip|wavepicker-bench)\n", mode.toRawUTF8());
     return 1;
 }
