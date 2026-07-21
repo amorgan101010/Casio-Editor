@@ -2406,20 +2406,39 @@ void SequencerPanel::shiftFocusedTrack (int delta)
 
 void SequencerPanel::mouseDown (const juce::MouseEvent& e)
 {
+    // A label click is a PURE focus change -- unlike a step click (which sets focus alongside its
+    // own selection), it has no step of its own to select. A step selection left over on some
+    // OTHER lane would otherwise still win refreshParamDisplayPages()'s priority order (it checks
+    // selections before falling back to focus), so the LCD would show that stale step instead of
+    // the newly-focused track's Base -- clear every lane's selection here so focus and the LCD
+    // never disagree. selectStep(-1) alone would break a step's own toggle-off click (that handler
+    // relies on reading its lane's still-live selectedStep to decide select-vs-deselect), which is
+    // exactly why this clear lives here and not inside setFocusedTrack() itself.
+    const auto clearAllSelections = [this]
+    {
+        selectedStep = -1;
+        clearDrumSelections();
+        clearPcmSelections();
+        clearSynthPolySelection();
+    };
+
     if (e.eventComponent == &synthLabel)
     {
+        clearAllSelections();
         setFocusedTrack (FocusedTrackKind::soloSynth, -1);
         return;
     }
     for (size_t i = 0; i < drumTrackControls.size(); ++i)
         if (drumTrackControls[i] != nullptr && e.eventComponent == &drumTrackControls[i]->trackLabel)
         {
+            clearAllSelections();
             setFocusedTrack (FocusedTrackKind::drum, (int) i);
             return;
         }
     for (size_t i = 0; i < pcmTrackControls.size(); ++i)
         if (pcmTrackControls[i] != nullptr && e.eventComponent == &pcmTrackControls[i]->trackLabel)
         {
+            clearAllSelections();
             setFocusedTrack (FocusedTrackKind::pcm, (int) i);
             return;
         }
@@ -3420,10 +3439,14 @@ void SequencerPanel::resized()
         if (row == nullptr)
             continue;
         auto r = bounds.removeFromTop (kDrumTrackRowHeight);
-        row->rowBounds = r;   // full row extent, before it's sliced up below -- paint()'s focus wash
+        const int rowLeft = r.getX();
         auto stepCells = r.removeFromLeft (kStepGridWidth);
         r.removeFromLeft (kSectionGap);
-        row->trackLabel.setBounds (r.removeFromLeft (kLaneLabelWidth));
+        const auto labelArea = r.removeFromLeft (kLaneLabelWidth);
+        row->trackLabel.setBounds (labelArea);
+        // Steps + label only -- NOT the mute/channel/note/velocity card to the right (owner: the
+        // focus wash spilling onto the card "looks weird", live-flagged against the solo lane).
+        row->rowBounds = juce::Rectangle<int> (rowLeft, r.getY(), labelArea.getRight() - rowLeft, r.getHeight());
         r.removeFromLeft (kSectionGap);
 
         auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
@@ -3462,10 +3485,14 @@ void SequencerPanel::resized()
         if (row == nullptr)
             continue;
         auto r = bounds.removeFromTop (kPcmTrackRowHeight);
-        row->rowBounds = r;   // full row extent, before it's sliced up below -- paint()'s focus wash
+        const int rowLeft = r.getX();
         auto stepCells = r.removeFromLeft (kStepGridWidth);
         r.removeFromLeft (kSectionGap);
-        row->trackLabel.setBounds (r.removeFromLeft (kLaneLabelWidth));
+        const auto labelArea = r.removeFromLeft (kLaneLabelWidth);
+        row->trackLabel.setBounds (labelArea);
+        // Steps + label only -- NOT the mute/channel/poly card to the right (see the drum row's
+        // identical comment above).
+        row->rowBounds = juce::Rectangle<int> (rowLeft, r.getY(), labelArea.getRight() - rowLeft, r.getHeight());
         r.removeFromLeft (kSectionGap);
 
         auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
@@ -3625,10 +3652,11 @@ void SequencerPanel::resized()
     paramDisplay->setVisible (true);
     synthCardBounds = card;
     // The solo lane's rowBounds counterpart (DrumTrackControl/PcmTrackControl have their own field;
-    // the solo lane has no per-row array to hold one) -- spans from the step grid's left edge
-    // through the card's right edge, matching the card's own Y/height (only X was carved out of
-    // synthSection by the removeFromLeft chain above, so card and gridX share the same vertical span).
-    synthFocusBounds = juce::Rectangle<int> (gridX, card.getY(), card.getRight() - gridX, card.getHeight());
+    // the solo lane has no per-row array to hold one) -- just the step grid's own width (the solo
+    // lane has no inline label to extend through, unlike a drum/PCM row), NOT the card to the right
+    // (owner: the wash spilling onto the card "looks weird", live-flagged specifically here). Same
+    // Y/height as the card since only X was carved out of synthSection by removeFromLeft above.
+    synthFocusBounds = juce::Rectangle<int> (gridX, card.getY(), kStepGridWidth, card.getHeight());
 
     for (int i = 0; i < 16; ++i)
     {
