@@ -35,6 +35,8 @@ namespace
     constexpr int kCardWidth = 470;                       // right-side control cards (drum / synth)
     constexpr int kDrumTrackRowHeight = 52;
     constexpr int kPcmTrackRowHeight = 52;                // same shape as a drum row: label/mute/channel + 16 steps
+    constexpr int kPolyVoiceRowHeight = 40;               // a poly sub-track's compact step-strip row (no
+                                                           // mute/channel/knobs -- note/gate/vel live in the screen)
     constexpr int kDrumKeyHeight = 34;                    // drum trig keys, tall enough to read as keys
     constexpr int kSelectKeyHeight = kDrumKeyHeight;      // synth select/trig row (match drum/PCM key size)
     constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
@@ -537,6 +539,14 @@ void StepKeyButton::setLockState (bool hasLockIn, bool selectedIn)
     repaint();
 }
 
+void StepKeyButton::setChordState (bool hasChordIn)
+{
+    if (hasChord == hasChordIn)
+        return;
+    hasChord = hasChordIn;
+    repaint();
+}
+
 void StepKeyButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isMouseDown)
 {
     auto b = getLocalBounds().toFloat().reduced (1.5f);
@@ -568,6 +578,11 @@ void StepKeyButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isMou
     {
         g.setColour (EditorColours::hasLocks);
         g.fillEllipse (b.getRight() - 8.5f, b.getY() + 3.0f, 5.0f, 5.0f);
+    }
+    if (hasChord)
+    {
+        g.setColour (EditorColours::screenAccent);
+        g.fillEllipse (b.getRight() - 8.5f, b.getBottom() - 8.0f, 5.0f, 5.0f);
     }
 }
 
@@ -625,6 +640,82 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     soloSynthInstanceCombo.setSelectedId (1, juce::dontSendNotification);
     soloSynthInstanceCombo.onChange = [this] { setSoloSynthInstance (soloSynthInstanceCombo.getSelectedId()); };
     addAndMakeVisible (soloSynthInstanceCombo);
+
+    // ---- solo lane poly mode (Hex Layer/Drawbar Organ only -- see switchEngine()) ----------
+    for (auto& voice : synthExtraVoices)
+        for (auto& step : voice.track.steps)
+            step.velocity = 100;   // channel is mirrored from `sequence.channel` on every play/stop tick
+
+    synthPolyToggle.setClickingTogglesState (true);
+    synthPolyToggle.onClick = [this]
+    {
+        synthPolyMode = synthPolyToggle.getToggleState();
+        if (! synthPolyMode)
+        {
+            synthSubTracksExpanded = false;
+            clearSynthPolySelection();
+        }
+        refreshStepButtons();
+        updateStatusLabel();
+        resized();
+    };
+    addAndMakeVisible (synthPolyToggle);
+
+    synthSubTrackArrow.setClickingTogglesState (true);
+    synthSubTrackArrow.setToggleState (false, juce::dontSendNotification);
+    synthSubTrackArrow.setButtonText (juce::String::fromUTF8 ("▶"));
+    synthSubTrackArrow.onClick = [this]
+    {
+        synthSubTracksExpanded = synthSubTrackArrow.getToggleState();
+        synthSubTrackArrow.setButtonText (synthSubTracksExpanded ? juce::String::fromUTF8 ("▼")
+                                                                   : juce::String::fromUTF8 ("▶"));
+        resized();
+    };
+    addAndMakeVisible (synthSubTrackArrow);
+
+    for (size_t v = 0; v < synthExtraVoices.size(); ++v)
+    {
+        auto& voice = synthExtraVoices[v];
+        for (size_t step = 0; step < voice.steps.size(); ++step)
+        {
+            auto& b = voice.steps[step];
+            b.setStepIndex ((int) step);
+            b.setClickingTogglesState (false);
+            b.setToggleState (false, juce::dontSendNotification);
+            b.onClick = [this, v, step]
+            {
+                if (editButton.getToggleState())
+                {
+                    const bool wasThisCell = (synthPolyStep == (int) step && synthSelectedVoice == (int) v + 1);
+                    clearPcmSelections();
+                    clearDrumSelections();
+                    if (! wasThisCell)
+                    {
+                        synthPolyStep = (int) step;
+                        synthSelectedVoice = (int) v + 1;
+                        selectedStep = -1;
+                    }
+                    else
+                    {
+                        clearSynthPolySelection();
+                    }
+                    refreshStepButtons();
+                    updateStatusLabel();
+                    updateClearLocksEnabled();
+                }
+                else
+                {
+                    auto& s = synthExtraVoices[v].track.steps[step];
+                    s.enabled = ! s.enabled;
+                    if (s.enabled)   // sensible starting pitch: unison with the primary voice
+                        s.note = sequence.steps[step].note;
+                    refreshStepButtons();
+                    updateStatusLabel();
+                }
+            };
+            addAndMakeVisible (b);
+        }
+    }
 
     // ---- step grid -------------------------------------------------------------------------
     for (int i = 0; i < 16; ++i)
@@ -944,6 +1035,12 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         for (auto& step : row->track.steps)
             step.velocity = 100;
         row->track.channel = def.defaultChannel;
+        for (auto& voice : row->extraVoices)
+        {
+            voice.track.channel = def.defaultChannel;   // extra voices are simultaneous notes on
+            for (auto& step : voice.track.steps)         // the SAME part/channel, not independent lanes
+                step.velocity = 100;
+        }
 
         row->trackLabel.setText (def.label, juce::dontSendNotification);
         row->trackLabel.setJustificationType (juce::Justification::centredLeft);
@@ -959,9 +1056,92 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         row->channel.setSelectedId (def.defaultChannel, juce::dontSendNotification);
         row->channel.onChange = [rowPtr]
         {
-            rowPtr->track.channel = juce::jlimit (1, 16, rowPtr->channel.getSelectedId());
+            const int ch = juce::jlimit (1, 16, rowPtr->channel.getSelectedId());
+            rowPtr->track.channel = ch;
+            for (auto& voice : rowPtr->extraVoices)
+                voice.track.channel = ch;
         };
         addAndMakeVisible (row->channel);
+
+        // Poly mode: owner's scope is Chords only (index 3) -- Bass/Solo 1/Solo 2 never show or
+        // wire these, polyMode stays permanently false for them.
+        const bool polyCapable = (i == 3);
+        row->polyCapable = polyCapable;
+        if (polyCapable)
+        {
+            row->polyToggle.setClickingTogglesState (true);
+            row->polyToggle.onClick = [this, rowPtr]
+            {
+                rowPtr->polyMode = rowPtr->polyToggle.getToggleState();
+                if (! rowPtr->polyMode)
+                {
+                    rowPtr->subTracksExpanded = false;
+                    if (rowPtr->selectedVoice != 0)   // deselect an in-progress sub-voice edit
+                    {
+                        rowPtr->selectedStep = -1;
+                        rowPtr->selectedVoice = 0;
+                    }
+                }
+                refreshStepButtons();
+                updateStatusLabel();
+                resized();
+            };
+            addAndMakeVisible (row->polyToggle);
+
+            row->subTrackArrow.setClickingTogglesState (true);
+            row->subTrackArrow.setToggleState (false, juce::dontSendNotification);
+            row->subTrackArrow.setButtonText (juce::String::fromUTF8 ("▶"));
+            row->subTrackArrow.onClick = [this, rowPtr]
+            {
+                rowPtr->subTracksExpanded = rowPtr->subTrackArrow.getToggleState();
+                rowPtr->subTrackArrow.setButtonText (rowPtr->subTracksExpanded ? juce::String::fromUTF8 ("▼")
+                                                                                : juce::String::fromUTF8 ("▶"));
+                resized();
+            };
+            addAndMakeVisible (row->subTrackArrow);
+
+            for (size_t v = 0; v < rowPtr->extraVoices.size(); ++v)
+            {
+                auto& voice = rowPtr->extraVoices[v];
+                for (size_t step = 0; step < voice.steps.size(); ++step)
+                {
+                    auto& b = voice.steps[step];
+                    b.setStepIndex ((int) step);
+                    b.setClickingTogglesState (false);
+                    b.setToggleState (false, juce::dontSendNotification);
+                    b.onClick = [this, rowPtr, v, step]
+                    {
+                        if (editButton.getToggleState())
+                        {
+                            const bool wasThisCell = (rowPtr->selectedStep == (int) step
+                                                       && rowPtr->selectedVoice == (int) v + 1);
+                            clearPcmSelections();
+                            clearDrumSelections();
+                            clearSynthPolySelection();
+                            if (! wasThisCell)
+                            {
+                                rowPtr->selectedStep = (int) step;
+                                rowPtr->selectedVoice = (int) v + 1;
+                                selectedStep = -1;
+                            }
+                            refreshStepButtons();
+                            updateStatusLabel();
+                            updateClearLocksEnabled();
+                        }
+                        else
+                        {
+                            auto& s = rowPtr->extraVoices[v].track.steps[step];
+                            s.enabled = ! s.enabled;
+                            if (s.enabled)   // sensible starting pitch: unison with the primary voice
+                                s.note = rowPtr->track.steps[step].note;
+                            refreshStepButtons();
+                            updateStatusLabel();
+                        }
+                    };
+                    addAndMakeVisible (b);
+                }
+            }
+        }
 
         for (size_t step = 0; step < row->steps.size(); ++step)
         {
@@ -973,13 +1153,16 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
             {
                 if (editButton.getToggleState())
                 {
-                    const int newSelected = (rowPtr->selectedStep == (int) step ? -1 : (int) step);
-                    clearPcmSelections();   // mutual exclusion across all 4 PCM lanes
+                    const bool wasThisCell = (rowPtr->selectedStep == (int) step && rowPtr->selectedVoice == 0);
+                    const int newSelected = (wasThisCell ? -1 : (int) step);
+                    clearPcmSelections();   // mutual exclusion across all 4 PCM lanes (+ their sub-voices)
                     rowPtr->selectedStep = newSelected;
+                    rowPtr->selectedVoice = 0;
                     if (newSelected >= 0)
                     {
                         selectedStep = -1;
                         clearDrumSelections();
+                        clearSynthPolySelection();
                     }
                     refreshStepButtons();   // also swaps the screen via refreshParamDisplayPages()
                     updateStatusLabel();
@@ -1006,17 +1189,25 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     paramDisplay->onValueReset  = [this] (int index) { onParamReset (index); };
     addAndMakeVisible (*paramDisplay);
 
+    // The window is a fixed-size chassis (Main.cpp sizes itself from this panel's getWidth/Height
+    // ONCE at construction, no viewport) -- so poly mode's expanded sub-track rows can't grow the
+    // window on demand. Reserve the WORST CASE (every poly-capable lane fully expanded) here
+    // unconditionally; resized() only actually lays out sub-rows while a lane is poly+expanded,
+    // so collapsed/mono states just leave unused space above the bottom-anchored statusLabel
+    // rather than needing a live resize.
+    const int kPolyReserve = (kMaxPolyVoices - 1) * (kPolyVoiceRowHeight + 2);
     setSize (8 + kStepGridWidth + kSectionGap + kLaneLabelWidth + kSectionGap + kCardWidth + 8,
              8 + kToolbarRowHeight + 8 + 20 + 4
                  + (int) std::size (kDrumTracks) * (kDrumTrackRowHeight + 2)
                  + 10 + 20 + 4
-                 + (int) std::size (kPcmTracks) * (kPcmTrackRowHeight + 2)
-                 + 10 + 20 + 4 + juce::jmax (kStepColumnHeight, kSynthSectionHeight)
+                 + (int) std::size (kPcmTracks) * (kPcmTrackRowHeight + 2) + kPolyReserve
+                 + 10 + 20 + 4 + juce::jmax (kStepColumnHeight, kSynthSectionHeight) + kPolyReserve
                  + 6 + kFooterHeight + 8);
 
     selectStep (-1);   // start in Base mode
     clearDrumSelections();
     clearPcmSelections();
+    clearSynthPolySelection();
     resized();
 }
 
@@ -1094,6 +1285,45 @@ void SequencerPanel::applyPcmStepEditPreviewState()
     updateStatusLabel();
 }
 
+void SequencerPanel::applyPolyPreviewState()
+{
+    editButton.setToggleState (true, juce::dontSendNotification);
+    stepModeButton.setToggleState (false, juce::dontSendNotification);
+
+    // Chords row: poly on, expanded, a triad on step 1 (primary + 2 extra voices), selecting the
+    // first extra voice's step so the screen swaps to its NOTE/GATE/VEL editor.
+    if (auto& row = pcmTrackControls[3])
+    {
+        row->polyMode = true;
+        row->polyToggle.setToggleState (true, juce::dontSendNotification);
+        row->subTracksExpanded = true;
+        row->subTrackArrow.setToggleState (true, juce::dontSendNotification);
+        row->subTrackArrow.setButtonText (juce::String::fromUTF8 ("\xE2\x96\xBC"));   // "▼"
+
+        row->track.steps[0] = { 60, 100, true, 90, {} };            // root
+        row->extraVoices[0].track.steps[0] = { 64, 95, true, 90, {} };   // third
+        row->extraVoices[1].track.steps[0] = { 67, 90, true, 90, {} };   // fifth
+
+        row->selectedStep = 0;
+        row->selectedVoice = 1;   // extraVoices[0]
+    }
+
+    // Solo lane: switch to Hex Layer (Solo Synth can't go poly), poly on, expanded, a dyad on
+    // step 2 (primary + 1 extra voice).
+    switchEngine (TrackEngine::hexLayer);
+    synthPolyMode = true;
+    synthPolyToggle.setToggleState (true, juce::dontSendNotification);
+    synthSubTracksExpanded = true;
+    synthSubTrackArrow.setToggleState (true, juce::dontSendNotification);
+    synthSubTrackArrow.setButtonText (juce::String::fromUTF8 ("\xE2\x96\xBC"));   // "▼"
+    sequence.steps[1] = { 55, 100, true, 90, {} };
+    synthExtraVoices[0].track.steps[1] = { 58, 90, true, 90, {} };
+
+    refreshStepButtons();   // also swaps the screen + computes the amber/cyan step-key dots
+    updateStatusLabel();
+    resized();
+}
+
 void SequencerPanel::applyArrangerPreviewState()
 {
     setShowingArranger (true);
@@ -1102,11 +1332,12 @@ void SequencerPanel::applyArrangerPreviewState()
 
 bool SequencerPanel::verifyPcmRoundTripForPreview()
 {
-    if (pcmTrackControls[0] == nullptr || pcmTrackControls[1] == nullptr)
+    if (pcmTrackControls[0] == nullptr || pcmTrackControls[1] == nullptr || pcmTrackControls[3] == nullptr)
         return false;
 
     auto& bass = pcmTrackControls[0]->track;
     auto& solo1 = pcmTrackControls[1]->track;
+    auto& chords = *pcmTrackControls[3];   // the one poly-capable row -- also exercises polyMode/extraVoices
 
     bass.channel = 13;
     for (int i = 0; i < 16; ++i)
@@ -1116,14 +1347,31 @@ bool SequencerPanel::verifyPcmRoundTripForPreview()
     }
     solo1.channel = 14;
 
+    chords.polyMode = true;
+    for (int i = 0; i < 16; ++i)
+        chords.track.steps[(size_t) i] = { 48 + i, 100, i % 4 == 0, 90, {} };
+    for (size_t v = 0; v < chords.extraVoices.size(); ++v)
+        for (int i = 0; i < 16; ++i)
+            chords.extraVoices[v].track.steps[(size_t) i] =
+                { 52 + (int) v + i, 80, i % 5 == 0, 70, {} };
+
     const auto expectedBass  = bass;
     const auto expectedSolo1 = solo1;
+    const bool expectedChordsPoly = chords.polyMode;
+    const auto expectedChordsPrimary = chords.track;
+    std::array<casioxw::Sequence, kMaxPolyVoices - 1> expectedChordsExtra;
+    for (size_t v = 0; v < chords.extraVoices.size(); ++v)
+        expectedChordsExtra[v] = chords.extraVoices[v].track;   // PolyVoice itself isn't copyable (owns widgets)
 
     const auto json = serializePcmTracksToJson();
 
     // Clobber the live tracks so a false pass (comparing against unchanged data) is impossible.
     bass  = casioxw::Sequence {};
     solo1 = casioxw::Sequence {};
+    chords.polyMode = false;
+    chords.track = casioxw::Sequence {};
+    for (auto& voice : chords.extraVoices)
+        voice.track = casioxw::Sequence {};
 
     if (! applyPcmTracksText (json))
         return false;
@@ -1136,11 +1384,21 @@ bool SequencerPanel::verifyPcmRoundTripForPreview()
 
     if (bass.channel != expectedBass.channel || solo1.channel != expectedSolo1.channel)
         return false;
+    if (chords.polyMode != expectedChordsPoly)
+        return false;
 
     for (int i = 0; i < 16; ++i)
+    {
         if (! stepsMatch (bass.steps[(size_t) i], expectedBass.steps[(size_t) i])
-            || ! stepsMatch (solo1.steps[(size_t) i], expectedSolo1.steps[(size_t) i]))
+            || ! stepsMatch (solo1.steps[(size_t) i], expectedSolo1.steps[(size_t) i])
+            || ! stepsMatch (chords.track.steps[(size_t) i], expectedChordsPrimary.steps[(size_t) i]))
             return false;
+
+        for (size_t v = 0; v < chords.extraVoices.size(); ++v)
+            if (! stepsMatch (chords.extraVoices[v].track.steps[(size_t) i],
+                               expectedChordsExtra[v].steps[(size_t) i]))
+                return false;
+    }
 
     return true;
 }
@@ -1309,7 +1567,7 @@ void SequencerPanel::saveByKind (SaveKind kind)
     {
         fileName = "solo-sequence.xwseq";
         wildcard = "*.xwseq";
-        payload = casioxw::sequenceToJson (sequence);
+        payload = serializeSoloSequenceToJson();
     }
     else if (kind == SaveKind::drums)
     {
@@ -1362,7 +1620,7 @@ void SequencerPanel::saveByKind (SaveKind kind)
                 const auto pcmFile = file.getSiblingFile (pcmName);
                 const auto setPayload = serializeSequenceSetToJson (soloName, drumName, pcmName);
 
-                const bool okSolo = soloFile.replaceWithText (casioxw::sequenceToJson (sequence));
+                const bool okSolo = soloFile.replaceWithText (serializeSoloSequenceToJson());
                 const bool okDrums = drumFile.replaceWithText (serializeDrumsToJson());
                 const bool okPcm = pcmFile.replaceWithText (serializePcmTracksToJson());
                 const bool okSet = file.replaceWithText (setPayload);
@@ -1422,17 +1680,57 @@ juce::String SequencerPanel::serializeDrumsToJson() const
 juce::String SequencerPanel::serializePcmTracksToJson() const
 {
     // Each PCM track IS a casioxw::Sequence, so reuse sequenceToJson() per track instead of
-    // hand-rolling per-field JSON (same round-trip guarantees as the Solo Synth save).
+    // hand-rolling per-field JSON (same round-trip guarantees as the Solo Synth save). Poly mode/
+    // extra voices are an app-level concept core's Sequence doesn't know about (see PolyVoice's
+    // doc comment) -- carried as ADDITIONAL properties on the same per-track object rather than a
+    // new envelope, so an old build (or Bass/Solo1/Solo2, which never set polyMode) round-trips
+    // unchanged; sequenceFromJson() ignores unknown properties.
     juce::DynamicObject::Ptr root = new juce::DynamicObject();
     root->setProperty ("format", "casioxw-pcm-tracks");
     root->setProperty ("version", 1);
 
     juce::Array<juce::var> tracks;
     for (const auto& row : pcmTrackControls)
-        tracks.add (row == nullptr ? juce::var()
-                                    : juce::JSON::parse (casioxw::sequenceToJson (row->track)));
+    {
+        if (row == nullptr)
+        {
+            tracks.add (juce::var());
+            continue;
+        }
+        auto parsed = juce::JSON::parse (casioxw::sequenceToJson (row->track));
+        if (auto* obj = parsed.getDynamicObject())
+        {
+            obj->setProperty ("polyMode", row->polyMode);
+            juce::Array<juce::var> voices;
+            for (const auto& voice : row->extraVoices)
+                voices.add (juce::JSON::parse (casioxw::sequenceToJson (voice.track)));
+            obj->setProperty ("extraVoices", voices);
+        }
+        tracks.add (parsed);
+    }
     root->setProperty ("tracks", tracks);
     return juce::JSON::toString (juce::var (root.get()));
+}
+
+juce::String SequencerPanel::serializeSoloSequenceToJson() const
+{
+    // casioxw::sequenceToJson() only knows the core Sequence shape -- poly mode/extra voices are
+    // an app-level concept (a voice's `lockable` is always empty: hardware has one filter/
+    // envelope per PART, not per simultaneous note, so there's nothing core-shaped to add), so
+    // they ride as ADDITIONAL top-level properties on the same "casioxw-sequence" object rather
+    // than a new envelope format -- sequenceFromJson() ignores unknown properties, so an old
+    // build (or a Solo Synth file, which never sets synthPolyMode) round-trips unchanged.
+    auto parsed = juce::JSON::parse (casioxw::sequenceToJson (sequence));
+    auto* obj = parsed.getDynamicObject();
+    if (obj == nullptr)
+        return casioxw::sequenceToJson (sequence);   // shouldn't happen; fall back rather than crash
+
+    obj->setProperty ("synthPolyMode", synthPolyMode);
+    juce::Array<juce::var> voices;
+    for (const auto& voice : synthExtraVoices)
+        voices.add (juce::JSON::parse (casioxw::sequenceToJson (voice.track)));
+    obj->setProperty ("synthExtraVoices", voices);
+    return juce::JSON::toString (parsed);
 }
 
 juce::String SequencerPanel::serializeSequenceSetToJson (const juce::String& soloFile, const juce::String& drumsFile,
@@ -1445,7 +1743,7 @@ juce::String SequencerPanel::serializeSequenceSetToJson (const juce::String& sol
     root->setProperty ("drumsFile", drumsFile);
     root->setProperty ("pcmFile", pcmFile);
     // Keep inline copies too so old/new loaders can still recover even if sidecars are moved.
-    root->setProperty ("solo", juce::JSON::parse (casioxw::sequenceToJson (sequence)));
+    root->setProperty ("solo", juce::JSON::parse (serializeSoloSequenceToJson()));
     root->setProperty ("drums", juce::JSON::parse (serializeDrumsToJson()));
     root->setProperty ("pcm", juce::JSON::parse (serializePcmTracksToJson()));
     return juce::JSON::toString (juce::var (root.get()));
@@ -1485,6 +1783,39 @@ bool SequencerPanel::applySoloSequenceText (const juce::String& text)
             if (llp.paramId == lp.paramId && llp.instance == lp.instance)
                 lp.baseValue = llp.baseValue;
 
+    // Poly state (app-level, not part of casioxw::Sequence -- see serializeSoloSequenceToJson()'s
+    // doc comment). Missing/absent -> mono, matching every pre-poly file's implicit state; still
+    // owner-scoped to Hex Layer/Drawbar Organ regardless of what the file itself says.
+    const auto polyParsed = juce::JSON::parse (text);
+    auto* polyObj = polyParsed.getDynamicObject();
+    const bool loadedPoly = polyObj != nullptr && (bool) polyObj->getProperty ("synthPolyMode");
+    synthPolyMode = loadedPoly && currentEngine != TrackEngine::soloSynth;
+    synthPolyToggle.setToggleState (synthPolyMode, juce::dontSendNotification);
+    if (! synthPolyMode)
+    {
+        synthSubTracksExpanded = false;
+        synthSubTrackArrow.setToggleState (false, juce::dontSendNotification);
+        synthSubTrackArrow.setButtonText (juce::String::fromUTF8 ("\xE2\x96\xB6"));   // "▶"
+    }
+    clearSynthPolySelection();
+
+    for (auto& voice : synthExtraVoices)
+        for (auto& step : voice.track.steps)
+            step = casioxw::Step {};   // default: no extra-voice content, overwritten below if saved
+
+    if (polyObj != nullptr)
+        if (const auto* voicesArr = polyObj->getProperty ("synthExtraVoices").getArray())
+        {
+            const int n = juce::jmin ((int) synthExtraVoices.size(), voicesArr->size());
+            for (int i = 0; i < n; ++i)
+            {
+                const auto voiceLoaded = casioxw::sequenceFromJson (juce::JSON::toString ((*voicesArr)[i]));
+                if (voiceLoaded.has_value())
+                    synthExtraVoices[(size_t) i].track.steps = voiceLoaded->steps;
+            }
+        }
+
+    resized();   // synthSubTrackArrow visibility/text and the sub-row reservation depend on the above
     return true;
 }
 
@@ -1576,7 +1907,44 @@ bool SequencerPanel::applyPcmTracksText (const juce::String& text)
         row.track.tempoBpm     = loaded->tempoBpm;
         row.track.stepsPerBeat = loaded->stepsPerBeat;
         row.channel.setSelectedId (juce::jlimit (1, 16, row.track.channel), juce::dontSendNotification);
+
+        // Poly state (app-level, not part of casioxw::Sequence -- see serializePcmTracksToJson()'s
+        // doc comment). Missing/absent -> mono; still owner-scoped to the Chords row regardless of
+        // what the file says (a hand-edited or older-format file can't turn on poly for Bass/Solo1/
+        // Solo2, matching PcmTrackControl::polyCapable's construction-time scope).
+        auto* trackObj = trackVar.getDynamicObject();
+        const bool loadedPoly = trackObj != nullptr && (bool) trackObj->getProperty ("polyMode");
+        row.polyMode = loadedPoly && row.polyCapable;
+        row.polyToggle.setToggleState (row.polyMode, juce::dontSendNotification);
+        if (! row.polyMode)
+        {
+            row.subTracksExpanded = false;
+            row.subTrackArrow.setToggleState (false, juce::dontSendNotification);
+            row.subTrackArrow.setButtonText (juce::String::fromUTF8 ("\xE2\x96\xB6"));   // "▶"
+        }
+        if (row.selectedVoice != 0)
+        {
+            row.selectedStep = -1;
+            row.selectedVoice = 0;
+        }
+
+        for (auto& voice : row.extraVoices)
+            for (auto& step : voice.track.steps)
+                step = casioxw::Step {};   // default: no extra-voice content, overwritten below if saved
+
+        if (trackObj != nullptr)
+            if (const auto* voicesArr = trackObj->getProperty ("extraVoices").getArray())
+            {
+                const int vn = juce::jmin ((int) row.extraVoices.size(), voicesArr->size());
+                for (int v = 0; v < vn; ++v)
+                {
+                    const auto voiceLoaded = casioxw::sequenceFromJson (juce::JSON::toString ((*voicesArr)[v]));
+                    if (voiceLoaded.has_value())
+                        row.extraVoices[(size_t) v].track.steps = voiceLoaded->steps;
+                }
+            }
     }
+    resized();   // polyToggle/subTrackArrow visibility and the sub-row reservation depend on the above
     return true;
 }
 
@@ -1676,6 +2044,7 @@ bool SequencerPanel::applyLoadedText (const juce::String& text, const juce::File
     selectStep (-1);   // back to Base; also refreshes param controls, step markers, status
     clearDrumSelections();
     clearPcmSelections();
+    clearSynthPolySelection();
     statusLabel.setText ("Loaded " + sourceFile.getFileName(), juce::dontSendNotification);
     return true;
 }
@@ -1781,7 +2150,22 @@ void SequencerPanel::clearPcmSelections()
 {
     for (auto& row : pcmTrackControls)
         if (row != nullptr)
+        {
             row->selectedStep = -1;
+            row->selectedVoice = 0;
+        }
+}
+
+// The solo lane's poly sub-voice edit target (synthPolyStep/synthSelectedVoice) is a THIRD axis
+// alongside selectedStep (the primary voice's p-lock target) and the PCM lanes -- distinct
+// because, unlike a PCM row, the solo lane's OWN selectedStep already means something (the p-lock
+// target) even when not poly, so a sub-voice's note/gate/vel edit target needs its own state.
+// Called everywhere clearDrumSelections()/clearPcmSelections() are, so selecting anything else
+// always deselects an in-progress poly sub-voice edit.
+void SequencerPanel::clearSynthPolySelection()
+{
+    synthPolyStep = -1;
+    synthSelectedVoice = 0;
 }
 
 void SequencerPanel::updateClearLocksEnabled()
@@ -1812,17 +2196,30 @@ void SequencerPanel::clearAllSteps()
             lock.reset();
     }
 
-    // PCM lanes: default-construct each step of the lane's own sequence.
+    // PCM lanes: default-construct each step of the lane's own sequence + any poly sub-voices
+    // (PCM Chords' extraVoices; polyMode/subTracksExpanded themselves are sound-setup, not
+    // pattern, so left alone, matching how per-lane mutes are kept elsewhere in this function).
     for (auto& row : pcmTrackControls)
         if (row != nullptr)
+        {
             for (auto& step : row->track.steps)
                 step = casioxw::Step {};
+            for (auto& voice : row->extraVoices)
+                for (auto& step : voice.track.steps)
+                    step = casioxw::Step {};
+        }
+
+    // Solo lane's poly sub-voices (only ever populated while engine is Hex Layer/Drawbar Organ).
+    for (auto& voice : synthExtraVoices)
+        for (auto& step : voice.track.steps)
+            step = casioxw::Step {};
 
     // Drop every edit target so nothing points at now-empty data, then refresh. selectStep(-1)
     // handles param controls / step buttons / status / clear-locks enablement; only the synth
     // step knobs (note/gate/vel) need the extra push.
     clearDrumSelections();
     clearPcmSelections();
+    clearSynthPolySelection();
     selectStep (-1);
     syncStepWidgetsFromSequence();
 
@@ -1836,6 +2233,7 @@ void SequencerPanel::selectStep (int step)
     {
         clearDrumSelections();
         clearPcmSelections();
+        clearSynthPolySelection();
     }
     updateClearLocksEnabled();
     refreshParamControls();
@@ -1850,6 +2248,7 @@ void SequencerPanel::setPLockMode (bool pLockMode)
         selectStep (-1);       // also refreshes controls/steps/status
         clearDrumSelections();
         clearPcmSelections();
+        clearSynthPolySelection();
     }
     refreshParamControls();
     refreshStepButtons();
@@ -1859,24 +2258,16 @@ void SequencerPanel::setPLockMode (bool pLockMode)
 
 void SequencerPanel::onParamEdited (int lockableIndex, int value)
 {
-    if (lockableIndex < 0)   // a PCM track's step NOTE/GATE/VEL cell, not a real synth param
+    if (lockableIndex < 0)   // a melodic track's step NOTE/GATE/VEL cell, not a real synth param
     {
-        int pcmRow = -1;
-        for (size_t i = 0; i < pcmTrackControls.size(); ++i)
-            if (pcmTrackControls[i] != nullptr && pcmTrackControls[i]->selectedStep >= 0)
-            {
-                pcmRow = (int) i;
-                break;
-            }
-        if (pcmRow < 0)
+        auto* step = melodicStepForTarget (displayedMelodicTarget);
+        if (step == nullptr)
             return;   // shouldn't happen (the page wouldn't be showing), but guard anyway
 
-        auto& row = *pcmTrackControls[(size_t) pcmRow];
-        auto& step = row.track.steps[(size_t) row.selectedStep];
-        if (lockableIndex == kPcmNoteCell)      step.note        = juce::jlimit (0, 127, value);
-        else if (lockableIndex == kPcmGateCell) step.gatePercent = juce::jlimit (1, 100, value);
-        else if (lockableIndex == kPcmVelCell)  step.velocity    = juce::jlimit (1, 127, value);
-        refreshPcmStepCellValues (pcmRow);
+        if (lockableIndex == kPcmNoteCell)      step->note        = juce::jlimit (0, 127, value);
+        else if (lockableIndex == kPcmGateCell) step->gatePercent = juce::jlimit (1, 100, value);
+        else if (lockableIndex == kPcmVelCell)  step->velocity    = juce::jlimit (1, 127, value);
+        refreshMelodicStepCellValues (displayedMelodicTarget);
         return;
     }
 
@@ -1961,13 +2352,25 @@ void SequencerPanel::applyEngine (TrackEngine newEngine)
     seedLockableFromEngine (currentEngine);
     continuousLockables.clear();   // indices were sized for the OLD engine's lockable count
 
+    // Poly mode is owner-scoped to Hex Layer/Drawbar Organ -- force it off (and collapse/deselect)
+    // rather than merely hiding the toggle, so a stale synthPolyMode=true can't survive a round
+    // trip through Solo Synth and silently resume scheduling extra voices later.
+    if (newEngine == TrackEngine::soloSynth && synthPolyMode)
+    {
+        synthPolyMode = false;
+        synthPolyToggle.setToggleState (false, juce::dontSendNotification);
+        synthSubTracksExpanded = false;
+        clearSynthPolySelection();
+    }
+
     synthLabel.setText (resolveEngineLockableSet (currentEngine, codec.model(), currentSoloSynthBlock,
                                                    currentSoloSynthInstance, currentHexLayer).displayName,
                          juce::dontSendNotification);
     engineCombo.setSelectedId ((int) currentEngine + 1, juce::dontSendNotification);
 
     rebuildSynthParamPages();   // also re-seeds continuousLockables + min/max for the new table
-    resized();   // hexLayerCombo/soloSynthBlockCombo/soloSynthInstanceCombo visibility depends on currentEngine
+    refreshStepButtons();
+    resized();   // hexLayerCombo/soloSynthBlockCombo/soloSynthInstanceCombo/poly visibility depends on currentEngine
 }
 
 void SequencerPanel::switchEngine (TrackEngine newEngine)
@@ -2115,49 +2518,89 @@ void SequencerPanel::rebuildSynthParamPages()
         pages.push_back ({ "NO LOCKS", {} });
 
     paramDisplay->setPages (std::move (pages));
-    displayedPcmRow = -1;
+    displayedMelodicTarget = -1;
 }
 
-void SequencerPanel::refreshPcmStepCellValues (int pcmRow)
+// Decodes displayedMelodicTarget (see its doc comment in SequencerPanel.h) into a pointer at the
+// actual casioxw::Step the glass panel's NOTE/GATE/VEL cells should read/write -- nullptr if
+// nothing is currently selected there (shouldn't happen while the page is showing, but every
+// caller guards anyway rather than assume).
+casioxw::Step* SequencerPanel::melodicStepForTarget (int target)
 {
-    if (pcmRow < 0 || pcmTrackControls[(size_t) pcmRow] == nullptr)
+    if (target < 0)
+        return nullptr;
+    if (target < 10)   // a PCM row's primary voice
+    {
+        auto& row = *pcmTrackControls[(size_t) target];
+        return row.selectedStep >= 0 ? &row.track.steps[(size_t) row.selectedStep] : nullptr;
+    }
+    if (target < 100)   // a PCM row's poly extra voice
+    {
+        const size_t row = (size_t) (target - 10) / 4;
+        const size_t voice = (size_t) (target - 10) % 4;   // 1..3
+        auto& r = *pcmTrackControls[row];
+        return r.selectedStep >= 0 ? &r.extraVoices[voice - 1].track.steps[(size_t) r.selectedStep] : nullptr;
+    }
+    // The solo lane's own poly extra voice.
+    const size_t voice = (size_t) (target - 100);   // 1..3
+    return synthPolyStep >= 0 ? &synthExtraVoices[voice - 1].track.steps[(size_t) synthPolyStep] : nullptr;
+}
+
+void SequencerPanel::refreshMelodicStepCellValues (int target)
+{
+    const auto* step = melodicStepForTarget (target);
+    if (step == nullptr)
         return;
-    const auto& row = *pcmTrackControls[(size_t) pcmRow];
-    if (row.selectedStep < 0)
-        return;
-    const auto& step = row.track.steps[(size_t) row.selectedStep];
-    paramDisplay->setCellState (kPcmNoteCell, step.note, false);
-    paramDisplay->setCellState (kPcmGateCell, step.gatePercent, false);
-    paramDisplay->setCellState (kPcmVelCell,  step.velocity, false);
+    paramDisplay->setCellState (kPcmNoteCell, step->note, false);
+    paramDisplay->setCellState (kPcmGateCell, step->gatePercent, false);
+    paramDisplay->setCellState (kPcmVelCell,  step->velocity, false);
 }
 
 void SequencerPanel::refreshParamDisplayPages()
 {
-    int pcmRow = -1;
+    // The current melodic edit target across every possible source, encoded per
+    // displayedMelodicTarget's doc comment. PCM rows (any voice) take priority over the solo
+    // lane's poly voice, matching the pre-poly sweep's own order -- moot in practice since every
+    // selection site clears the other two, so at most one of these ever finds anything.
+    int target = -1;
     for (size_t i = 0; i < pcmTrackControls.size(); ++i)
-        if (pcmTrackControls[i] != nullptr && pcmTrackControls[i]->selectedStep >= 0)
+    {
+        const auto& rowPtr = pcmTrackControls[i];
+        if (rowPtr != nullptr && rowPtr->selectedStep >= 0)
         {
-            pcmRow = (int) i;
+            target = rowPtr->selectedVoice == 0 ? (int) i : (10 + (int) i * 4 + rowPtr->selectedVoice);
             break;
         }
+    }
+    if (target < 0 && synthPolyStep >= 0)
+        target = 100 + synthSelectedVoice;
 
-    if (pcmRow == displayedPcmRow)
+    if (target == displayedMelodicTarget)
     {
-        refreshPcmStepCellValues (pcmRow);   // same lane -- but the selected step within it may differ
+        refreshMelodicStepCellValues (target);   // same target -- but the selected step may differ
         return;
     }
 
-    displayedPcmRow = pcmRow;
-    if (pcmRow < 0)
+    displayedMelodicTarget = target;
+    if (target < 0)
     {
-        rebuildSynthParamPages();   // rebuildSynthParamPages() also resets displayedPcmRow to -1
+        rebuildSynthParamPages();   // rebuildSynthParamPages() also resets displayedMelodicTarget to -1
         refreshParamControls();     // freshly-built cells default to range min -- populate real values
         return;
     }
 
     static const char* const kPcmTrackNames[] = { "BASS", "SOLO 1", "SOLO 2", "CHORDS" };
+    juce::String pageName;
+    if (target < 10)
+        pageName = kPcmTrackNames[(size_t) target];
+    else if (target < 100)
+        pageName = juce::String (kPcmTrackNames[(size_t) (target - 10) / 4]) + " V"
+                 + juce::String ((target - 10) % 4);
+    else
+        pageName = "SYNTH V" + juce::String (target - 100);
+
     std::vector<ParamPageDisplay::Page> pages;
-    ParamPageDisplay::Page page { kPcmTrackNames[(size_t) pcmRow], {} };
+    ParamPageDisplay::Page page { pageName, {} };
     ParamPageDisplay::CellSpec note, gate, vel;
     note.rawMin = 0;   note.rawMax = 127; note.rawFormat = ParamPageDisplay::ValueFormat::Note;
     note.shortName = "NOTE"; note.lockableIndex = kPcmNoteCell;
@@ -2169,7 +2612,7 @@ void SequencerPanel::refreshParamDisplayPages()
     pages.push_back (std::move (page));
 
     paramDisplay->setPages (std::move (pages));
-    refreshPcmStepCellValues (pcmRow);
+    refreshMelodicStepCellValues (target);
 }
 
 void SequencerPanel::refreshStepButtons()
@@ -2182,9 +2625,25 @@ void SequencerPanel::refreshStepButtons()
         const auto& step = sequence.steps[(size_t) i];
         btn.setToggleState (step.enabled, juce::dontSendNotification);
         btn.setLockState (! step.locks.empty(), pLockMode && i == selectedStep);
+
+        bool synthChord = false;
+        if (synthPolyMode)
+            for (const auto& voice : synthExtraVoices)
+                if (voice.track.steps[(size_t) i].enabled)
+                    synthChord = true;
+        btn.setChordState (synthChord);
     }
     baseButton.setColour (juce::TextButton::buttonColourId,
                           selectedStep < 0 ? kSelectedColour : kIdleColour);
+
+    if (synthPolyMode)
+        for (size_t v = 0; v < synthExtraVoices.size(); ++v)
+            for (int i = 0; i < 16; ++i)
+            {
+                auto& btn = synthExtraVoices[v].steps[(size_t) i];
+                btn.setToggleState (synthExtraVoices[v].track.steps[(size_t) i].enabled, juce::dontSendNotification);
+                btn.setLockState (false, pLockMode && synthPolyStep == i && synthSelectedVoice == (int) v + 1);
+            }
 
     for (auto& rowPtr : drumTrackControls)
     {
@@ -2229,8 +2688,24 @@ void SequencerPanel::refreshStepButtons()
             btn.setToggleState (row.track.steps[(size_t) i].enabled, juce::dontSendNotification);
             // No lock LED here -- a PCM step's note/gate/vel are always-defined, never "unlocked";
             // `selected` is the only state worth showing (which step the screen is editing).
-            btn.setLockState (false, pLockMode && i == row.selectedStep);
+            btn.setLockState (false, pLockMode && i == row.selectedStep && row.selectedVoice == 0);
+
+            bool chord = false;
+            if (row.polyMode)
+                for (const auto& voice : row.extraVoices)
+                    if (voice.track.steps[(size_t) i].enabled)
+                        chord = true;
+            btn.setChordState (chord);
         }
+
+        if (row.polyMode)
+            for (size_t v = 0; v < row.extraVoices.size(); ++v)
+                for (int i = 0; i < 16; ++i)
+                {
+                    auto& btn = row.extraVoices[v].steps[(size_t) i];
+                    btn.setToggleState (row.extraVoices[v].track.steps[(size_t) i].enabled, juce::dontSendNotification);
+                    btn.setLockState (false, pLockMode && i == row.selectedStep && row.selectedVoice == (int) v + 1);
+                }
     }
 
     refreshParamDisplayPages();   // keep the screen in sync with whichever lane owns the selection
@@ -2414,6 +2889,28 @@ void SequencerPanel::feedLookahead (double lookaheadMs)
                 }
             }
 
+        // Solo lane poly voices (Hex Layer/Drawbar Organ only -- see synthPolyMode's doc comment):
+        // additional SIMULTANEOUS notes on the same part/channel, not independent lanes, so they
+        // share the mute button and the primary voice's own scheduleStep() path -- each voice's
+        // `lockable` is empty, so this only ever emits noteOn/noteOff, never paramChange (p-locks
+        // stay on the shared `sequence.lockable` table, sent once above via the primary voice).
+        if (synthPolyMode && ! muteSynthButton.getToggleState())
+            for (auto& voice : synthExtraVoices)
+            {
+                voice.track.channel      = sequence.channel;
+                voice.track.tempoBpm     = sequence.tempoBpm;
+                voice.track.stepsPerBeat = sequence.stepsPerBeat;
+
+                for (const auto& e : casioxw::scheduleStep (voice.track, nextStepIndex, prevStepIndex, nextStepStartMs))
+                {
+                    const int samplePos = (int) std::llround (e.timeMs);
+                    if (e.type == casioxw::ScheduledEvent::Type::noteOn)
+                        buffer.addEvent (juce::MidiMessage::noteOn (e.channel, e.note, (juce::uint8) e.velocity), samplePos);
+                    else if (e.type == casioxw::ScheduledEvent::Type::noteOff)
+                        buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note), samplePos);
+                }
+            }
+
         for (const auto& row : drumTrackControls)
         {
             if (row == nullptr || row->mute.getToggleState() || ! row->steps[(size_t) nextStepIndex].getToggleState())
@@ -2462,6 +2959,25 @@ void SequencerPanel::feedLookahead (double lookaheadMs)
                         break;   // no lockable params on a PCM track yet
                 }
             }
+
+            // Poly extra voices (Chords only, in practice -- see PcmTrackControl::polyCapable):
+            // additional simultaneous notes on the SAME channel, sharing this row's own mute.
+            if (row->polyMode)
+                for (auto& voice : row->extraVoices)
+                {
+                    voice.track.channel      = row->track.channel;
+                    voice.track.tempoBpm     = sequence.tempoBpm;
+                    voice.track.stepsPerBeat = sequence.stepsPerBeat;
+
+                    for (const auto& e : casioxw::scheduleStep (voice.track, nextStepIndex, prevStepIndex, nextStepStartMs))
+                    {
+                        const int samplePos = (int) std::llround (e.timeMs);
+                        if (e.type == casioxw::ScheduledEvent::Type::noteOn)
+                            buffer.addEvent (juce::MidiMessage::noteOn (e.channel, e.note, (juce::uint8) e.velocity), samplePos);
+                        else if (e.type == casioxw::ScheduledEvent::Type::noteOff)
+                            buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note), samplePos);
+                    }
+                }
         }
 
         if (! buffer.isEmpty())
@@ -2702,11 +3218,25 @@ void SequencerPanel::resized()
             row->mute.setBounds (controls.removeFromLeft (46).withSizeKeepingCentre (46, 24));
             controls.removeFromLeft (6);
             row->channel.setBounds (controls.removeFromLeft (58).withSizeKeepingCentre (58, 24));
+            if (row->polyCapable)
+            {
+                controls.removeFromLeft (10);
+                row->polyToggle.setBounds (controls.removeFromLeft (54).withSizeKeepingCentre (54, 24));
+                controls.removeFromLeft (4);
+                row->subTrackArrow.setBounds (controls.removeFromLeft (26).withSizeKeepingCentre (26, 24));
+            }
+            else
+            {
+                row->polyToggle.setBounds (0, 0, 0, 0);
+                row->subTrackArrow.setBounds (0, 0, 0, 0);
+            }
         }
         else
         {
             row->mute.setBounds (0, 0, 0, 0);
             row->channel.setBounds (0, 0, 0, 0);
+            row->polyToggle.setBounds (0, 0, 0, 0);
+            row->subTrackArrow.setBounds (0, 0, 0, 0);
         }
 
         for (auto& b : row->steps)
@@ -2716,6 +3246,30 @@ void SequencerPanel::resized()
         }
 
         bounds.removeFromTop (2);
+
+        // Poly sub-track rows: only actually laid out (consuming real space) while poly mode is
+        // on AND expanded -- see setSize()'s kPolyReserve comment for why collapsed/mono states
+        // are safe to just leave the reserved space unused rather than shrinking the window.
+        if (row->polyMode && row->subTracksExpanded)
+        {
+            for (auto& voice : row->extraVoices)
+            {
+                auto vr = bounds.removeFromTop (kPolyVoiceRowHeight);
+                auto vStepCells = vr.removeFromLeft (kStepGridWidth);
+                for (auto& b : voice.steps)
+                {
+                    auto cell = vStepCells.removeFromLeft (kStepWidth);
+                    b.setBounds (cell.withSizeKeepingCentre (kStepWidth - 6, kPolyVoiceRowHeight - 6));
+                }
+                bounds.removeFromTop (2);
+            }
+        }
+        else
+        {
+            for (auto& voice : row->extraVoices)
+                for (auto& b : voice.steps)
+                    b.setBounds (0, 0, 0, 0);
+        }
     }
     pcmCardBounds = showPcmControls
         ? juce::Rectangle<int> (cardX, pcmTop - 2, kCardWidth, bounds.getY() - pcmTop + 2)
@@ -2756,15 +3310,37 @@ void SequencerPanel::resized()
         soloSynthBlockCombo.setBounds (0, 0, 0, 0);
         soloSynthInstanceCombo.setBounds (0, 0, 0, 0);
     }
+    // Poly mode is owner-scoped to Hex Layer/Drawbar Organ -- Solo Synth never shows it (forced
+    // off in applyEngine() too, not just hidden here).
+    if (currentEngine != TrackEngine::soloSynth)
+    {
+        synthPolyToggle.setBounds (synthHeader.removeFromLeft (54).reduced (2, 1));
+        synthHeader.removeFromLeft (4);
+        synthSubTrackArrow.setBounds (synthHeader.removeFromLeft (26).reduced (2, 1));
+        synthHeader.removeFromLeft (4);
+    }
+    else
+    {
+        synthPolyToggle.setBounds (0, 0, 0, 0);
+        synthSubTrackArrow.setBounds (0, 0, 0, 0);
+    }
     synthControlsButton.setBounds (synthHeader.removeFromLeft (22));
     bounds.removeFromTop (4);
 
-    auto synthSection = bounds.removeFromTop (juce::jmax (kStepColumnHeight, kSynthSectionHeight));
+    // synthSection's height reserves room for the solo lane's poly sub-track rows (below the
+    // primary note/gate/velocity columns) only while actually poly+expanded -- see setSize()'s
+    // kPolyReserve comment for why a collapsed/mono state safely leaves that space unused rather
+    // than needing a live window resize.
+    const int synthPolyRowsHeight = (synthPolyMode && synthSubTracksExpanded)
+        ? (int) synthExtraVoices.size() * (kPolyVoiceRowHeight + 2) : 0;
+    auto synthSection = bounds.removeFromTop (juce::jmax (kStepColumnHeight + synthPolyRowsHeight, kSynthSectionHeight));
     const int playheadBottom = synthSection.getY() + kSynthStepTopInset + kStepColumnHeight;
 
     auto stepCols = synthSection.removeFromLeft (kStepGridWidth);
     const int gridX = stepCols.getX();
     stepCols.removeFromTop (kSynthStepTopInset);
+    auto synthPolyRowsArea = synthPolyRowsHeight > 0 ? stepCols.removeFromBottom (synthPolyRowsHeight)
+                                                      : juce::Rectangle<int>();
     synthSection.removeFromLeft (kSectionGap);
 
     // Lane label gutter: row labels aligned to the Pitch / Gate / Velocity knob rows, same
@@ -2817,6 +3393,27 @@ void SequencerPanel::resized()
         stepControls[(size_t) i]->note.setBounds (col.removeFromTop (kKnobCell));
         stepControls[(size_t) i]->gate.setBounds (col.removeFromTop (kKnobCell));
         stepControls[(size_t) i]->velocity.setBounds (col.removeFromTop (kKnobCell));
+    }
+
+    if (synthPolyRowsHeight > 0)
+    {
+        auto pr = synthPolyRowsArea;
+        for (auto& voice : synthExtraVoices)
+        {
+            auto vr = pr.removeFromTop (kPolyVoiceRowHeight);
+            for (auto& b : voice.steps)
+            {
+                auto cell = vr.removeFromLeft (kStepWidth);
+                b.setBounds (cell.withSizeKeepingCentre (kStepWidth - 6, kPolyVoiceRowHeight - 6));
+            }
+            pr.removeFromTop (2);
+        }
+    }
+    else
+    {
+        for (auto& voice : synthExtraVoices)
+            for (auto& b : voice.steps)
+                b.setBounds (0, 0, 0, 0);
     }
 
     playheadLaneBounds = { gridX, playheadTop, kStepGridWidth, playheadBottom - playheadTop };
