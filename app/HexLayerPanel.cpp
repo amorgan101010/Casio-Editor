@@ -95,7 +95,7 @@ class HexLayerPanel::MiniKnob : public juce::Component,
                                 public juce::SettableTooltipClient
 {
 public:
-    MiniKnob (juce::String paramIdIn, int instanceIn, int rangeMin, int rangeMax,
+    MiniKnob (juce::String paramIdIn, int instanceIn, int rangeMin, int rangeMax, int defaultValueIn,
               juce::String shortNameIn, const juce::String& fullNameIn)
         : paramId (std::move (paramIdIn)), instance (instanceIn), shortName (std::move (shortNameIn))
     {
@@ -104,6 +104,9 @@ public:
         knob.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         knob.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         knob.setRange ((double) rangeMin, (double) rangeMax, 1.0);
+        // Double-click resets to the last synced value (setValueFromSync re-arms this below), or
+        // this JSON default until a sync happens -- same convention as ParamControl.
+        knob.setDoubleClickReturnValue (true, (double) defaultValueIn);
         knob.onValueChange = [this]
         {
             repaint();
@@ -121,6 +124,7 @@ public:
     void setValueFromSync (int value)
     {
         knob.setValue ((double) value, juce::dontSendNotification);
+        knob.setDoubleClickReturnValue (true, (double) value);
         repaint();
     }
 
@@ -450,7 +454,9 @@ void HexLayerPanel::buildLayerGrid()
             }
             else
             {
-                auto knob = std::make_unique<MiniKnob> (p.id, instance, p.range.min, p.range.max, shortNameFor (p.id), p.name);
+                auto knob = std::make_unique<MiniKnob> (p.id, instance, p.range.min, p.range.max,
+                                                         p.defaultValue.value_or (p.range.min),
+                                                         shortNameFor (p.id), p.name);
                 const juce::String paramId = knob->getParamId();
                 const int inst = knob->getInstance();
                 knob->onValueChanged = [this, paramId, inst] (int value)
@@ -497,7 +503,9 @@ void HexLayerPanel::buildGlobalSection()
         }
         else
         {
-            auto knob = std::make_unique<MiniKnob> (p.id, 1, p.range.min, p.range.max, shortNameFor (p.id), p.name);
+            auto knob = std::make_unique<MiniKnob> (p.id, 1, p.range.min, p.range.max,
+                                                     p.defaultValue.value_or (p.range.min),
+                                                     shortNameFor (p.id), p.name);
             const juce::String paramId = knob->getParamId();
             knob->onValueChanged = [this, paramId] (int value)
             {
