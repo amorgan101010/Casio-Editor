@@ -1,9 +1,12 @@
 # CasioXWEditor — JUCE standalone GUI application.
 
-# App icon (taskbar/window/dock) embedded as binary data so no runtime file path is needed.
-juce_add_binary_data(CasioXWEditorIcon
+# App icon + the params/xwp1.json protocol map, both embedded as binary data so the built
+# app has no runtime dependency on a file path (a release binary must work standalone, not
+# just from the source tree it was built in).
+juce_add_binary_data(CasioXWEditorResources
     SOURCES
         resources/xw-p1.svg
+        ../params/xwp1.json
 )
 
 juce_add_gui_app(CasioXWEditor
@@ -28,12 +31,6 @@ target_sources(CasioXWEditor PRIVATE
     HexLayerPanel.cpp
 )
 
-# Absolute path to the params map so the app finds it regardless of the working directory it's
-# launched from (matches the CASIOXW_PARAMS_JSON convention already used by casioxw_tests).
-target_compile_definitions(CasioXWEditor PRIVATE
-    CASIOXW_PARAMS_JSON="${CMAKE_SOURCE_DIR}/params/xwp1.json"
-)
-
 # JUCE_WEB_BROWSER/JUCE_USE_CURL off: headless build, no webkit/curl in the link.
 target_compile_definitions(CasioXWEditor PRIVATE
     JUCE_WEB_BROWSER=0
@@ -44,7 +41,7 @@ target_compile_definitions(CasioXWEditor PRIVATE
 
 target_link_libraries(CasioXWEditor PRIVATE
     casioxw_core
-    CasioXWEditorIcon
+    CasioXWEditorResources
     juce::juce_gui_basics
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags

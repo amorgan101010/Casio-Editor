@@ -1,13 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "casioxw/CoreVersion.h"
 #include "casioxw/SysExCodec.h"
+#include "casioxw/Version.h"
 
 TEST_CASE ("casioxw_core version is reported", "[core]")
 {
     // Asserts against an out-of-line function so the test genuinely links
     // against the casioxw_core static library.
-    REQUIRE (casioxw::coreVersion() == casioxw::kCoreVersion);
+    REQUIRE (casioxw::version() == casioxw::kVersion);
 }
 
 TEST_CASE ("SysEx solo synth tone header matches the XW-P1 map", "[core][sysex]")

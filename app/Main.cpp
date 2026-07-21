@@ -12,6 +12,7 @@
 #include "casioxw/MidiIO.h"
 #include "casioxw/ParamModel.h"
 #include "casioxw/SysExCodec.h"
+#include "casioxw/Version.h"
 
 //==============================================================================
 /** Owns the long-lived model/codec/MIDI objects the GUI is wired to, plus the panels. Chunk 7a:
@@ -28,7 +29,11 @@ class MainContentComponent : public juce::Component
 {
 public:
     MainContentComponent()
-        : codec (casioxw::ParamModel::fromFile (juce::File (CASIOXW_PARAMS_JSON))),
+        // params/xwp1.json is compiled into the binary (see app/CMakeLists.txt's
+        // CasioXWEditorResources binary-data target) rather than loaded from an absolute
+        // build-time path, so a release binary doesn't depend on the machine it was built on.
+        : codec (casioxw::ParamModel::fromJsonString (
+              juce::String::fromUTF8 (BinaryData::xwp1_json, BinaryData::xwp1_jsonSize))),
           soloSynthPanel (codec, midiIO),
           pcmEnginePanel (codec, midiIO),
           organPanel (codec, midiIO),
@@ -112,7 +117,7 @@ class CasioXWEditorApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override       { return casioxw::app::kApplicationName; }
-    const juce::String getApplicationVersion() override    { return casioxw::app::kApplicationVersion; }
+    const juce::String getApplicationVersion() override    { return casioxw::kVersion; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 
     void initialise (const juce::String&) override
