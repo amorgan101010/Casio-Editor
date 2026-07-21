@@ -37,18 +37,73 @@ namespace
     };
 
     constexpr double kSchedulerTickMs    = 12.0;
-    constexpr double kLookaheadMs        = 60.0;
+    // Steady-state look-ahead horizon. SequencerPanel keeps this small (60ms) ONLY to keep live
+    // step-edit/p-lock EDITS responsive while playing -- arranger playback has no live editing, so
+    // nothing forces this small here. A small horizon means the feeder MUST be re-entered (message
+    // thread, every kSchedulerTickMs) well ahead of every step boundary; any stall on that thread
+    // bigger than (horizon - time-already-consumed) -- a paint, a popup, an OS scheduling hiccup --
+    // leaves the feeder behind schedule, which either clumps/rushes catch-up notes or, past
+    // MidiOutput's ~200ms grace, drops them outright (see bug-152). Owner reported arranger timing
+    // getting worse with more rows/tempo -- exactly what a starved feeder looks like. Widening this
+    // buffers hundreds of ms of already-built MIDI ahead at all times, making the feeder robust
+    // against that whole class of stall regardless of how late any individual tick runs. Trade-off
+    // (accepted): a mid-song tempo drag takes up to this long to reach not-yet-scheduled steps, and
+    // the playhead-leads-audio gap (already a known, flagged cosmetic issue) grows by the same
+    // amount. Provisional/owner-tunable -- raise further if stalls are still reported.
+    constexpr double kLookaheadMs        = 500.0;
     constexpr double kStartLeadMs        = 50.0;
     constexpr double kStartPrimeFloorMs  = 1500.0;
     constexpr double kScheduleSampleRate = 1000.0;
 
-    // A row-transition param establish (queueDiffEstablish) can land at the EXACT same instant as
-    // the new row's first note-on -- firing a SysEx burst simultaneously with a note is what
-    // dropped the note on real hardware (same class of bug SequencerPanel's play() comment
-    // describes for song start). Scheduling the burst this far ahead of the note gives the synth's
-    // receiver a moment to process it first. Provisional/owner-tunable, like the other feeder
-    // constants above -- this machine has no hardware to verify the exact minimum against.
+    // A paramChange burst -- a row-transition establish OR an ordinary per-step p-lock/base change
+    // -- landing at the EXACT same instant as a note-on is the literal "SysEx burst simultaneous
+    // with a note-on drops the note" failure mode SequencerPanel::play()'s own comment documents,
+    // and which bit this feature twice already (song start, row transitions -- both previously
+    // patched by giving the WHOLE burst a lead ahead of the note it precedes). That earlier fix
+    // only separated burst-from-note; several DIFFERENT params changing on the SAME step (dense
+    // p-locking, the "complicated sequences" case) are still all stamped at one instant relative to
+    // EACH OTHER, which can overrun the synth's SysEx receiver even once the burst as a whole is
+    // ahead of the note. scheduleParamBurst() below generalizes both fixes to every paramChange
+    // batch (per-step AND row-transition): messages are spread across kInterMessageGapMs-spaced
+    // slots ending kParamEstablishLeadMs before the batch's deadline, so the synth gets one message
+    // at a time instead of a pile. All provisional/owner-tunable -- no hardware here to verify the
+    // exact minimums against.
     constexpr double kParamEstablishLeadMs = 20.0;
+    constexpr double kInterMessageGapMs    = 6.0;
+    // How far back before the deadline a burst may reach, further capped per-call to a fraction of
+    // the current step interval (see scheduleParamBurst()) so the earliest message in a burst can
+    // never reach back into the PREVIOUS step's own note/param territory. A burst that doesn't fit
+    // in the resulting window is TRUNCATED -- only the leading entries that fit are scheduled, the
+    // rest are silently dropped. Owner's explicit call: timing/note delivery outranks p-lock
+    // fidelity when a dense pattern makes both impossible to guarantee at once.
+    constexpr double kMaxParamLeadWindowMs = 120.0;
+
+    // Spreads a burst of param SysEx messages across kInterMessageGapMs-spaced slots ending
+    // kParamEstablishLeadMs before `deadlineMs` (see the constants above for the full reasoning),
+    // instead of stamping the whole burst at one instant. Returns how many of `perParamMessages`'
+    // entries were actually scheduled (from the front) so the caller knows which of its own
+    // parallel bookkeeping -- e.g. lastAppliedParams -- to update: a dropped param must NOT be
+    // marked as applied, or a later diff would never retry it.
+    int scheduleParamBurst (juce::MidiBuffer& buffer,
+                            const std::vector<std::vector<juce::MidiMessage>>& perParamMessages,
+                            double deadlineMs, double stepMs)
+    {
+        if (perParamMessages.empty())
+            return 0;
+
+        const double window = juce::jmin (kMaxParamLeadWindowMs, stepMs * 0.8);
+        const int capacity = juce::jmax (1, 1 + (int) (window / kInterMessageGapMs));
+        const int count = juce::jmin ((int) perParamMessages.size(), capacity);
+
+        for (int i = 0; i < count; ++i)
+        {
+            const double t = deadlineMs - kParamEstablishLeadMs - (double) (count - 1 - i) * kInterMessageGapMs;
+            const int samplePos = (int) std::llround (t);
+            for (const auto& m : perParamMessages[(size_t) i])
+                buffer.addEvent (m, samplePos);
+        }
+        return count;
+    }
 
     juce::String defaultDrumsDataFormat()   { return "casioxw-drum-sequence"; }
     juce::String defaultPcmDataFormat()     { return "casioxw-pcm-tracks"; }
@@ -597,13 +652,19 @@ void ArrangerPanel::resetCurrentRuntimeToBase()
 }
 
 void ArrangerPanel::queueDiffEstablish (juce::MidiBuffer& buffer, const casioxw::Sequence& seq,
-                                       int stepIndex, double timeMs)
+                                       int stepIndex, double timeMs, double stepMs)
 {
-    // Deliberately allowed to go negative relative to timeMs -- transportStartMs already carries
-    // its own kStartLeadMs buffer ahead of wall-clock "now" (see play()), so pulling a row's param
-    // establish this far ahead of ITS note-on is still comfortably in the future in absolute terms,
-    // even for the very first step of the whole song (timeMs == 0).
-    const int samplePos = (int) std::llround (timeMs - kParamEstablishLeadMs);
+    // Collect every param that actually needs to change first, THEN hand the whole batch to
+    // scheduleParamBurst() to pace/cap -- deliberately allowed to go negative relative to timeMs
+    // (transportStartMs already carries its own kStartLeadMs buffer ahead of wall-clock "now", see
+    // play()), so pulling a row's param establish ahead of ITS note-on is still comfortably in the
+    // future in absolute terms even for the very first step of the whole song (timeMs == 0) -- and
+    // if an unusually large burst pushes past that buffer, JUCE's own scheduling grace (bug-152)
+    // fires it ASAP rather than dropping it, so pacing degrades gracefully instead of failing.
+    std::vector<juce::String> keys;
+    std::vector<int> values;
+    std::vector<std::vector<juce::MidiMessage>> messages;
+
     for (const auto& lp : seq.lockable)
     {
         const auto value = casioxw::effectiveParamValue (seq, stepIndex, lp.paramId, lp.instance);
@@ -615,10 +676,14 @@ void ArrangerPanel::queueDiffEstablish (juce::MidiBuffer& buffer, const casioxw:
         if (it != lastAppliedParams.end() && it->second == *value)
             continue;   // device already believed to hold this value -- nothing to send
 
-        for (const auto& m : paramMessages (lp.paramId, lp.instance, *value))
-            buffer.addEvent (m, samplePos);
-        lastAppliedParams[key] = *value;
+        keys.push_back (key);
+        values.push_back (*value);
+        messages.push_back (paramMessages (lp.paramId, lp.instance, *value));
     }
+
+    const int sent = scheduleParamBurst (buffer, messages, timeMs, stepMs);
+    for (int i = 0; i < sent; ++i)
+        lastAppliedParams[keys[(size_t) i]] = values[(size_t) i];
 }
 
 void ArrangerPanel::play()
@@ -732,35 +797,23 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
     {
         juce::MidiBuffer buffer;
 
-        if (currentPosition.row != runtimeLoadedForRow)
+        const bool rowJustChanged = currentPosition.row != runtimeLoadedForRow;
+        if (rowJustChanged)
         {
             // Row boundary: swap in the new row's ALREADY-parsed runtime (preloadedRuntimes, built
             // once in play() -- never disk I/O/JSON parsing from inside this real-time feeder loop,
             // which used to stall the message thread long enough to cause audible lateness).
             currentRuntime = preloadedRuntimes[(size_t) currentPosition.row];
             runtimeLoadedForRow = currentPosition.row;
-
-            // Establish the new row's lockable params via a DIFF against lastAppliedParams, not a
-            // full kPrevStepFresh dump -- unconditionally re-sending every lockable param (dozens
-            // for an engine like Hex Layer) at every row transition was exactly the "SysEx burst
-            // fired alongside the first notes" lurch SequencerPanel's own play() already documents
-            // avoiding, just recurring here instead of happening once. Same-engine/same-value rows
-            // send ~nothing; an actual change sends only what's needed -- no p-lock carryover left
-            // permanently stuck (the removed reset-to-base's gap), no silent wrong-tone risk from
-            // assuming the device sits at base (kPrevStepBaseline would be wrong here: nothing
-            // resets the device to base between rows any more).
-            if (currentRuntime.solo.has_value())
-                queueDiffEstablish (buffer, *currentRuntime.solo, nextStepIndex, nextStepStartMs);
-            prevStepIndex = nextStepIndex;   // suppress scheduleStep()'s OWN paramChange emission
-                                             // below (diffing a sequence against itself is always
-                                             // empty) -- queueDiffEstablish() already covered it
         }
 
         const auto& row = song.rows[(size_t) currentPosition.row];
 
         // The song's tempoBpm is the single clock; only the RATE (stepsPerBeat) is taken from
         // whichever loaded lane defines it, same convention SequencerPanel uses to keep drum/pcm
-        // lanes locked to the main sequence's rate.
+        // lanes locked to the main sequence's rate. Computed BEFORE the establish call below (moved
+        // ahead of it deliberately) so queueDiffEstablish() gets the SONG's current stepMs, not a
+        // stale value from whatever tempo the just-loaded row's file happened to be saved at.
         const int stepsPerBeat = currentRuntime.solo.has_value() ? currentRuntime.solo->stepsPerBeat
                                 : currentRuntime.hasDrums ? 4
                                                           : 4;
@@ -782,30 +835,63 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
         const double stepMs = casioxw::stepIntervalMs (clockRef);
         const double drumGateMs = juce::jmax (1.0, stepMs * 0.5);
 
+        if (rowJustChanged)
+        {
+            // Establish the new row's lockable params via a DIFF against lastAppliedParams, not a
+            // full kPrevStepFresh dump -- unconditionally re-sending every lockable param (dozens
+            // for an engine like Hex Layer) at every row transition was exactly the "SysEx burst
+            // fired alongside the first notes" lurch SequencerPanel's own play() already documents
+            // avoiding, just recurring here instead of happening once. Same-engine/same-value rows
+            // send ~nothing; an actual change sends only what's needed, PACED (queueDiffEstablish /
+            // scheduleParamBurst) rather than dumped at one instant -- no p-lock carryover left
+            // permanently stuck (the removed reset-to-base's gap), no silent wrong-tone risk from
+            // assuming the device sits at base (kPrevStepBaseline would be wrong here: nothing
+            // resets the device to base between rows any more).
+            if (currentRuntime.solo.has_value())
+                queueDiffEstablish (buffer, *currentRuntime.solo, nextStepIndex, nextStepStartMs, stepMs);
+            prevStepIndex = nextStepIndex;   // suppress scheduleStep()'s OWN paramChange emission
+                                             // below (diffing a sequence against itself is always
+                                             // empty) -- queueDiffEstablish() already covered it
+        }
+
         if (currentRuntime.solo.has_value() && ! row.laneMuted[(size_t) casioxw::kSongSynthLane])
         {
+            // paramChange events are collected here, not sent immediately -- scheduleStep() stamps
+            // every paramChange at the SAME instant as this step's own note-on (its contract only
+            // promises params land "before" the note, not "with any separation"). Several DIFFERENT
+            // locked params changing on one step (dense p-locking) would otherwise all land in one
+            // instant, the same burst-vs-note-and-burst-vs-itself problem queueDiffEstablish already
+            // has to solve at row transitions -- paced the same way here via scheduleParamBurst().
+            std::vector<juce::String> paramKeys;
+            std::vector<int> paramValues;
+            std::vector<std::vector<juce::MidiMessage>> paramMsgs;
+
             for (const auto& e : casioxw::scheduleStep (*currentRuntime.solo, nextStepIndex, prevStepIndex, nextStepStartMs))
             {
-                const int samplePos = (int) std::llround (e.timeMs);
                 switch (e.type)
                 {
                     case casioxw::ScheduledEvent::Type::noteOn:
-                        buffer.addEvent (juce::MidiMessage::noteOn (e.channel, e.note, (juce::uint8) e.velocity), samplePos);
+                        buffer.addEvent (juce::MidiMessage::noteOn (e.channel, e.note, (juce::uint8) e.velocity),
+                                         (int) std::llround (e.timeMs));
                         break;
                     case casioxw::ScheduledEvent::Type::noteOff:
-                        buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note), samplePos);
+                        buffer.addEvent (juce::MidiMessage::noteOff (e.channel, e.note),
+                                         (int) std::llround (e.timeMs));
                         break;
                     case casioxw::ScheduledEvent::Type::paramChange:
-                        for (const auto& m : paramMessages (e.paramId, e.instance, e.value))
-                            buffer.addEvent (m, samplePos);
-                        // Keep lastAppliedParams current for whatever a NORMAL (non-transition)
-                        // p-lock/base change just sent, so a later row transition's diff (see
-                        // queueDiffEstablish()) compares against the device's real current value,
-                        // not a stale one from the last row boundary.
-                        lastAppliedParams[e.paramId + "#" + juce::String (e.instance)] = e.value;
+                        paramKeys.push_back (e.paramId + "#" + juce::String (e.instance));
+                        paramValues.push_back (e.value);
+                        paramMsgs.push_back (paramMessages (e.paramId, e.instance, e.value));
                         break;
                 }
             }
+
+            const int sent = scheduleParamBurst (buffer, paramMsgs, nextStepStartMs, stepMs);
+            // Keep lastAppliedParams current for whatever was ACTUALLY sent (not anything truncated
+            // away -- see scheduleParamBurst()), so a later row transition's diff (queueDiffEstablish())
+            // compares against the device's real current value, not one it never received.
+            for (int i = 0; i < sent; ++i)
+                lastAppliedParams[paramKeys[(size_t) i]] = paramValues[(size_t) i];
         }
 
         if (currentRuntime.hasDrums)

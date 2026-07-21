@@ -149,10 +149,14 @@ private:
         full kPrevStepFresh-style dump of every lockable param -- that dump is exactly the "SysEx
         burst fired alongside the first notes" lurch SequencerPanel's own play() already had to
         avoid (see its kPrevStepBaseline comment), just recurring at every row transition here
-        instead of once at song start. Updates lastAppliedParams for whatever it sends. Called at
-        every row transition (never mid-row -- normal per-step p-locks go through scheduleStep()'s
-        own dedup, which also updates lastAppliedParams, in feedLookahead()). */
-    void queueDiffEstablish (juce::MidiBuffer& buffer, const casioxw::Sequence& seq, int stepIndex, double timeMs);
+        instead of once at song start. The resulting batch is paced/capped by scheduleParamBurst()
+        (ArrangerPanel.cpp, anonymous namespace) rather than stamped at one instant -- `stepMs` is
+        the current step interval, needed to bound how far the pacing may reach back. Updates
+        lastAppliedParams only for whatever it actually sends (not anything truncated away). Called
+        at every row transition (never mid-row -- normal per-step p-locks are paced the same way
+        directly in feedLookahead()). */
+    void queueDiffEstablish (juce::MidiBuffer& buffer, const casioxw::Sequence& seq, int stepIndex,
+                             double timeMs, double stepMs);
 
     std::vector<juce::MidiMessage> paramMessages (const juce::String& paramId, int instance, int value) const;
     void sendParamNow (const juce::String& paramId, int instance, int value);
