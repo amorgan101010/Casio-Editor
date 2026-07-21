@@ -1,7 +1,7 @@
 #pragma once
 
-#include "casioxw/CoreVersion.h"
 #include "casioxw/ParamModel.h"
+#include "casioxw/Version.h"
 
 #include <cstdint>
 #include <string>

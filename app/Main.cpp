@@ -12,6 +12,7 @@
 #include "casioxw/MidiIO.h"
 #include "casioxw/ParamModel.h"
 #include "casioxw/SysExCodec.h"
+#include "casioxw/Version.h"
 
 //==============================================================================
 /** Owns the long-lived model/codec/MIDI objects the GUI is wired to, plus the panels. Chunk 7a:
@@ -112,7 +113,7 @@ class CasioXWEditorApplication : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override       { return casioxw::app::kApplicationName; }
-    const juce::String getApplicationVersion() override    { return casioxw::app::kApplicationVersion; }
+    const juce::String getApplicationVersion() override    { return casioxw::kVersion; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 
     void initialise (const juce::String&) override

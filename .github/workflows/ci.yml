@@ -15,7 +15,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Enforce component semver bumps for non-doc PRs into main
+      - name: Enforce a project version bump for non-doc PRs into main
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -26,12 +26,17 @@ jobs:
           import subprocess
           import sys
 
-          app_version_file = "app/AppVersion.h"
-          app_legacy_version_file = "app/Main.cpp"
-          app_pattern = re.compile(r'kApplicationVersion\s*=\s*"([^"]+)"')
-          app_legacy_pattern = re.compile(r'getApplicationVersion\(\)\s+override\s*\{\s*return\s+"([^"]+)"\s*;\s*\}')
-          core_version_file = "core/include/casioxw/CoreVersion.h"
-          core_pattern = re.compile(r'kCoreVersion\s*=\s*"([^"]+)"')
+          # Single source of truth for the whole project (app + core) -- see
+          # core/include/casioxw/Version.h. Any change that isn't docs-only warrants a release,
+          # so it warrants a bump here.
+          version_file = "core/include/casioxw/Version.h"
+          version_pattern = re.compile(r'kVersion\s*=\s*"([^"]+)"')
+          # Rollout fallback: base commits from before the app/core versions were unified into
+          # version_file still carry the old app/AppVersion.h#kApplicationVersion. Only the base
+          # side of an in-flight PR can predate version_file; drop this once main's history no
+          # longer needs it.
+          legacy_version_file = "app/AppVersion.h"
+          legacy_version_pattern = re.compile(r'kApplicationVersion\s*=\s*"([^"]+)"')
           semver = re.compile(r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$')
           docs_exts = {".md", ".mdx", ".rst", ".adoc", ".txt"}
           docs_prefixes = ("docs/", "reference/")
@@ -73,7 +78,6 @@ jobs:
                   )
               except subprocess.CalledProcessError as e:
                   out = e.output or ""
-                  # During rollout, base commits may predate app/AppVersion.h.
                   missing = ("exists on disk, but not in" in out) or ("does not exist in" in out)
                   if missing:
                       return None
@@ -89,25 +93,19 @@ jobs:
                   raise RuntimeError(f"{source} has non-semver version '{v}'")
               return v
 
-          def read_app_at(sha: str) -> str:
-              text = show_file_at(sha, app_version_file)
+          def read_version_at(sha: str) -> str:
+              text = show_file_at(sha, version_file)
               if text is not None:
-                  return extract_semver(text, f"{app_version_file} at {sha}", app_pattern)
+                  return extract_semver(text, f"{version_file} at {sha}", version_pattern)
 
-              legacy_text = show_file_at(sha, app_legacy_version_file)
+              legacy_text = show_file_at(sha, legacy_version_file)
               if legacy_text is not None:
-                  return extract_semver(legacy_text, f"{app_legacy_version_file} at {sha}", app_legacy_pattern)
+                  return extract_semver(legacy_text, f"{legacy_version_file} at {sha}", legacy_version_pattern)
 
               raise RuntimeError(
-                  f"No app version source found at {sha}; expected {app_version_file} "
-                  f"or legacy {app_legacy_version_file}"
+                  f"No version source found at {sha}; expected {version_file} "
+                  f"or legacy {legacy_version_file}"
               )
-
-          def read_core_at(sha: str) -> str:
-              text = show_file_at(sha, core_version_file)
-              if text is None:
-                  raise RuntimeError(f"Could not read {core_version_file} at {sha}")
-              return extract_semver(text, f"{core_version_file} at {sha}", core_pattern)
 
           changed = changed_paths(os.environ["BASE_SHA"], os.environ["HEAD_SHA"])
           non_doc_changed = [path for path in changed if not is_doc_path(path)]
@@ -116,39 +114,17 @@ jobs:
               print("Version policy skipped: docs-only PR into main.")
               sys.exit(0)
 
-          touches_core = any(path.startswith("core/") for path in non_doc_changed)
-          touches_app = any(not path.startswith("core/") for path in non_doc_changed)
-          failures = []
+          base_version = read_version_at(os.environ["BASE_SHA"])
+          head_version = read_version_at(os.environ["HEAD_SHA"])
 
-          if touches_app:
-              app_base = read_app_at(os.environ["BASE_SHA"])
-              app_head = read_app_at(os.environ["HEAD_SHA"])
-              if app_base == app_head:
-                  failures.append(
-                      f"App-impacting changes require app semver bump ({app_version_file}): "
-                      f"base={app_base}, head={app_head}"
-                  )
-
-          if touches_core:
-              core_base = read_core_at(os.environ["BASE_SHA"])
-              core_head = read_core_at(os.environ["HEAD_SHA"])
-              if core_base == core_head:
-                  failures.append(
-                      f"Core changes require core semver bump ({core_version_file}): "
-                      f"base={core_base}, head={core_head}"
-                  )
-
-          if failures:
-              for failure in failures:
-                  print(failure)
+          if base_version == head_version:
+              print(
+                  f"Non-doc changes require a project version bump ({version_file}): "
+                  f"base={base_version}, head={head_version}"
+              )
               sys.exit(1)
 
-          scoped = []
-          if touches_app:
-              scoped.append("app")
-          if touches_core:
-              scoped.append("core")
-          print(f"Version policy OK for scopes: {', '.join(scoped)}")
+          print(f"Version policy OK: {base_version} -> {head_version}")
           PY
 
   build-and-test:
