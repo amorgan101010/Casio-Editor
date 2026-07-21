@@ -933,7 +933,10 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     addAndMakeVisible (shiftRightButton);
 
     // Clicking the solo lane's own label focuses it -- the drum/PCM equivalent of each row's
-    // trackLabel below. mouseDown() below routes on eventComponent identity.
+    // trackLabel. synthLabel already tracks the current engine's display name ("SOLO SYNTH"/
+    // "HEX LAYER"/"DRAWBAR ORGAN", set in applyEngine()) and is repositioned in resized() to sit
+    // in the same lane-label-gutter column drum/PCM rows use, instead of the top header. mouseDown()
+    // below routes on eventComponent identity.
     synthLabel.addMouseListener (this, false);
 
     statusLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
@@ -941,13 +944,21 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     addAndMakeVisible (statusLabel);
 
     // ---- drum-track controls (5 lanes, each with channel + note + 16 step on/off + velocity) ---
-    for (auto* l : { &drumTracksLabel, &pcmTracksLabel, &synthLabel })
+    for (auto* l : { &drumTracksLabel, &pcmTracksLabel })
     {
         l->setColour (juce::Label::textColourId, EditorColours::textHeader);
         l->setJustificationType (juce::Justification::centredLeft);
         l->setFont (EditorFonts::header (12.0f));
         addAndMakeVisible (*l);
     }
+
+    // synthLabel is styled like a DrumTrackControl/PcmTrackControl row's trackLabel (textMuted,
+    // smaller) now that it lives in that same lane-label-gutter column, not like the "DRUM TRACKS"/
+    // "PCM TRACKS" section-title styling above -- see its header doc comment.
+    synthLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
+    synthLabel.setJustificationType (juce::Justification::centredLeft);
+    synthLabel.setFont (EditorFonts::header (11.0f));
+    addAndMakeVisible (synthLabel);
 
     const int noteMin = 0;
     const int noteMax = 127;
@@ -3549,8 +3560,11 @@ void SequencerPanel::resized()
     bounds.removeFromTop (10);
 
     // ---- synth section ---------------------------------------------------------------------
+    // synthLabel no longer lives in this header row -- it's positioned below, in the lane-label-
+    // gutter column (same place as a DrumTrackControl/PcmTrackControl row's trackLabel). engineCombo
+    // already displays the same "Solo Synth"/"Hex Layer"/"Drawbar Organ" text on its own, so freeing
+    // this space isn't a loss of information, just a redundant label removed.
     auto synthHeader = bounds.removeFromTop (20);
-    synthLabel.setBounds (synthHeader.removeFromLeft (140));
     engineCombo.setBounds (synthHeader.removeFromLeft (140).reduced (2, 1));
     synthHeader.removeFromLeft (4);
     if (currentEngine == TrackEngine::hexLayer)
@@ -3624,10 +3638,13 @@ void SequencerPanel::resized()
                                                       : juce::Rectangle<int>();
     synthSection.removeFromLeft (kSectionGap);
 
-    // Lane label gutter: kept (unpopulated) purely so the card's left edge stays aligned with the
-    // drum/PCM cards' (same column width feeding the same cardX) -- no label text lives here now
-    // that the Pitch/Gate/Velocity knob rows are gone.
-    synthSection.removeFromLeft (kLaneLabelWidth);
+    // Lane label gutter: same column width the drum/PCM cards feed cardX from, but now actually
+    // POPULATED by synthLabel (owner: the clickable engine-name label belongs in the same place as
+    // every drum/PCM track label, not up in the header) -- aligned to trigRow's Y/height, not the
+    // whole (much taller, poly-inclusive) synthSection, so it sits at the same visual height as the
+    // step keys rather than stretching down over the poly sub-rows.
+    auto synthLabelGutter = synthSection.removeFromLeft (kLaneLabelWidth);
+    synthLabel.setBounds (synthLabelGutter.withY (trigRow.getY()).withHeight (trigRow.getHeight()));
     synthSection.removeFromLeft (kSectionGap);
 
     auto card = synthSection.removeFromLeft (kCardWidth);
