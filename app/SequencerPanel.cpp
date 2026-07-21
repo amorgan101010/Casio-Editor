@@ -3688,11 +3688,17 @@ void SequencerPanel::resized()
     // The solo lane's rowBounds counterpart (DrumTrackControl/PcmTrackControl have their own field;
     // the solo lane has no per-row array to hold one) -- steps through the (now-relocated)
     // synthLabel's right edge, same shape as a drum/PCM row's rowBounds (steps+label, not the
-    // card). Height/Y match trigRow, NOT the whole (much taller, poly-inclusive) card -- owner:
-    // the wash extended way past the actual track, it should hug the row top and bottom like
-    // every other lane's does.
-    synthFocusBounds = juce::Rectangle<int> (gridX, trigRow.getY(),
-                                             synthLabelGutter.getRight() - gridX, trigRow.getHeight());
+    // card). A drum/PCM row's OWN rowBounds is its full 52px row height around a 34px button --
+    // 9px of built-in breathing room top/bottom (kDrumTrackRowHeight/kPcmTrackRowHeight vs
+    // kDrumKeyHeight) -- but trigRow's cell has NO such padding of its own (matches its button
+    // height exactly, see kSynthTrigToPolyGap's doc comment), so using trigRow's bounds bare left
+    // the wash flush against the step keys, tighter than every other lane's (owner: "too close
+    // now" after a first cut that went too far the other way and used the whole card). Pad it out
+    // by that same 9px to match, rather than introducing a third distinct row-padding constant.
+    constexpr int kSynthFocusPad = (kDrumTrackRowHeight - kDrumKeyHeight) / 2;
+    synthFocusBounds = juce::Rectangle<int> (gridX, trigRow.getY() - kSynthFocusPad,
+                                             synthLabelGutter.getRight() - gridX,
+                                             trigRow.getHeight() + 2 * kSynthFocusPad);
 
     for (int i = 0; i < 16; ++i)
     {
