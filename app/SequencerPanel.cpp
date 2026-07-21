@@ -36,7 +36,7 @@ namespace
     constexpr int kDrumTrackRowHeight = 52;
     constexpr int kPcmTrackRowHeight = 52;                // same shape as a drum row: label/mute/channel + 16 steps
     constexpr int kDrumKeyHeight = 34;                    // drum trig keys, tall enough to read as keys
-    constexpr int kSelectKeyHeight = 24;                  // synth select/trig row
+    constexpr int kSelectKeyHeight = kDrumKeyHeight;      // synth select/trig row (match drum/PCM key size)
     constexpr int kKnobCell = 74;                         // rotary knob + text box (bigger than before)
     constexpr int kStepColumnHeight = kSelectKeyHeight + 2 + kKnobCell * 3;   // select + note + gate + velocity
     constexpr int kSynthSectionHeight = 306;              // fits the card (header + LCD display + page keys)
@@ -390,7 +390,8 @@ void StepKeyButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isMou
     g.setFont (EditorFonts::mono (12.0f, true));
     g.drawText (juce::String (stepIndex + 1), getLocalBounds().translated (0, -2),
                 juce::Justification::centred);
-    g.fillRect (juce::Rectangle<float> (b.getCentreX() - 5.0f, b.getCentreY() + 6.0f, 10.0f, 1.8f));
+    if (quarter)
+        g.fillRect (juce::Rectangle<float> (b.getCentreX() - 5.0f, b.getCentreY() + 6.0f, 10.0f, 1.8f));
 
     if (hasLock)
     {
