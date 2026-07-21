@@ -13,6 +13,7 @@ target_sources(gui-preview PRIVATE
     ../../app/ParamPageDisplay.cpp
     ../../app/SoloSynthPanel.cpp
     ../../app/SequencerPanel.cpp
+    ../../app/ArrangerPanel.cpp
     ../../app/EnvelopeDisplay.cpp
     ../../app/PCMEnginePanel.cpp
     ../../app/OrganPanel.cpp

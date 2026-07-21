@@ -16,6 +16,8 @@
 #include <utility>
 #include <vector>
 
+class ArrangerPanel;   // owned by pointer below; full definition only needed in SequencerPanel.cpp
+
 //==============================================================================
 /** Which tone engine the sequencer's solo track currently p-locks. Only one of these three can
     ever be sounding on the XW-P1 at once (a Performance part's engine assignment is exclusive),
@@ -111,6 +113,11 @@ public:
         live tracks, reloads, and compares. Returns true iff every seeded field round-trips.
         Never called by the app itself; no display/JUCE peer required. */
     bool verifyPcmRoundTripForPreview();
+
+    /** tools/gui-preview only: switch into Arranger mode and seed the sub-panel's representative
+        demo rows (see ArrangerPanel::applyPreviewDemoState), so an offscreen snapshot can verify
+        the row table's real layout at the app's real window size. Never called by the app itself. */
+    void applyArrangerPreviewState();
 
 private:
     enum class SaveKind
@@ -347,6 +354,14 @@ private:
     int playheadStep = -1;                     // -1 == hidden (stopped / before first step)
     juce::Rectangle<int> playheadLaneBounds;   // shared aligned step columns (drums + synth row)
     juce::File sequenceDefaultDirectory;
+
+    // ---- Arranger sub-view (owner's brief: a Digitakt-style song table, reached as a MODE of
+    // this tab rather than a separate top-level tab) --------------------------------------------
+    juce::TextButton arrangerModeButton { "Arranger" };   // toggles between the step editor (this
+                                                          // panel's own widgets) and arrangerPanel
+    std::unique_ptr<ArrangerPanel> arrangerPanel;
+    bool showingArranger = false;
+    void setShowingArranger (bool shouldShow);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SequencerPanel)
 };

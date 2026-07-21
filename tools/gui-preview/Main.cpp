@@ -185,7 +185,7 @@ int main (int argc, char* argv[])
     }
 
     if (mode == "sequencer" || mode == "sequencer-demo" || mode == "sequencer-pcm-demo"
-        || mode == "sequencer-hex-demo")
+        || mode == "sequencer-hex-demo" || mode == "sequencer-arranger-demo")
     {
         if (argc < 3)
         {
@@ -202,6 +202,8 @@ int main (int argc, char* argv[])
             panel.applyPcmStepEditPreviewState();
         else if (mode == "sequencer-hex-demo")   // engine switched to Hex Layer, a step p-locked
             panel.applyHexLayerPreviewState();
+        else if (mode == "sequencer-arranger-demo")   // Arranger mode, a few representative rows
+            panel.applyArrangerPreviewState();
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());
@@ -262,6 +264,6 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-pcm-roundtrip|wavepicker-bench)\n", mode.toRawUTF8());
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-hex-demo|sequencer-arranger-demo|sequencer-pcm-roundtrip|wavepicker-bench)\n", mode.toRawUTF8());
     return 1;
 }
