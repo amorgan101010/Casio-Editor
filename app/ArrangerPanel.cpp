@@ -27,16 +27,8 @@ namespace
     constexpr int kLoopCountWidth  = 84;
     constexpr int kLoopInfWidth    = 26;
     constexpr int kMuteChipWidth   = 30;
-    // Trimmed from 10 -- freeing a few px per gap (2 gaps) was part of fitting the new move-row
-    // buttons into the row's existing right-edge margin without widening the whole row further.
-    constexpr int kMuteGroupGap    = 6;
+    constexpr int kMuteGroupGap    = 10;    // extra gap between the synth/drum/pcm mute clusters
     constexpr int kRemoveWidth     = 24;
-    // "▲"/"▼" row-reorder buttons, stacked in the row's existing right-edge margin (between the
-    // mute chips and removeButton). Sized/gapped tightly (kMoveButtonGap, not the wider kColGap)
-    // deliberately -- confirmed by computing exact pixel positions (not guessing) that this fits
-    // with a few px of margin against the actual chip end + removeButton position.
-    constexpr int kMoveButtonWidth = 18;
-    constexpr int kMoveButtonGap   = 4;
     constexpr int kColGap          = 8;
 
     // ---- fixed lane roster, mirroring casioxw::kSongLaneCount/SequencerPanel's kDrumTracks/
@@ -167,16 +159,6 @@ void ArrangerPanel::RowWidgets::resized()
     loopInfiniteButton.setBounds (x, midY - 11, kLoopInfWidth, 22); x += kLoopInfWidth + kColGap;
 
     layoutLaneChips (muteChips.data(), x, midY - 13, 26);
-
-    // Stacked in the row's existing right-edge margin, between the mute chips and removeButton --
-    // both are already anchored to b.getWidth() rather than the cumulative left-to-right x chain
-    // above, so this adds no new column. Uses kMoveButtonGap (not kColGap) on both sides -- that
-    // margin was only ~47px total (computed, not eyeballed) against a 60px ask at kColGap spacing,
-    // which is what caused the first attempt to overlap the last mute chip.
-    const int moveX = b.getWidth() - kRemoveWidth - kMoveButtonGap - kMoveButtonWidth;
-    const int moveButtonHeight = (b.getHeight() - 4) / 2;
-    moveUpButton.setBounds (moveX, 2, kMoveButtonWidth, moveButtonHeight);
-    moveDownButton.setBounds (moveX, 2 + moveButtonHeight, kMoveButtonWidth, moveButtonHeight);
 
     removeButton.setBounds (b.getWidth() - kRemoveWidth, midY - 11, kRemoveWidth, 22);
 }
@@ -401,19 +383,6 @@ void ArrangerPanel::removeRow (RowWidgets* widgets)
     rebuildRowWidgets();
 }
 
-void ArrangerPanel::moveRow (RowWidgets* widgets, int direction)
-{
-    const int idx = indexOfWidgets (widgets);
-    if (idx < 0)
-        return;
-    const int target = idx + direction;
-    if (target < 0 || target >= (int) song.rows.size())
-        return;   // moveUpButton/moveDownButton are already disabled at the boundary, but guard
-                 // anyway rather than trusting widget state alone
-    std::swap (song.rows[(size_t) idx], song.rows[(size_t) target]);
-    rebuildRowWidgets();
-}
-
 void ArrangerPanel::beginRowDrag (RowWidgets& w, const juce::MouseEvent& e)
 {
     dragRowIndex = indexOfWidgets (&w);
@@ -592,16 +561,6 @@ void ArrangerPanel::configureRowWidgets (RowWidgets& w)
         w.addAndMakeVisible (chip);
     }
 
-    w.moveUpButton.setColour (juce::TextButton::textColourOffId, EditorColours::base01);
-    w.moveUpButton.setTooltip ("Move this row up");
-    w.moveUpButton.onClick = [this, &w] { moveRow (&w, -1); };
-    w.addAndMakeVisible (w.moveUpButton);
-
-    w.moveDownButton.setColour (juce::TextButton::textColourOffId, EditorColours::base01);
-    w.moveDownButton.setTooltip ("Move this row down");
-    w.moveDownButton.onClick = [this, &w] { moveRow (&w, 1); };
-    w.addAndMakeVisible (w.moveDownButton);
-
     w.removeButton.setColour (juce::TextButton::textColourOffId, EditorColours::base01);
     w.removeButton.onClick = [this, &w] { removeRow (&w); };
     w.addAndMakeVisible (w.removeButton);
@@ -623,8 +582,6 @@ void ArrangerPanel::syncRowWidgetsFromSong (int rowIndex)
     auto& w = *rowWidgets[(size_t) rowIndex];
 
     w.indexLabel.setText (juce::String (rowIndex + 1), juce::dontSendNotification);
-    w.moveUpButton.setEnabled (rowIndex > 0);
-    w.moveDownButton.setEnabled (rowIndex < (int) song.rows.size() - 1);
     w.labelEditor.setText (row.label, juce::dontSendNotification);
     w.repeatSlider.setValue ((double) row.repeatCount, juce::dontSendNotification);
     w.loopBackSlider.setValue ((double) row.loopBackRows, juce::dontSendNotification);

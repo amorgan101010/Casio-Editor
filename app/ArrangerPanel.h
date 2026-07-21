@@ -132,13 +132,6 @@ private:
         juce::TextButton loopInfiniteButton { juce::CharPointer_UTF8 ("\xe2\x88\x9e") };   // "∞"
 
         std::array<juce::TextButton, casioxw::kSongLaneCount> muteChips;
-        // Reorder this row within the arrangement -- sits in the existing blank space between the
-        // mute chips and removeButton (both already right-anchored to the row's own width, so this
-        // needed no new column/width budget). Enabled state (first/last row can't move further in
-        // that direction) is set per-row in syncRowWidgetsFromSong(), since it depends on the row's
-        // CURRENT index, which shifts every time any row moves/is added/removed.
-        juce::TextButton moveUpButton { juce::CharPointer_UTF8 ("\xe2\x96\xb2") };   // "▲"
-        juce::TextButton moveDownButton { juce::CharPointer_UTF8 ("\xe2\x96\xbc") };   // "▼"
         juce::TextButton removeButton { juce::CharPointer_UTF8 ("\xc3\x97") };
 
         void resized() override;
@@ -146,10 +139,6 @@ private:
 
     void addRow();
     void removeRow (RowWidgets* widgets);
-    /** Swaps song.rows[index-of-widgets] with the row `direction` steps away (-1 = up, +1 = down);
-        no-op if that would go out of bounds. Rebuilds the row widgets same as add/remove, since
-        every row's index (and therefore its callbacks' owner lookup) shifts. */
-    void moveRow (RowWidgets* widgets, int direction);
 
     /** Drag-to-reorder gesture on a row's indexLabel handle (DragHandleLabel::onHandleMouseDown/
         Drag/Up, wired in configureRowWidgets()). The dragged row's own widget is repositioned to
