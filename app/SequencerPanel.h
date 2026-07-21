@@ -471,13 +471,15 @@ private:
     juce::Label statusLabel;                          // footer: file/save/load messages only
     juce::Label drumTracksLabel { {}, "DRUM TRACKS" };
     juce::Label pcmTracksLabel { {}, "PCM TRACKS" };
-    // Doubles as the solo lane's clickable focus label AND its current-engine readout ("SOLO
-    // SYNTH"/"HEX LAYER"/"DRAWBAR ORGAN", kept in sync by applyEngine() from
-    // resolveEngineLockableSet's displayName -- the initial text below matches the default engine
-    // so a fresh panel is correct before any engine switch ever runs applyEngine()) -- positioned
-    // in resized() at the SAME lane-label-gutter column a DrumTrackControl/PcmTrackControl row's
-    // trackLabel uses, not up in the section header.
-    juce::Label synthLabel { {}, "SOLO SYNTH" };
+    // Doubles as the solo lane's clickable focus label AND its current-engine readout ("Synth"/
+    // "Hex Layer"/"Organ" -- a short form kept in sync by applyEngine() via shortEngineLabel(),
+    // deliberately terser than EngineLockableSet::displayName so it fits the narrow lane-label-
+    // gutter without juce::Label auto-shrinking it to a visibly smaller font than every other
+    // track label; the initial text below matches the default engine so a fresh panel is correct
+    // before any engine switch ever runs applyEngine()) -- positioned in resized() at the SAME
+    // lane-label-gutter column a DrumTrackControl/PcmTrackControl row's trackLabel uses, not up in
+    // the section header.
+    juce::Label synthLabel { {}, "Synth" };
 
     // Card regions computed by resized(), painted by paint().
     juce::Rectangle<int> drumCardBounds;

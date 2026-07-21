@@ -466,6 +466,25 @@ namespace
         vel.shortName  = "VEL";  vel.lockableIndex  = kDrumVelCell;
         return { name, { note, vel } };
     }
+
+    // The solo lane's gutter label (synthLabel) needs a name as terse as "Drum 1"/"Chords" to
+    // render at the SAME un-shrunk font size those labels do -- juce::Label's default minimum-
+    // horizontal-scale silently shrinks text that doesn't fit its (narrow, kLaneLabelWidth) box,
+    // and "Solo Synth"/"Hex Layer"/"Drawbar Organ" (the resolveEngineLockableSet() displayName
+    // strings, all-caps + much longer) don't fit -- which made this ONE label look like it was in
+    // a visibly smaller/different font (owner-flagged live). Deliberately a separate short form
+    // from EngineLockableSet::displayName (which stays the full name for its other use), not a
+    // truncation of it.
+    juce::String shortEngineLabel (TrackEngine engine)
+    {
+        switch (engine)
+        {
+            case TrackEngine::hexLayer:     return "Hex Layer";
+            case TrackEngine::drawbarOrgan: return "Organ";
+            case TrackEngine::soloSynth:    break;
+        }
+        return "Synth";
+    }
 }
 
 //==============================================================================
@@ -2595,9 +2614,7 @@ void SequencerPanel::applyEngine (TrackEngine newEngine)
         clearSynthPolySelection();
     }
 
-    synthLabel.setText (resolveEngineLockableSet (currentEngine, codec.model(), currentSoloSynthBlock,
-                                                   currentSoloSynthInstance, currentHexLayer).displayName,
-                         juce::dontSendNotification);
+    synthLabel.setText (shortEngineLabel (currentEngine), juce::dontSendNotification);
     engineCombo.setSelectedId ((int) currentEngine + 1, juce::dontSendNotification);
 
     rebuildSynthParamPages();   // also re-seeds continuousLockables + min/max for the new table
@@ -3669,11 +3686,13 @@ void SequencerPanel::resized()
     paramDisplay->setVisible (true);
     synthCardBounds = card;
     // The solo lane's rowBounds counterpart (DrumTrackControl/PcmTrackControl have their own field;
-    // the solo lane has no per-row array to hold one) -- just the step grid's own width (the solo
-    // lane has no inline label to extend through, unlike a drum/PCM row), NOT the card to the right
-    // (owner: the wash spilling onto the card "looks weird", live-flagged specifically here). Same
-    // Y/height as the card since only X was carved out of synthSection by removeFromLeft above.
-    synthFocusBounds = juce::Rectangle<int> (gridX, card.getY(), kStepGridWidth, card.getHeight());
+    // the solo lane has no per-row array to hold one) -- steps through the (now-relocated)
+    // synthLabel's right edge, same shape as a drum/PCM row's rowBounds (steps+label, not the
+    // card). Height/Y match trigRow, NOT the whole (much taller, poly-inclusive) card -- owner:
+    // the wash extended way past the actual track, it should hug the row top and bottom like
+    // every other lane's does.
+    synthFocusBounds = juce::Rectangle<int> (gridX, trigRow.getY(),
+                                             synthLabelGutter.getRight() - gridX, trigRow.getHeight());
 
     for (int i = 0; i < 16; ++i)
     {
