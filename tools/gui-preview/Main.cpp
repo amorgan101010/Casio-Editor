@@ -266,6 +266,20 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-hex-demo|sequencer-arranger-demo|sequencer-poly-demo|sequencer-pcm-roundtrip|wavepicker-bench)\n", mode.toRawUTF8());
+    if (mode == "sequencer-solo-poly-roundtrip")
+    {
+        // Headless correctness check for the solo lane's poly save/load path, which is separate
+        // code from the PCM check above (serializeSoloSequenceToJson()/applySoloSequenceText()).
+        auto model = casioxw::ParamModel::fromFile (jsonPath);
+        casioxw::SysExCodec codec (std::move (model));
+        casioxw::MidiIO midiIO;
+        SequencerPanel panel (codec, midiIO);
+        const bool ok = panel.verifySoloPolyRoundTripForPreview();
+        std::printf (ok ? "PASS: solo-lane poly state round-trips through serialize/apply intact\n"
+                         : "FAIL: solo-lane poly state round-trip lost data\n");
+        return ok ? 0 : 1;
+    }
+
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-hex-demo|sequencer-arranger-demo|sequencer-poly-demo|sequencer-pcm-roundtrip|sequencer-solo-poly-roundtrip|wavepicker-bench)\n", mode.toRawUTF8());
     return 1;
 }

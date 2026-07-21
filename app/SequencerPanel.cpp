@@ -602,7 +602,12 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     for (const auto& info : codec.model().all())
         if (info.section == "soloSynth" && ! soloSynthBlockOrder.contains (info.block))
             soloSynthBlockOrder.add (info.block);
-    if (! soloSynthBlockOrder.isEmpty())
+    // Default to TotalFilter (cutoff sweeps are the most common p-lock target, and this was the
+    // sole block the pre-expansion table covered) rather than block order's first entry (OSC),
+    // so opening the sequencer on Solo Synth doesn't change the landing page from prior behaviour.
+    if (soloSynthBlockOrder.contains ("TotalFilter"))
+        currentSoloSynthBlock = "TotalFilter";
+    else if (! soloSynthBlockOrder.isEmpty())
         currentSoloSynthBlock = soloSynthBlockOrder[0];
 
     seedLockableFromEngine (currentEngine);   // default TrackEngine::soloSynth
@@ -626,7 +631,8 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     for (int i = 0; i < soloSynthBlockOrder.size(); ++i)
         soloSynthBlockCombo.addItem (soloSynthBlockOrder[i], i + 1);
     if (! soloSynthBlockOrder.isEmpty())
-        soloSynthBlockCombo.setSelectedId (1, juce::dontSendNotification);
+        soloSynthBlockCombo.setSelectedId (soloSynthBlockOrder.indexOf (currentSoloSynthBlock) + 1,
+                                            juce::dontSendNotification);
     soloSynthBlockCombo.onChange = [this] { setSoloSynthBlock (soloSynthBlockCombo.getText()); };
     addAndMakeVisible (soloSynthBlockCombo);
 
@@ -1397,6 +1403,62 @@ bool SequencerPanel::verifyPcmRoundTripForPreview()
         for (size_t v = 0; v < chords.extraVoices.size(); ++v)
             if (! stepsMatch (chords.extraVoices[v].track.steps[(size_t) i],
                                expectedChordsExtra[v].steps[(size_t) i]))
+                return false;
+    }
+
+    return true;
+}
+
+bool SequencerPanel::verifySoloPolyRoundTripForPreview()
+{
+    // Mirrors verifyPcmRoundTripForPreview() but for the solo lane's poly state, which has its
+    // own (de)serialization path (serializeSoloSequenceToJson()/applySoloSequenceText()) that the
+    // PCM check never exercises -- catch drift between the two independently rather than assuming
+    // "same pattern as something tested" means "tested."
+    if (currentEngine == TrackEngine::soloSynth)
+        applyEngine (TrackEngine::hexLayer);   // poly is owner-scoped off for Solo Synth
+
+    synthPolyMode = true;
+    for (int i = 0; i < 16; ++i)
+        sequence.steps[(size_t) i] = { 36 + i, 110, i % 3 == 1, 55 + i, {} };
+    for (size_t v = 0; v < synthExtraVoices.size(); ++v)
+        for (int i = 0; i < 16; ++i)
+            synthExtraVoices[v].track.steps[(size_t) i] = { 40 + (int) v + i, 90, i % 4 == 1, 65, {} };
+
+    const bool expectedPoly = synthPolyMode;
+    const auto expectedPrimary = sequence.steps;
+    std::array<casioxw::Sequence, kMaxPolyVoices - 1> expectedExtra;
+    for (size_t v = 0; v < synthExtraVoices.size(); ++v)
+        expectedExtra[v] = synthExtraVoices[v].track;
+
+    const auto json = serializeSoloSequenceToJson();
+
+    // Clobber before reloading so a false pass (comparing against unchanged data) is impossible.
+    synthPolyMode = false;
+    for (auto& step : sequence.steps)
+        step = casioxw::Step {};
+    for (auto& voice : synthExtraVoices)
+        voice.track = casioxw::Sequence {};
+
+    if (! applySoloSequenceText (json))
+        return false;
+
+    auto stepsMatch = [] (const casioxw::Step& a, const casioxw::Step& b)
+    {
+        return a.note == b.note && a.velocity == b.velocity
+            && a.enabled == b.enabled && a.gatePercent == b.gatePercent;
+    };
+
+    if (synthPolyMode != expectedPoly)
+        return false;
+
+    for (int i = 0; i < 16; ++i)
+    {
+        if (! stepsMatch (sequence.steps[(size_t) i], expectedPrimary[(size_t) i]))
+            return false;
+        for (size_t v = 0; v < synthExtraVoices.size(); ++v)
+            if (! stepsMatch (synthExtraVoices[v].track.steps[(size_t) i],
+                               expectedExtra[v].steps[(size_t) i]))
                 return false;
     }
 

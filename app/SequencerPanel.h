@@ -130,6 +130,7 @@ public:
         live tracks, reloads, and compares. Returns true iff every seeded field round-trips.
         Never called by the app itself; no display/JUCE peer required. */
     bool verifyPcmRoundTripForPreview();
+    bool verifySoloPolyRoundTripForPreview();
 
     /** tools/gui-preview only: switch into Arranger mode and seed the sub-panel's representative
         demo rows (see ArrangerPanel::applyPreviewDemoState), so an offscreen snapshot can verify
