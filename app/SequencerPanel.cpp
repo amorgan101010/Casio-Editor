@@ -66,11 +66,13 @@ namespace
     struct Lockable { juce::String paramId; int instance; int base; juce::String shortName; int page; };
 
     // One lockable table + page-name set per TrackEngine (see SequencerPanel.h's TrackEngine doc
-    // comment for why only one engine is ever active). Solo Synth/Drawbar Organ tables are fixed
-    // (built once, below); Hex Layer's depends on which of its 6 layers is currently selected, so
-    // its set is built fresh by buildHexLayerLockableSet() -- resolveEngineLockableSet() is the
-    // one seam that picks the right source per engine, used by both seedLockableFromEngine() and
-    // rebuildSynthParamPages() so they can never disagree about the table's shape.
+    // comment for why only one engine is ever active). Drawbar Organ's table is fixed (empty);
+    // Solo Synth's depends on which (block, instance) SequencerPanel::currentSoloSynthBlock/
+    // currentSoloSynthInstance currently select (buildSoloSynthLockableSet), and Hex Layer's on
+    // which of its 6 layers is selected (buildHexLayerLockableSet) -- resolveEngineLockableSet()
+    // is the one seam that picks the right source per engine, used by both
+    // seedLockableFromEngine() and rebuildSynthParamPages() so they can never disagree about the
+    // table's shape.
     struct EngineLockableSet
     {
         juce::String displayName;             // synthLabel text while this engine is selected
@@ -78,43 +80,149 @@ namespace
         std::vector<Lockable> lockables;
     };
 
-    const std::vector<juce::String> kSoloSynthPageNames = { "FLTR", "FLT2", "ENV", "LFO" };
-    const std::vector<Lockable> kSoloSynthLockables = {
-        // FLTR — the live filter page.
-        { "tssFLTFcoff",  1, 127, "CUT",  0 },   // cutoff fully open
-        { "tssFLTFreso",  1, 0,   "RES",  0 },
-        { "tssFLTFtype",  1, 0,   "TYP",  0 },
-        { "tssFLTFEdep",  1, 0,   "EDEP", 0 },   // env depth 0 keeps the ENV page inert by default
-        { "tssFLTFtch",   1, 0,   "TCH",  0 },
-        { "tssFLTFkeyf",  1, 0,   "KEYF", 0 },
-        { "tssFLTFlfo1D", 1, 0,   "LFO1", 0 },
-        { "tssFLTFlfo2D", 1, 0,   "LFO2", 0 },
-        // FLT2 — remaining TotalFilter params (rounds out the block: key-follow base note,
-        // envelope init level/clock-trigger/retrigger), neutral bases matching the FLTR/ENV pages.
-        // Kept next to FLTR (owner's call) rather than tacked on at the end.
-        { "tssFLTFkeyfB", 1, 60,  "KF.B", 1 },   // note ref; moot while KEYF (amount) is 0
-        { "tssFLTFENViL", 1, 127, "I.LV", 1 },   // matches the flat-at-max envelope shape below
-        { "tssFLTFEclk",  1, 0,   "ECLK", 1 },   // Off
-        { "tssFLTFErtrg", 1, 0,   "RTRG", 1 },   // off
-        // ENV — filter envelope stages (flat-at-max shape until sculpted).
-        { "tssFLTFENVaT",  1, 0,   "ATK",  2 },
-        { "tssFLTFENVaL",  1, 127, "A.LV", 2 },
-        { "tssFLTFENVdT",  1, 0,   "DEC",  2 },
-        { "tssFLTFENVsL",  1, 127, "SUS",  2 },
-        { "tssFLTFENVr1T", 1, 0,   "R1.T", 2 },
-        { "tssFLTFENVr1L", 1, 127, "R1.L", 2 },
-        { "tssFLTFENVr2T", 1, 0,   "R2.T", 2 },
-        { "tssFLTFENVr2L", 1, 0,   "R2.L", 2 },
-        // LFO 1 — depth 0 keeps it silent until dialled in.
-        { "tssLFOwf",    1, 0,  "WAVE", 3 },
-        { "tssLFOrate",  1, 64, "RATE", 3 },
-        { "tssLFOdep",   1, 0,  "DEP",  3 },
-        { "tssLFOdelay", 1, 0,  "DLY",  3 },
-        { "tssLFOrise",  1, 0,  "RISE", 3 },
-        { "tssLFOmdep",  1, 0,  "MDEP", 3 },
-        { "tssLFOsync",  1, 0,  "SYNC", 3 },
-        { "tssLFOclk",   1, 0,  "CLK",  3 },
+    // Solo Synth FULL coverage: every editable param in params/xwp1.json's soloSynth section, at
+    // whichever (block, instance) the synth card's block/instance combos currently select
+    // (OSC has 6 instances -- Synth1/Synth2/PCM1/PCM2/EXT/Noise; PWM and LFO have 2; Etc and
+    // TotalFilter have 1). ONE exception: tssOSCsw (the oscillator's own On/Off switch) is
+    // deliberately EXCLUDED -- unlike every other param here, it has no context-free neutral
+    // value at all. Every other raw param at worst changes the SOUND until Sync'd (same
+    // "recommend a Sync before first play" caveat the pre-existing FLTR/ENV/LFO table already
+    // implicitly carried for Cutoff/Rate/envelope shape); tssOSCsw changing "on" vs "off" changes
+    // whether an oscillator that a real patch may deliberately have silenced (or relies on)
+    // produces sound at ALL -- forcing it either way on every play-start would corrupt a working
+    // patch, not just recolour it. See soloSynthNeutralBase()/kSoloSynthNeutralBase for how the
+    // ~20 params with no JSON "default" (xwp1.json's default=null) get a hand-judged neutral,
+    // same kind of call the original curated table already made for TotalFilter/LFO (kept
+    // byte-identical here via kSoloSynthKnownShortNames/kSoloSynthNeutralBase's overrides).
+    const std::map<juce::String, int> kSoloSynthNeutralBase = {
+        // Time-type envelope stages (Pitch/Filter/Amp): 0 = instant, matches the pre-existing
+        // FLTFENV convention exactly.
+        { "tssOSCPortaTm", 0 }, { "tssOSCPENVaT", 0 }, { "tssOSCPENVdT", 0 }, { "tssOSCPENVr1T", 0 },
+        { "tssOSCPENVr2T", 0 }, { "tssOSCFENVaT", 0 }, { "tssOSCFENVdT", 0 }, { "tssOSCFENVr1T", 0 },
+        { "tssOSCFENVr2T", 0 }, { "tssOSCAENVaT", 0 }, { "tssOSCAENVdT", 0 }, { "tssOSCAENVr1T", 0 },
+        { "tssOSCAENVr2T", 0 },
+        // Level-type envelope stages: 127 = flat-at-max (audible, uncoloured), except r2L which
+        // matches the pre-existing FLTFENVr2L=0 "settle low" convention.
+        { "tssOSCFENViL", 127 }, { "tssOSCFENVaL", 127 }, { "tssOSCFENVsL", 127 }, { "tssOSCFENVr1L", 127 },
+        { "tssOSCFENVr2L", 0 },
+        { "tssOSCAENViL", 127 }, { "tssOSCAENVaL", 127 }, { "tssOSCAENVsL", 127 }, { "tssOSCAENVr1L", 127 },
+        { "tssOSCAENVr2L", 0 },
+        // Clock triggers: 0 = "Off", matching the pre-existing FLTFEclk=0 convention.
+        { "tssOSCPEclk", 0 }, { "tssOSCFEclk", 0 }, { "tssOSCAEclk", 0 },
+        // Key Follow BASE (a reference note, not an amount -- the KEYF amount param already
+        // defaults 0/moot): C4, matches the pre-existing FLTFkeyfB=60 convention.
+        { "tssOSCPkeyfB", 60 }, { "tssOSCFkeyfB", 60 }, { "tssOSCAkeyfB", 60 },
+        // Audibility-relevant levels/cutoffs: max/open so the oscillator/filter stays audible
+        // rather than silently attenuated -- same reasoning as the pre-existing FLTFcoff=127.
+        { "tssOSCFcoff", 15 },     // OSC's own per-osc filter, range is 0-15 (not TotalFilter's 0-127)
+        { "tssOSCFgain", 0 },      // combo, 0 = Flat (no gain change)
+        { "tssOSCAlvl", 127 },     // OSC's overall amp level -- changes the mix balance until Sync'd,
+                                   // same risk class as Cutoff, not the tssOSCsw silence/add-sound class
+        { "tssOSCPWMpw", 64 },     // 50% duty cycle -- conventional "no pulse coloration" neutral
+        // External Input block: params only meaningful with the EXT oscillator/ext triggers in
+        // use, which every relevant toggle already defaults off -- inert 0s except a sane pitch
+        // reference (Original Key) and a mid input level.
+        { "tssOSCXokey", 60 }, { "tssOSCXinlvl", 100 }, { "tssOSCXngth", 0 }, { "tssOSCXngrel", 0 },
+        { "tssOSCXPshmode", 0 }, { "tssOSCXPshmix", 0 },
     };
+
+    int soloSynthNeutralBase (const casioxw::ParamInfo& info)
+    {
+        const auto it = kSoloSynthNeutralBase.find (info.id);
+        if (it != kSoloSynthNeutralBase.end())
+            return it->second;
+        // Every other vt (cf/cF/pk/tn, plus toggle-style nf switches) already has a real JSON
+        // default that IS neutral (0 = centered/off, never silences or adds anything).
+        return info.defaultValue.value_or (0);
+    }
+
+    // Envelope-stage abbreviation, reused verbatim from the pre-existing FLTFENV table's own
+    // naming -- keyed by the 9 canonical stage suffixes envelopeStageIds() recognises, so Pitch/
+    // Filter/Amp envelopes (and TotalFilter's) all read the same way.
+    const std::map<juce::String, juce::String> kEnvelopeStageAbbrev = {
+        { "iL", "I.LV" }, { "aT", "ATK" }, { "aL", "A.LV" }, { "dT", "DEC" }, { "sL", "SUS" },
+        { "r1T", "R1.T" }, { "r1L", "R1.L" }, { "r2T", "R2.T" }, { "r2L", "R2.L" },
+    };
+
+    // Continuity for the params the pre-existing curated table already named well (TotalFilter/
+    // LFO) -- everything else derives an abbreviation automatically (soloSynthShortName()) rather
+    // than hand-picking ~70 more; not correctness-critical the way base values are.
+    const std::map<juce::String, juce::String> kSoloSynthKnownShortNames = {
+        { "tssFLTFcoff", "CUT" }, { "tssFLTFreso", "RES" }, { "tssFLTFtype", "TYP" },
+        { "tssFLTFEdep", "EDEP" }, { "tssFLTFtch", "TCH" }, { "tssFLTFkeyf", "KEYF" },
+        { "tssFLTFlfo1D", "LFO1" }, { "tssFLTFlfo2D", "LFO2" }, { "tssFLTFkeyfB", "KF.B" },
+        { "tssFLTFEclk", "ECLK" }, { "tssFLTFErtrg", "RTRG" },
+        { "tssLFOwf", "WAVE" }, { "tssLFOrate", "RATE" }, { "tssLFOdep", "DEP" },
+        { "tssLFOdelay", "DLY" }, { "tssLFOrise", "RISE" }, { "tssLFOmdep", "MDEP" },
+        { "tssLFOsync", "SYNC" }, { "tssLFOclk", "CLK" },
+    };
+
+    juce::String soloSynthShortName (const casioxw::ParamInfo& info)
+    {
+        const auto known = kSoloSynthKnownShortNames.find (info.id);
+        if (known != kSoloSynthKnownShortNames.end())
+            return known->second;
+
+        const auto stages = casioxw::envelopeStageIds (info.id);
+        if (stages.isValid())
+        {
+            const std::pair<juce::String, juce::String> fields[] = {
+                { stages.initLevel, "iL" }, { stages.attackTime, "aT" }, { stages.attackLevel, "aL" },
+                { stages.decayTime, "dT" }, { stages.sustainLevel, "sL" },
+                { stages.release1Time, "r1T" }, { stages.release1Level, "r1L" },
+                { stages.release2Time, "r2T" }, { stages.release2Level, "r2L" },
+            };
+            for (const auto& f : fields)
+                if (f.first == info.id)
+                    return kEnvelopeStageAbbrev.at (f.second);
+        }
+
+        // Generic fallback: initials of each word in the human name ("Amp Level" -> "AL",
+        // "Filter Env Attack Time" -> "FEAT") -- recognisable enough within a page whose header
+        // already names the block/group.
+        juce::StringArray words;
+        words.addTokens (info.name, " ", "");
+        juce::String abbrev;
+        for (const auto& w : words)
+            if (w.isNotEmpty())
+                abbrev += w.substring (0, 1).toUpperCase();
+        if (abbrev.length() < 2)
+            abbrev = info.name.substring (0, 4).toUpperCase();
+        return abbrev;
+    }
+
+    EngineLockableSet buildSoloSynthLockableSet (const casioxw::ParamModel& model, const juce::String& block, int instance)
+    {
+        const auto groups = casioxw::orderedGroupsForBlock (model, "soloSynth", block);
+
+        std::vector<juce::String> pageNames;
+        std::vector<Lockable> lockables;
+        for (const auto& group : groups)
+        {
+            int cellsOnPage = 8;      // forces a new page on the first param
+            int pageInGroup = 0;
+            for (const auto& info : model.all())
+            {
+                if (info.section != "soloSynth" || info.block != block || info.group != group)
+                    continue;
+                if (info.id == "tssOSCsw")   // no context-free neutral -- see the table doc comment
+                    continue;
+
+                if (cellsOnPage == 8)
+                {
+                    ++pageInGroup;
+                    const juce::String base4 = group.substring (0, 4).toUpperCase();
+                    pageNames.push_back (pageInGroup == 1 ? base4 : base4.substring (0, 3) + juce::String (pageInGroup));
+                    cellsOnPage = 0;
+                }
+
+                lockables.push_back ({ info.id, instance, soloSynthNeutralBase (info), soloSynthShortName (info),
+                                        (int) pageNames.size() - 1 });
+                ++cellsOnPage;
+            }
+        }
+        return { "SOLO SYNTH", pageNames, lockables };
+    }
 
     // Hex Layer (category 0x08) — FULL 6-layer coverage (owner's explicit call, superseding the
     // earlier Layer-1-only v1): every one of the 33 logical hexLayer params from params/xwp1.json,
@@ -214,7 +322,8 @@ namespace
     // effect) rather than fail loudly. Needs its own transport branch in paramMessages() before
     // any Organ param is added to this table -- owner's call this pass was Solo Synth + Hex Layer
     // only (Organ/PCM Melody p-locks explicitly deferred, see project memory).
-    EngineLockableSet resolveEngineLockableSet (TrackEngine engine, const casioxw::ParamModel& model, int hexLayer)
+    EngineLockableSet resolveEngineLockableSet (TrackEngine engine, const casioxw::ParamModel& model,
+                                                 const juce::String& soloBlock, int soloInstance, int hexLayer)
     {
         switch (engine)
         {
@@ -225,7 +334,19 @@ namespace
             case TrackEngine::soloSynth:
                 break;
         }
-        return { "SOLO SYNTH", kSoloSynthPageNames, kSoloSynthLockables };
+        return buildSoloSynthLockableSet (model, soloBlock, soloInstance);
+    }
+
+    // Representative param for a soloSynth block (any instance -- block structure is
+    // instance-invariant), used to read instanceCount/instanceLabels once per block switch.
+    // Mirrors SoloSynthPanel.cpp's own firstParamInBlock() (a different .cpp's anonymous
+    // namespace, not reusable directly).
+    const casioxw::ParamInfo* firstSoloSynthParamInBlock (const casioxw::ParamModel& model, const juce::String& block)
+    {
+        for (const auto& info : model.all())
+            if (info.section == "soloSynth" && info.block == block)
+                return &info;
+        return nullptr;
     }
 
     // engineTag()'s strings are the on-disk vocabulary sequenceToJson()/sequenceFromJson() carry
@@ -459,6 +580,16 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     // ---- seed the source-of-truth sequence -------------------------------------------------
     for (auto& step : sequence.steps)
         step.velocity = 100;
+
+    // Solo Synth block list, built from the model (block/instance selector) BEFORE the initial
+    // seedLockableFromEngine() below, since resolveEngineLockableSet() needs currentSoloSynthBlock
+    // populated for the default engine (soloSynth).
+    for (const auto& info : codec.model().all())
+        if (info.section == "soloSynth" && ! soloSynthBlockOrder.contains (info.block))
+            soloSynthBlockOrder.add (info.block);
+    if (! soloSynthBlockOrder.isEmpty())
+        currentSoloSynthBlock = soloSynthBlockOrder[0];
+
     seedLockableFromEngine (currentEngine);   // default TrackEngine::soloSynth
 
     engineCombo.addItem ("Solo Synth", (int) TrackEngine::soloSynth + 1);
@@ -476,6 +607,24 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     hexLayerCombo.setSelectedId (currentHexLayer, juce::dontSendNotification);
     hexLayerCombo.onChange = [this] { setHexLayer (hexLayerCombo.getSelectedId()); };
     addAndMakeVisible (hexLayerCombo);
+
+    for (int i = 0; i < soloSynthBlockOrder.size(); ++i)
+        soloSynthBlockCombo.addItem (soloSynthBlockOrder[i], i + 1);
+    if (! soloSynthBlockOrder.isEmpty())
+        soloSynthBlockCombo.setSelectedId (1, juce::dontSendNotification);
+    soloSynthBlockCombo.onChange = [this] { setSoloSynthBlock (soloSynthBlockCombo.getText()); };
+    addAndMakeVisible (soloSynthBlockCombo);
+
+    // Instance combo's items depend on the current block (rebuilt in setSoloSynthBlock() too);
+    // seed it here for the ctor's default block so it isn't empty before the first user action.
+    if (const auto* rep = firstSoloSynthParamInBlock (codec.model(), currentSoloSynthBlock))
+        for (int i = 0; i < rep->instanceCount; ++i)
+            soloSynthInstanceCombo.addItem (i < rep->instanceLabels.size() ? rep->instanceLabels[i]
+                                                                            : juce::String (i + 1),
+                                             i + 1);
+    soloSynthInstanceCombo.setSelectedId (1, juce::dontSendNotification);
+    soloSynthInstanceCombo.onChange = [this] { setSoloSynthInstance (soloSynthInstanceCombo.getSelectedId()); };
+    addAndMakeVisible (soloSynthInstanceCombo);
 
     // ---- step grid -------------------------------------------------------------------------
     for (int i = 0; i < 16; ++i)
@@ -1799,7 +1948,8 @@ void SequencerPanel::refreshParamControls()
 void SequencerPanel::seedLockableFromEngine (TrackEngine engine)
 {
     sequence.lockable.clear();
-    const auto set = resolveEngineLockableSet (engine, codec.model(), currentHexLayer);
+    const auto set = resolveEngineLockableSet (engine, codec.model(), currentSoloSynthBlock, currentSoloSynthInstance,
+                                                currentHexLayer);
     for (const auto& l : set.lockables)
         sequence.lockable.push_back (casioxw::LockableParam { l.paramId, l.instance, l.base });
     sequence.engineTag = engineTag (engine);
@@ -1811,12 +1961,13 @@ void SequencerPanel::applyEngine (TrackEngine newEngine)
     seedLockableFromEngine (currentEngine);
     continuousLockables.clear();   // indices were sized for the OLD engine's lockable count
 
-    synthLabel.setText (resolveEngineLockableSet (currentEngine, codec.model(), currentHexLayer).displayName,
+    synthLabel.setText (resolveEngineLockableSet (currentEngine, codec.model(), currentSoloSynthBlock,
+                                                   currentSoloSynthInstance, currentHexLayer).displayName,
                          juce::dontSendNotification);
     engineCombo.setSelectedId ((int) currentEngine + 1, juce::dontSendNotification);
 
     rebuildSynthParamPages();   // also re-seeds continuousLockables + min/max for the new table
-    resized();   // hexLayerCombo's visibility depends on currentEngine
+    resized();   // hexLayerCombo/soloSynthBlockCombo/soloSynthInstanceCombo visibility depends on currentEngine
 }
 
 void SequencerPanel::switchEngine (TrackEngine newEngine)
@@ -1864,9 +2015,69 @@ void SequencerPanel::setHexLayer (int layer)
     updateClearLocksEnabled();
 }
 
+void SequencerPanel::setSoloSynthBlock (const juce::String& block)
+{
+    if (block == currentSoloSynthBlock || block.isEmpty())
+        return;
+
+    if (playing || ! outstandingBaseSync.empty())
+    {
+        statusLabel.setText ("Stop playback/sync before switching block", juce::dontSendNotification);
+        soloSynthBlockCombo.setText (currentSoloSynthBlock, juce::dontSendNotification);   // revert
+        return;
+    }
+
+    currentSoloSynthBlock = block;
+
+    // Repopulate the instance combo for the new block's instance count/labels (dontSendNotification:
+    // clear()'s default async notification would otherwise queue a redundant
+    // setSoloSynthInstance() re-fire after the explicit rebuild below already runs synchronously --
+    // same fix SoloSynthPanel::blockSelectionChanged() already applies to its own instanceCombo).
+    soloSynthInstanceCombo.clear (juce::dontSendNotification);
+    if (const auto* rep = firstSoloSynthParamInBlock (codec.model(), currentSoloSynthBlock))
+        for (int i = 0; i < rep->instanceCount; ++i)
+            soloSynthInstanceCombo.addItem (i < rep->instanceLabels.size() ? rep->instanceLabels[i]
+                                                                            : juce::String (i + 1),
+                                             i + 1);
+    soloSynthInstanceCombo.setSelectedId (1, juce::dontSendNotification);
+    currentSoloSynthInstance = 1;
+
+    seedLockableFromEngine (currentEngine);   // only reachable while currentEngine == soloSynth
+    continuousLockables.clear();
+    rebuildSynthParamPages();
+    refreshParamControls();
+    refreshStepButtons();
+    updateStatusLabel();
+    updateClearLocksEnabled();
+    resized();   // instance combo's visibility (single- vs multi-instance block) may have changed
+}
+
+void SequencerPanel::setSoloSynthInstance (int instance)
+{
+    if (instance == currentSoloSynthInstance || instance < 1)
+        return;
+
+    if (playing || ! outstandingBaseSync.empty())
+    {
+        statusLabel.setText ("Stop playback/sync before switching instance", juce::dontSendNotification);
+        soloSynthInstanceCombo.setSelectedId (currentSoloSynthInstance, juce::dontSendNotification);   // revert
+        return;
+    }
+
+    currentSoloSynthInstance = instance;
+    seedLockableFromEngine (currentEngine);
+    continuousLockables.clear();
+    rebuildSynthParamPages();
+    refreshParamControls();
+    refreshStepButtons();
+    updateStatusLabel();
+    updateClearLocksEnabled();
+}
+
 void SequencerPanel::rebuildSynthParamPages()
 {
-    const auto set = resolveEngineLockableSet (currentEngine, codec.model(), currentHexLayer);
+    const auto set = resolveEngineLockableSet (currentEngine, codec.model(), currentSoloSynthBlock,
+                                                currentSoloSynthInstance, currentHexLayer);
 
     std::vector<ParamPageDisplay::Page> pages;
     for (const auto& pageName : set.pageNames)
@@ -2525,6 +2736,25 @@ void SequencerPanel::resized()
     else
     {
         hexLayerCombo.setBounds (0, 0, 0, 0);
+    }
+    if (currentEngine == TrackEngine::soloSynth)
+    {
+        soloSynthBlockCombo.setBounds (synthHeader.removeFromLeft (110).reduced (2, 1));
+        synthHeader.removeFromLeft (4);
+        if (soloSynthInstanceCombo.getNumItems() > 1)
+        {
+            soloSynthInstanceCombo.setBounds (synthHeader.removeFromLeft (90).reduced (2, 1));
+            synthHeader.removeFromLeft (4);
+        }
+        else
+        {
+            soloSynthInstanceCombo.setBounds (0, 0, 0, 0);
+        }
+    }
+    else
+    {
+        soloSynthBlockCombo.setBounds (0, 0, 0, 0);
+        soloSynthInstanceCombo.setBounds (0, 0, 0, 0);
     }
     synthControlsButton.setBounds (synthHeader.removeFromLeft (22));
     bounds.removeFromTop (4);

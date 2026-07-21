@@ -221,6 +221,14 @@ private:
         reverts the combo on refusal) since it also rebuilds sequence.lockable. */
     void setHexLayer (int layer);
 
+    /** Solo Synth block combo change (soloSynthBlockCombo, only reachable while
+        currentEngine == soloSynth). Repopulates soloSynthInstanceCombo for the new block's
+        instance count/labels and resets to instance 1, then behaves like setSoloSynthInstance(). */
+    void setSoloSynthBlock (const juce::String& block);
+
+    /** Solo Synth instance combo change. Same guard as setHexLayer()/switchEngine(). */
+    void setSoloSynthInstance (int instance);
+
     /** Swap paramDisplay's page set to match whichever lane currently owns the edit target: the
         Solo Synth's normal pages, or -- if a PCM track has a step selected -- a single-page
         NOTE/GATE/VEL editor for that step (raw cells, no ParamInfo/SysEx address). Cheap to call
@@ -282,6 +290,16 @@ private:
     // currentEngine != hexLayer (see resized()).
     int currentHexLayer = 1;                   // 1-6
     juce::ComboBox hexLayerCombo;
+
+    // Solo Synth's lockable table covers every param in xwp1.json's soloSynth section, but only
+    // ONE (block, instance) pair's params are loaded into sequence.lockable at a time -- mirrors
+    // SoloSynthPanel's own blockCombo/instanceCombo (OSC's 6 instances, PWM/LFO's 2, Etc/
+    // TotalFilter's 1). Zero-sized/inert while currentEngine != soloSynth (see resized()).
+    juce::String currentSoloSynthBlock;         // e.g. "OSC", "TotalFilter" -- populated from the model in the ctor
+    int currentSoloSynthInstance = 1;
+    juce::ComboBox soloSynthBlockCombo;
+    juce::ComboBox soloSynthInstanceCombo;
+    juce::StringArray soloSynthBlockOrder;      // blockCombo item index -> block name, built once
 
     std::array<std::unique_ptr<StepControl>, 16> stepControls;
     std::unique_ptr<ParamPageDisplay> paramDisplay;   // the pageable p-lock parameter sub-window
