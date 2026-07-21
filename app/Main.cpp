@@ -29,7 +29,11 @@ class MainContentComponent : public juce::Component
 {
 public:
     MainContentComponent()
-        : codec (casioxw::ParamModel::fromFile (juce::File (CASIOXW_PARAMS_JSON))),
+        // params/xwp1.json is compiled into the binary (see app/CMakeLists.txt's
+        // CasioXWEditorResources binary-data target) rather than loaded from an absolute
+        // build-time path, so a release binary doesn't depend on the machine it was built on.
+        : codec (casioxw::ParamModel::fromJsonString (
+              juce::String::fromUTF8 (BinaryData::xwp1_json, BinaryData::xwp1_jsonSize))),
           soloSynthPanel (codec, midiIO),
           pcmEnginePanel (codec, midiIO),
           organPanel (codec, midiIO),
