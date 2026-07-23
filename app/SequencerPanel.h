@@ -53,6 +53,13 @@ public:
         (drums, mono PCM tracks, Solo Synth). */
     void setChordState (bool hasChordIn);
 
+    /** True when this widget's windowed step index (currentPage*kStepsPerPage + column) is at or
+        beyond the pattern's configured stepCount -- i.e. it's on the last page of a pattern whose
+        length isn't a multiple of 16. A greyed step paints dim/inert and ignores clicks (the
+        caller is expected to also skip wiring/leave its onClick a no-op while greyed, but
+        paintButton() alone is enough to make the state visually unambiguous). */
+    void setGreyed (bool greyedIn);
+
     void paintButton (juce::Graphics&, bool isMouseOver, bool isMouseDown) override;
 
 private:
@@ -60,6 +67,30 @@ private:
     bool hasLock = false;
     bool selected = false;
     bool hasChord = false;
+    bool greyed = false;
+};
+
+//==============================================================================
+/** Elektron-style page indicator: a row of up to 4 small LED dots, one per 16-step page the
+    current pattern spans (pageCount() = ceil(stepCount/16)) -- lit for the current page, dim for
+    the rest. Purely a display; SequencerPanel's page-nav buttons (< / >) drive currentPage, this
+    just reflects it. Click support is deliberately omitted (the LEDs are read-only status on real
+    Elektron hardware too) -- paging is via the buttons only. */
+class PageIndicator : public juce::Component
+{
+public:
+    void setPageState (int pageCountIn, int currentPageIn)
+    {
+        pageCountShown = pageCountIn;
+        currentPageShown = currentPageIn;
+        repaint();
+    }
+
+    void paint (juce::Graphics&) override;
+
+private:
+    int pageCountShown = 1;
+    int currentPageShown = 0;
 };
 
 //==============================================================================
@@ -144,6 +175,13 @@ public:
         the row table's real layout at the app's real window size. Never called by the app itself. */
     void applyArrangerPreviewState();
 
+    /** tools/gui-preview only: sets a step count NOT divisible by 16 (40 -- 2 full pages + a
+        partial one) and pages to the last one, with a couple of trigs on both the solo lane and a
+        drum lane spanning the greyed boundary, so a snapshot can verify the page LED row (3 lit of
+        3), the </> nav, and the last-page greyed/inert steps (40..47 of that page's 32..47) all
+        render correctly. Never called by the app itself. */
+    void applyPagingPreviewState();
+
 private:
     enum class SaveKind
     {
@@ -178,15 +216,36 @@ private:
         juce::Slider note { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
         juce::Slider velocity { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
         juce::Label velocityMarker;
+
+        // 16 physical widgets are a WINDOWED VIEW onto up to kMaxSteps real steps (see
+        // SequencerPanel::currentPage) -- which absolute step widget column `col` represents is
+        // `currentPage*kStepsPerPage + col`, resolved at click time, not fixed at construction.
         std::array<StepKeyButton, 16> steps;
+
+        // The real per-step data (kMaxSteps long): a drum lane has no casioxw::Sequence backing it
+        // (a fixed note/velocity per lane, not a per-step melodic Sequence), so unlike solo/PCM/poly
+        // tracks its trigger on/off state can't live in casioxw::Step::enabled -- it used to live
+        // directly on the StepKeyButton's own JUCE toggle state instead, which only worked because
+        // each of the (exactly 16) widgets always represented the same one step. Paging breaks that
+        // assumption (a widget's represented step changes with the page), so triggerEnabled is the
+        // real source of truth now; the widget's toggle state is just a repaint of whichever slice
+        // is currently windowed into view.
+        std::array<bool, casioxw::kMaxSteps> triggerEnabled {};
         int baseVelocity = 100;
-        std::array<std::optional<int>, 16> velocityLocks;
+        std::array<std::optional<int>, casioxw::kMaxSteps> velocityLocks;
         int selectedStep = -1; // per-track p-lock selection target, -1 means base
 
         // This row's full extent (label through step keys), captured by resized() before it's
         // sliced up -- paint() uses it to wash the row when it's the focused track.
         juce::Rectangle<int> rowBounds;
     };
+
+    // Every lane keeps exactly 16 physical StepKeyButton widgets (unchanged pixel footprint --
+    // "don't want to change the UI much"); they're a WINDOWED VIEW onto up to kMaxSteps real steps,
+    // one page (16 consecutive steps) at a time. currentPage/pageCount() live below with the other
+    // playback-adjacent state; kStepsPerPage is compile-time so both the widget arrays and the
+    // paging arithmetic stay obviously in lockstep.
+    static constexpr int kStepsPerPage = 16;
 
     // Poly mode's voice cap: a PRODUCT constant, not hardware-derived (the manual has no
     // per-track "chord width" figure -- its only bounded "simultaneous notes from one trigger"
@@ -274,12 +333,29 @@ private:
         varies with focus. */
     void shiftFocusedTrack (int delta);
 
-    /** Rotates one drum lane's 16-step pattern (trigger on/off + velocity locks) by delta, wrapping
-        -- the manual equivalent of casioxw::shiftSteps() for a lane that has no casioxw::Sequence
-        backing it (a drum step's state lives on the StepKeyButton's own toggle state + the row's
-        velocityLocks array, see DrumTrackControl's doc comment). Same rotation direction/formula as
-        casioxw::shiftSteps so drum shifting feels identical to every other lane's. */
+    /** Rotates one drum lane's pattern (trigger on/off + velocity locks, over the active
+        sequence.stepCount window) by delta, wrapping -- the manual equivalent of
+        casioxw::shiftSteps() for a lane that has no casioxw::Sequence backing it (a drum step's
+        state lives in DrumTrackControl::triggerEnabled/velocityLocks, see that struct's doc
+        comment). Same rotation direction/formula as casioxw::shiftSteps so drum shifting feels
+        identical to every other lane's. */
     void shiftDrumTrack (DrumTrackControl& row, int delta);
+
+    /** Number of 16-step pages the current pattern spans: ceil(sequence.stepCount / kStepsPerPage),
+        1..4. The step count is global (one value shared by every Sequence-backed track + every
+        drum lane), so this is a single panel-wide page count, not per-lane. */
+    int pageCount() const;
+
+    /** Sets the panel-wide global step count (1..kMaxSteps), mirrored into every Sequence-backed
+        track (sequence, every PCM track, every poly voice -- drum lanes have no per-lane stepCount
+        of their own, they just read sequence.stepCount) so every lane's active pattern length stays
+        in lockstep, per the "global, not per-track" design. Clamps currentPage back into range if
+        the new page count is smaller, then refreshes the step grid/page indicator. */
+    void setStepCount (int newCount);
+
+    /** Page nav (the small LED-row's < / > buttons): moves currentPage by delta, clamped to
+        0..pageCount()-1, then refreshes every lane's windowed step buttons + the LED indicator. */
+    void setCurrentPage (int newPage);
 
     void onParamEdited (int lockableIndex, int value);
     /** A p-lock cell's double-click reset: clears the selected step's lock on this param
@@ -452,10 +528,23 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;   // kept alive across the async dialog
     juce::Slider tempoSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Slider channelSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    juce::Slider stepCountSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::ComboBox rateCombo;
     juce::Label tempoLabel { {}, "BPM" };
     juce::Label channelLabel { {}, "CH" };
     juce::Label rateLabel { {}, "RATE" };
+    juce::Label stepCountLabel { {}, "STEPS" };
+
+    // Paging (see kStepsPerPage/pageCount()'s doc comments): which 16-step slice of the pattern
+    // every lane's windowed step buttons currently show. Manual navigation only for now (per the
+    // owner's answer -- "make it configurable, start with whatever is easiest"); autoFollowPlayhead
+    // is the seam a later "Follow" toggle would flip.
+    int currentPage = 0;
+    bool autoFollowPlayhead = false;
+    juce::TextButton pageLeftButton  { "<" };
+    juce::TextButton pageRightButton { ">" };
+    juce::TextButton followPageToggle { "Follow" };   // ON == view auto-advances to the playhead's page
+    PageIndicator pageIndicator;
 
     juce::Random rng;   // seeded from time; drives the Randomize button
 

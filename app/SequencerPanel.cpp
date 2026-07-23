@@ -630,10 +630,35 @@ void StepKeyButton::setChordState (bool hasChordIn)
     repaint();
 }
 
+void StepKeyButton::setGreyed (bool greyedIn)
+{
+    if (greyed == greyedIn)
+        return;
+    greyed = greyedIn;
+    setEnabled (! greyed);   // also stops clicks -- greyed steps are inert, not just dim
+    repaint();
+}
+
 void StepKeyButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isMouseDown)
 {
     auto b = getLocalBounds().toFloat().reduced (1.5f);
     const bool on = getToggleState();
+
+    // A greyed step (beyond stepCount on the pattern's last page) paints as visibly inert --
+    // dimmed flat fill, no lock/chord LEDs, no hover/press brightening (setEnabled(false) already
+    // suppresses isMouseOver/isMouseDown from JUCE, but the flat fill makes it unambiguous even so).
+    if (greyed)
+    {
+        g.setColour (EditorColours::idleStep.withMultipliedAlpha (0.35f));
+        g.fillRoundedRectangle (b, 4.0f);
+        g.setColour (EditorColours::border.withAlpha (0.2f));
+        g.drawRoundedRectangle (b, 4.0f, 1.0f);
+        g.setColour (EditorColours::textMuted.withAlpha (0.35f));
+        g.setFont (EditorFonts::mono (12.0f, true));
+        g.drawText (juce::String (stepIndex + 1), getLocalBounds().translated (0, -2),
+                    juce::Justification::centred);
+        return;
+    }
 
     auto fill = selected ? EditorColours::selected
               : on       ? EditorColours::filledStep
@@ -666,6 +691,28 @@ void StepKeyButton::paintButton (juce::Graphics& g, bool isMouseOver, bool isMou
     {
         g.setColour (EditorColours::screenAccent);
         g.fillEllipse (b.getRight() - 8.5f, b.getBottom() - 8.0f, 5.0f, 5.0f);
+    }
+}
+
+//==============================================================================
+void PageIndicator::paint (juce::Graphics& g)
+{
+    // A row of up to kMaxSteps/16 = 4 small LED dots, one per page the pattern currently spans --
+    // lit (accent colour) for the current page, dim for the rest. Read-only status, like the
+    // Elektron hardware this mirrors; paging itself is the </> buttons beside it.
+    const auto b = getLocalBounds().toFloat();
+    const float dotSize = 8.0f;
+    const float gap = 6.0f;
+    const float totalW = (float) pageCountShown * dotSize + (float) juce::jmax (0, pageCountShown - 1) * gap;
+    float x = b.getCentreX() - totalW * 0.5f;
+    const float y = b.getCentreY() - dotSize * 0.5f;
+
+    for (int i = 0; i < pageCountShown; ++i)
+    {
+        g.setColour (i == currentPageShown ? EditorColours::screenAccent
+                                            : EditorColours::idleStep);
+        g.fillEllipse (x, y, dotSize, dotSize);
+        x += dotSize + gap;
     }
 }
 
@@ -769,23 +816,24 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     for (size_t v = 0; v < synthExtraVoices.size(); ++v)
     {
         auto& voice = synthExtraVoices[v];
-        for (size_t step = 0; step < voice.steps.size(); ++step)
+        for (size_t col = 0; col < voice.steps.size(); ++col)
         {
-            auto& b = voice.steps[step];
-            b.setStepIndex ((int) step);
+            auto& b = voice.steps[col];
+            b.setStepIndex ((int) col);   // repainted with the real absolute index on every page change
             b.setClickingTogglesState (false);
             b.setToggleState (false, juce::dontSendNotification);
-            b.onClick = [this, v, step]
+            b.onClick = [this, v, col]
             {
+                const int abs = currentPage * kStepsPerPage + (int) col;
                 setFocusedTrack (FocusedTrackKind::soloSynth, -1);
                 if (editButton.getToggleState())
                 {
-                    const bool wasThisCell = (synthPolyStep == (int) step && synthSelectedVoice == (int) v + 1);
+                    const bool wasThisCell = (synthPolyStep == abs && synthSelectedVoice == (int) v + 1);
                     clearPcmSelections();
                     clearDrumSelections();
                     if (! wasThisCell)
                     {
-                        synthPolyStep = (int) step;
+                        synthPolyStep = abs;
                         synthSelectedVoice = (int) v + 1;
                         selectedStep = -1;
                     }
@@ -799,10 +847,10 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                 }
                 else
                 {
-                    auto& s = synthExtraVoices[v].track.steps[step];
+                    auto& s = synthExtraVoices[v].track.steps[(size_t) abs];
                     s.enabled = ! s.enabled;
                     if (s.enabled)   // sensible starting pitch: unison with the primary voice
-                        s.note = sequence.steps[step].note;
+                        s.note = sequence.steps[(size_t) abs].note;
                     refreshStepButtons();
                     updateStatusLabel();
                 }
@@ -812,19 +860,20 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     }
 
     // ---- step grid -------------------------------------------------------------------------
-    for (int i = 0; i < 16; ++i)
+    for (int col = 0; col < 16; ++col)
     {
         auto sc = std::make_unique<StepControl>();
 
-        sc->select.setStepIndex (i);
-        sc->select.onClick = [this, i]
+        sc->select.setStepIndex (col);   // repainted with the real absolute index on every page change
+        sc->select.onClick = [this, col]
         {
+            const int abs = currentPage * kStepsPerPage + col;
             setFocusedTrack (FocusedTrackKind::soloSynth, -1);
             if (editButton.getToggleState())
-                selectStep (selectedStep == i ? -1 : i);
+                selectStep (selectedStep == abs ? -1 : abs);
             else
             {
-                auto& step = sequence.steps[(size_t) i];
+                auto& step = sequence.steps[(size_t) abs];
                 step.enabled = ! step.enabled;
                 refreshStepButtons();
                 updateStatusLabel();
@@ -832,7 +881,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         };
         addAndMakeVisible (sc->select);
 
-        stepControls[(size_t) i] = std::move (sc);
+        stepControls[(size_t) col] = std::move (sc);
     }
 
     for (auto* l : { &tempoLabel, &rateLabel, &channelLabel })
@@ -904,6 +953,30 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     channelSlider.onValueChange = [this] { sequence.channel = (int) channelSlider.getValue(); };
     addAndMakeVisible (channelSlider);
     addAndMakeVisible (channelLabel);
+
+    // ---- global step count + paging (Elektron-style LED row) -------------------------------
+    // One control for the whole pattern length (kMaxSteps=64 max), applied uniformly to every
+    // lane via setStepCount() -- see Sequence::stepCount's doc comment for why this is global
+    // rather than per-track. Pages are 16-step slices of it; the LEDs + </> buttons page the
+    // ALWAYS-16-WIDE step grid around without changing its footprint (see kStepsPerPage).
+    stepCountSlider.setRange (1.0, (double) casioxw::kMaxSteps, 1.0);
+    stepCountSlider.setValue ((double) sequence.stepCount, juce::dontSendNotification);
+    stepCountSlider.onValueChange = [this] { setStepCount ((int) stepCountSlider.getValue()); };
+    addAndMakeVisible (stepCountSlider);
+    addAndMakeVisible (stepCountLabel);
+
+    pageLeftButton.onClick  = [this] { setCurrentPage (currentPage - 1); };
+    pageRightButton.onClick = [this] { setCurrentPage (currentPage + 1); };
+    addAndMakeVisible (pageLeftButton);
+    addAndMakeVisible (pageRightButton);
+
+    followPageToggle.setClickingTogglesState (true);
+    followPageToggle.setTooltip ("When ON, the view follows the playhead to whichever page it's on");
+    followPageToggle.onClick = [this] { autoFollowPlayhead = followPageToggle.getToggleState(); };
+    addAndMakeVisible (followPageToggle);
+
+    pageIndicator.setPageState (pageCount(), currentPage);
+    addAndMakeVisible (pageIndicator);
 
     // ---- mode row --------------------------------------------------------------------------
     baseButton.onClick = [this] { selectStep (-1); };
@@ -1036,18 +1109,19 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         addAndMakeVisible (row->velocity);
         addAndMakeVisible (row->velocityMarker);
 
-        for (size_t step = 0; step < row->steps.size(); ++step)
+        for (size_t col = 0; col < row->steps.size(); ++col)
         {
-            auto& b = row->steps[step];
-            b.setStepIndex ((int) step);
+            auto& b = row->steps[col];
+            b.setStepIndex ((int) col);   // repainted with the real absolute index on every page change
             b.setClickingTogglesState (false);
             b.setToggleState (false, juce::dontSendNotification);
-            b.onClick = [this, rowPtr, i, step]
+            b.onClick = [this, rowPtr, i, col]
             {
+                const int abs = currentPage * kStepsPerPage + (int) col;
                 setFocusedTrack (FocusedTrackKind::drum, (int) i);
                 if (editButton.getToggleState())
                 {
-                    rowPtr->selectedStep = (rowPtr->selectedStep == (int) step ? -1 : (int) step);
+                    rowPtr->selectedStep = (rowPtr->selectedStep == abs ? -1 : abs);
                     if (rowPtr->selectedStep >= 0)
                         selectedStep = -1; // synth and drum step edit targets are mutually exclusive
                     refreshStepButtons();
@@ -1056,8 +1130,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                 }
                 else
                 {
-                    const bool next = ! rowPtr->steps[step].getToggleState();
-                    rowPtr->steps[step].setToggleState (next, juce::dontSendNotification);
+                    rowPtr->triggerEnabled[(size_t) abs] = ! rowPtr->triggerEnabled[(size_t) abs];
                     refreshStepButtons();
                     updateStatusLabel();
                 }
@@ -1154,25 +1227,26 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
             for (size_t v = 0; v < rowPtr->extraVoices.size(); ++v)
             {
                 auto& voice = rowPtr->extraVoices[v];
-                for (size_t step = 0; step < voice.steps.size(); ++step)
+                for (size_t col = 0; col < voice.steps.size(); ++col)
                 {
-                    auto& b = voice.steps[step];
-                    b.setStepIndex ((int) step);
+                    auto& b = voice.steps[col];
+                    b.setStepIndex ((int) col);   // repainted with the real absolute index on every page change
                     b.setClickingTogglesState (false);
                     b.setToggleState (false, juce::dontSendNotification);
-                    b.onClick = [this, rowPtr, i, v, step]
+                    b.onClick = [this, rowPtr, i, v, col]
                     {
+                        const int abs = currentPage * kStepsPerPage + (int) col;
                         setFocusedTrack (FocusedTrackKind::pcm, (int) i);
                         if (editButton.getToggleState())
                         {
-                            const bool wasThisCell = (rowPtr->selectedStep == (int) step
+                            const bool wasThisCell = (rowPtr->selectedStep == abs
                                                        && rowPtr->selectedVoice == (int) v + 1);
                             clearPcmSelections();
                             clearDrumSelections();
                             clearSynthPolySelection();
                             if (! wasThisCell)
                             {
-                                rowPtr->selectedStep = (int) step;
+                                rowPtr->selectedStep = abs;
                                 rowPtr->selectedVoice = (int) v + 1;
                                 selectedStep = -1;
                             }
@@ -1182,10 +1256,10 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                         }
                         else
                         {
-                            auto& s = rowPtr->extraVoices[v].track.steps[step];
+                            auto& s = rowPtr->extraVoices[v].track.steps[(size_t) abs];
                             s.enabled = ! s.enabled;
                             if (s.enabled)   // sensible starting pitch: unison with the primary voice
-                                s.note = rowPtr->track.steps[step].note;
+                                s.note = rowPtr->track.steps[(size_t) abs].note;
                             refreshStepButtons();
                             updateStatusLabel();
                         }
@@ -1195,19 +1269,20 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
             }
         }
 
-        for (size_t step = 0; step < row->steps.size(); ++step)
+        for (size_t col = 0; col < row->steps.size(); ++col)
         {
-            auto& b = row->steps[step];
-            b.setStepIndex ((int) step);
+            auto& b = row->steps[col];
+            b.setStepIndex ((int) col);   // repainted with the real absolute index on every page change
             b.setClickingTogglesState (false);
             b.setToggleState (false, juce::dontSendNotification);
-            b.onClick = [this, rowPtr, i, step]
+            b.onClick = [this, rowPtr, i, col]
             {
+                const int abs = currentPage * kStepsPerPage + (int) col;
                 setFocusedTrack (FocusedTrackKind::pcm, (int) i);
                 if (editButton.getToggleState())
                 {
-                    const bool wasThisCell = (rowPtr->selectedStep == (int) step && rowPtr->selectedVoice == 0);
-                    const int newSelected = (wasThisCell ? -1 : (int) step);
+                    const bool wasThisCell = (rowPtr->selectedStep == abs && rowPtr->selectedVoice == 0);
+                    const int newSelected = (wasThisCell ? -1 : abs);
                     clearPcmSelections();   // mutual exclusion across all 4 PCM lanes (+ their sub-voices)
                     rowPtr->selectedStep = newSelected;
                     rowPtr->selectedVoice = 0;
@@ -1223,7 +1298,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                 }
                 else
                 {
-                    auto& s = rowPtr->track.steps[step];
+                    auto& s = rowPtr->track.steps[(size_t) abs];
                     s.enabled = ! s.enabled;
                     refreshStepButtons();
                     updateStatusLabel();
@@ -1288,10 +1363,10 @@ void SequencerPanel::applyPreviewDemoState()
 
     if (auto& row = drumTrackControls[0])
         for (int i : { 0, 4, 8, 12 })
-            row->steps[(size_t) i].setToggleState (true, juce::dontSendNotification);
+            row->triggerEnabled[(size_t) i] = true;
     if (auto& row = drumTrackControls[1])
     {
-        row->steps[2].setToggleState (true, juce::dontSendNotification);
+        row->triggerEnabled[2] = true;
         row->velocityLocks[10] = 45;
     }
 
@@ -1397,6 +1472,21 @@ void SequencerPanel::applyArrangerPreviewState()
 {
     setShowingArranger (true);
     arrangerPanel->applyPreviewDemoState();
+}
+
+void SequencerPanel::applyPagingPreviewState()
+{
+    setStepCount (40);   // 2 full 16-step pages + a partial third (steps 32..39 real, 40..47 greyed)
+    setCurrentPage (2);  // the partial last page
+
+    sequence.steps[33].enabled = true;
+    sequence.steps[33].note = 67;
+    if (auto& row = drumTrackControls[0])
+        row->triggerEnabled[36] = true;
+
+    refreshParamControls();
+    refreshStepButtons();
+    updateStatusLabel();
 }
 
 bool SequencerPanel::verifyPcmRoundTripForPreview()
@@ -1574,8 +1664,14 @@ void SequencerPanel::paint (juce::Graphics& g)
     if (playheadStep < 0 || playheadLaneBounds.isEmpty())
         return;
 
-    const int clamped = juce::jlimit (0, 15, playheadStep);
-    auto column = playheadLaneBounds.withX (playheadLaneBounds.getX() + clamped * kStepWidth)
+    // The playhead only paints when it's on the page currently shown -- paging is manual (see
+    // currentPage/setCurrentPage()'s doc comments), so a step on some other page has no visible
+    // column to point at here; it'll reappear the moment the view is paged back to it.
+    const int col = playheadStep - currentPage * kStepsPerPage;
+    if (col < 0 || col >= kStepsPerPage)
+        return;
+
+    auto column = playheadLaneBounds.withX (playheadLaneBounds.getX() + col * kStepWidth)
                                     .withWidth (kStepWidth)
                                     .reduced (2, 0);
     // Cyan, not the amber "selected" hue -- playback position and edit focus are different facts
@@ -1635,6 +1731,7 @@ void SequencerPanel::syncTransportWidgetsFromSequence()
     tempoSlider.setValue ((double) sequence.tempoBpm, juce::dontSendNotification);
     channelSlider.setValue ((double) sequence.channel, juce::dontSendNotification);
     rateCombo.setSelectedId (sequence.stepsPerBeat, juce::dontSendNotification);
+    stepCountSlider.setValue ((double) sequence.stepCount, juce::dontSendNotification);
 }
 
 void SequencerPanel::saveSequenceToFile()
@@ -1776,6 +1873,7 @@ juce::String SequencerPanel::serializeDrumsToJson() const
     root->setProperty ("version", 1);
     root->setProperty ("tempoBpm", sequence.tempoBpm);
     root->setProperty ("stepsPerBeat", sequence.stepsPerBeat);
+    root->setProperty ("stepCount", sequence.stepCount);   // the global step count (see Sequence::stepCount)
 
     juce::Array<juce::var> tracks;
     for (const auto& row : drumTrackControls)
@@ -1790,9 +1888,9 @@ juce::String SequencerPanel::serializeDrumsToJson() const
 
         juce::Array<juce::var> steps;
         juce::Array<juce::var> locks;
-        for (int i = 0; i < 16; ++i)
+        for (int i = 0; i < casioxw::kMaxSteps; ++i)
         {
-            steps.add (row->steps[(size_t) i].getToggleState());
+            steps.add (row->triggerEnabled[(size_t) i]);
             if (const auto v = row->velocityLocks[(size_t) i])
                 locks.add (*v);
             else
@@ -1907,6 +2005,7 @@ bool SequencerPanel::applySoloSequenceText (const juce::String& text)
     sequence.channel      = loaded->channel;
     sequence.tempoBpm     = loaded->tempoBpm;
     sequence.stepsPerBeat = loaded->stepsPerBeat;
+    setStepCount (loaded->stepCount);   // global -- propagates to every other Sequence-backed track too
     for (auto& lp : sequence.lockable)
         for (const auto& llp : loaded->lockable)
             if (llp.paramId == lp.paramId && llp.instance == lp.instance)
@@ -1962,6 +2061,13 @@ bool SequencerPanel::applyDrumSequenceText (const juce::String& text)
     const auto rateVar = obj->getProperty ("stepsPerBeat");
     if (! rateVar.isVoid())
         sequence.stepsPerBeat = (int) rateVar;
+    // stepCount is global (shared with every other lane) -- only adopt it if THIS file actually
+    // carries one (a file saved before configurable step count doesn't, and loading it shouldn't
+    // silently shrink whatever step count another already-loaded lane set); setStepCount() (not a
+    // bare assignment) keeps every Sequence-backed track and the page/grid UI in lockstep.
+    const auto stepCountVar = obj->getProperty ("stepCount");
+    if (! stepCountVar.isVoid())
+        setStepCount ((int) stepCountVar);
 
     const auto tracks = obj->getProperty ("tracks").getArray();
     if (tracks == nullptr)
@@ -1983,19 +2089,18 @@ bool SequencerPanel::applyDrumSequenceText (const juce::String& text)
         row.baseVelocity = juce::jlimit (1, 127, baseVar.isVoid() ? row.baseVelocity : (int) baseVar);
         row.selectedStep = -1;
         row.velocityLocks.fill (std::nullopt);
-        for (int s = 0; s < 16; ++s)
-            row.steps[(size_t) s].setToggleState (false, juce::dontSendNotification);
+        row.triggerEnabled.fill (false);
 
         if (const auto* steps = t->getProperty ("steps").getArray())
         {
-            const int stepCount = juce::jmin (16, steps->size());
-            for (int s = 0; s < stepCount; ++s)
-                row.steps[(size_t) s].setToggleState ((bool) steps->getReference (s), juce::dontSendNotification);
+            const int n2 = juce::jmin (casioxw::kMaxSteps, steps->size());
+            for (int s = 0; s < n2; ++s)
+                row.triggerEnabled[(size_t) s] = (bool) steps->getReference (s);
         }
 
         if (const auto* locks = t->getProperty ("velocityLocks").getArray())
         {
-            const int lockCount = juce::jmin (16, locks->size());
+            const int lockCount = juce::jmin (casioxw::kMaxSteps, locks->size());
             for (int s = 0; s < lockCount; ++s)
             {
                 const auto& v = locks->getReference (s);
@@ -2036,6 +2141,7 @@ bool SequencerPanel::applyPcmTracksText (const juce::String& text)
         row.track.channel      = loaded->channel;
         row.track.tempoBpm     = loaded->tempoBpm;
         row.track.stepsPerBeat = loaded->stepsPerBeat;
+        setStepCount (loaded->stepCount);   // global -- propagates to sequence + every other track too
         row.channel.setSelectedId (juce::jlimit (1, 16, row.track.channel), juce::dontSendNotification);
 
         // Poly state (app-level, not part of casioxw::Sequence -- see serializePcmTracksToJson()'s
@@ -2321,8 +2427,7 @@ void SequencerPanel::clearAllSteps()
     {
         if (row == nullptr)
             continue;
-        for (auto& b : row->steps)
-            b.setToggleState (false, juce::dontSendNotification);
+        row->triggerEnabled.fill (false);
         for (auto& lock : row->velocityLocks)
             lock.reset();
     }
@@ -2383,24 +2488,24 @@ void SequencerPanel::setFocusedTrack (FocusedTrackKind kind, int index)
 void SequencerPanel::shiftDrumTrack (DrumTrackControl& row, int delta)
 {
     // Mirrors casioxw::shiftSteps()'s own rotation exactly (Sequence.cpp) -- a drum lane has no
-    // Sequence backing it (its pattern is the StepKeyButtons' own toggle state + velocityLocks,
-    // see DrumTrackControl's doc comment), so the rotation has to be done by hand here instead of
-    // reusing the core function, but the direction/formula must stay identical or drum shifting
-    // would feel backwards relative to every other lane's shift.
-    constexpr int n = 16;
+    // Sequence backing it (its pattern is DrumTrackControl::triggerEnabled/velocityLocks, see that
+    // struct's doc comment), so the rotation has to be done by hand here instead of reusing the
+    // core function, but the direction/formula must stay identical or drum shifting would feel
+    // backwards relative to every other lane's shift. Rotates only the active sequence.stepCount
+    // window (the global step count), same as casioxw::shiftSteps -- steps beyond it are untouched.
+    const int n = juce::jlimit (1, casioxw::kMaxSteps, sequence.stepCount);
     const int d = ((delta % n) + n) % n;
     if (d == 0)
         return;
 
-    std::array<bool, n> rotatedTriggers {};
-    std::array<std::optional<int>, n> rotatedLocks {};
+    auto rotatedTriggers = row.triggerEnabled;
+    auto rotatedLocks = row.velocityLocks;
     for (int i = 0; i < n; ++i)
     {
-        rotatedTriggers[(size_t) ((i + d) % n)] = row.steps[(size_t) i].getToggleState();
+        rotatedTriggers[(size_t) ((i + d) % n)] = row.triggerEnabled[(size_t) i];
         rotatedLocks[(size_t) ((i + d) % n)]    = row.velocityLocks[(size_t) i];
     }
-    for (int i = 0; i < n; ++i)
-        row.steps[(size_t) i].setToggleState (rotatedTriggers[(size_t) i], juce::dontSendNotification);
+    row.triggerEnabled = rotatedTriggers;
     row.velocityLocks = rotatedLocks;
 }
 
@@ -2434,6 +2539,42 @@ void SequencerPanel::shiftFocusedTrack (int delta)
             break;
     }
     refreshParamControls();
+    refreshStepButtons();
+}
+
+int SequencerPanel::pageCount() const
+{
+    return juce::jlimit (1, casioxw::kMaxSteps / kStepsPerPage,
+                         (sequence.stepCount + kStepsPerPage - 1) / kStepsPerPage);
+}
+
+void SequencerPanel::setStepCount (int newCount)
+{
+    const int clamped = juce::jlimit (1, casioxw::kMaxSteps, newCount);
+    if (clamped == sequence.stepCount)
+        return;
+
+    sequence.stepCount = clamped;
+    for (auto& voice : synthExtraVoices)
+        voice.track.stepCount = clamped;
+    for (auto& rowPtr : pcmTrackControls)
+        if (rowPtr != nullptr)
+        {
+            rowPtr->track.stepCount = clamped;
+            for (auto& voice : rowPtr->extraVoices)
+                voice.track.stepCount = clamped;
+        }
+    // Drum lanes have no stepCount of their own -- every read of "how long is the pattern" for a
+    // drum lane goes through sequence.stepCount directly (see refreshStepButtons()/feedLookahead()).
+
+    stepCountSlider.setValue (clamped, juce::dontSendNotification);
+    setCurrentPage (juce::jmin (currentPage, pageCount() - 1));   // also refreshes step buttons
+}
+
+void SequencerPanel::setCurrentPage (int newPage)
+{
+    currentPage = juce::jlimit (0, pageCount() - 1, newPage);
+    pageIndicator.setPageState (pageCount(), currentPage);
     refreshStepButtons();
 }
 
@@ -2933,18 +3074,28 @@ void SequencerPanel::refreshParamDisplayPages()
 void SequencerPanel::refreshStepButtons()
 {
     const bool pLockMode = editButton.getToggleState();
+    const int stepCount = sequence.stepCount;   // the one global step count every lane shares
 
-    for (int i = 0; i < 16; ++i)
+    // Every lane's 16 physical widgets are a WINDOWED VIEW: widget column `col` (0..15) always
+    // shows absolute step `abs = currentPage*kStepsPerPage + col`. abs can run up to kMaxSteps-1
+    // (63), always a valid index into every steps/triggerEnabled/velocityLocks array (kMaxSteps
+    // long) regardless of the pattern's configured stepCount -- greying handles the rest.
+    const auto windowed = [this] (int col) { return currentPage * kStepsPerPage + col; };
+
+    for (int col = 0; col < 16; ++col)
     {
-        auto& btn = stepControls[(size_t) i]->select;
-        const auto& step = sequence.steps[(size_t) i];
+        const int abs = windowed (col);
+        auto& btn = stepControls[(size_t) col]->select;
+        const auto& step = sequence.steps[(size_t) abs];
+        btn.setStepIndex (abs);
+        btn.setGreyed (abs >= stepCount);
         btn.setToggleState (step.enabled, juce::dontSendNotification);
-        btn.setLockState (! step.locks.empty(), pLockMode && i == selectedStep);
+        btn.setLockState (! step.locks.empty(), pLockMode && abs == selectedStep);
 
         bool synthChord = false;
         if (synthPolyMode)
             for (const auto& voice : synthExtraVoices)
-                if (voice.track.steps[(size_t) i].enabled)
+                if (voice.track.steps[(size_t) abs].enabled)
                     synthChord = true;
         btn.setChordState (synthChord);
     }
@@ -2953,11 +3104,14 @@ void SequencerPanel::refreshStepButtons()
 
     if (synthPolyMode)
         for (size_t v = 0; v < synthExtraVoices.size(); ++v)
-            for (int i = 0; i < 16; ++i)
+            for (int col = 0; col < 16; ++col)
             {
-                auto& btn = synthExtraVoices[v].steps[(size_t) i];
-                btn.setToggleState (synthExtraVoices[v].track.steps[(size_t) i].enabled, juce::dontSendNotification);
-                btn.setLockState (false, pLockMode && synthPolyStep == i && synthSelectedVoice == (int) v + 1);
+                const int abs = windowed (col);
+                auto& btn = synthExtraVoices[v].steps[(size_t) col];
+                btn.setStepIndex (abs);
+                btn.setGreyed (abs >= stepCount);
+                btn.setToggleState (synthExtraVoices[v].track.steps[(size_t) abs].enabled, juce::dontSendNotification);
+                btn.setLockState (false, pLockMode && synthPolyStep == abs && synthSelectedVoice == (int) v + 1);
             }
 
     for (auto& rowPtr : drumTrackControls)
@@ -2983,11 +3137,15 @@ void SequencerPanel::refreshStepButtons()
             row.velocityMarker.setText ("base", juce::dontSendNotification);
         row.velocityMarker.setColour (juce::Label::textColourId, locked ? kSelectedColour : EditorColours::textMuted);
 
-        for (int i = 0; i < 16; ++i)
+        for (int col = 0; col < 16; ++col)
         {
-            auto& btn = row.steps[(size_t) i];
-            btn.setLockState (row.velocityLocks[(size_t) i].has_value(),
-                              pLockMode && i == row.selectedStep);
+            const int abs = windowed (col);
+            auto& btn = row.steps[(size_t) col];
+            btn.setStepIndex (abs);
+            btn.setGreyed (abs >= stepCount);
+            btn.setToggleState (row.triggerEnabled[(size_t) abs], juce::dontSendNotification);
+            btn.setLockState (row.velocityLocks[(size_t) abs].has_value(),
+                              pLockMode && abs == row.selectedStep);
         }
     }
 
@@ -2997,29 +3155,35 @@ void SequencerPanel::refreshStepButtons()
             continue;
 
         auto& row = *rowPtr;
-        for (int i = 0; i < 16; ++i)
+        for (int col = 0; col < 16; ++col)
         {
-            auto& btn = row.steps[(size_t) i];
-            btn.setToggleState (row.track.steps[(size_t) i].enabled, juce::dontSendNotification);
+            const int abs = windowed (col);
+            auto& btn = row.steps[(size_t) col];
+            btn.setStepIndex (abs);
+            btn.setGreyed (abs >= stepCount);
+            btn.setToggleState (row.track.steps[(size_t) abs].enabled, juce::dontSendNotification);
             // No lock LED here -- a PCM step's note/gate/vel are always-defined, never "unlocked";
             // `selected` is the only state worth showing (which step the screen is editing).
-            btn.setLockState (false, pLockMode && i == row.selectedStep && row.selectedVoice == 0);
+            btn.setLockState (false, pLockMode && abs == row.selectedStep && row.selectedVoice == 0);
 
             bool chord = false;
             if (row.polyMode)
                 for (const auto& voice : row.extraVoices)
-                    if (voice.track.steps[(size_t) i].enabled)
+                    if (voice.track.steps[(size_t) abs].enabled)
                         chord = true;
             btn.setChordState (chord);
         }
 
         if (row.polyMode)
             for (size_t v = 0; v < row.extraVoices.size(); ++v)
-                for (int i = 0; i < 16; ++i)
+                for (int col = 0; col < 16; ++col)
                 {
-                    auto& btn = row.extraVoices[v].steps[(size_t) i];
-                    btn.setToggleState (row.extraVoices[v].track.steps[(size_t) i].enabled, juce::dontSendNotification);
-                    btn.setLockState (false, pLockMode && i == row.selectedStep && row.selectedVoice == (int) v + 1);
+                    const int abs = windowed (col);
+                    auto& btn = row.extraVoices[v].steps[(size_t) col];
+                    btn.setStepIndex (abs);
+                    btn.setGreyed (abs >= stepCount);
+                    btn.setToggleState (row.extraVoices[v].track.steps[(size_t) abs].enabled, juce::dontSendNotification);
+                    btn.setLockState (false, pLockMode && abs == row.selectedStep && row.selectedVoice == (int) v + 1);
                 }
     }
 
@@ -3143,7 +3307,7 @@ void SequencerPanel::play()
     playStopButton.setColour (juce::TextButton::textColourOffId, EditorColours::base03);
     // Prime the whole first loop up front (floored at kStartPrimeFloorMs for fast tempos) so the
     // startup message-thread spike can't delay the feeder into a rushed catch-up burst.
-    feedLookahead (juce::jmax (kStartPrimeFloorMs, 16.0 * casioxw::stepIntervalMs (sequence)));
+    feedLookahead (juce::jmax (kStartPrimeFloorMs, (double) sequence.stepCount * casioxw::stepIntervalMs (sequence)));
     updatePlayheadStep();
     startTimer (kSchedulerTickMs);
 }
@@ -3235,7 +3399,7 @@ void SequencerPanel::feedLookahead (double lookaheadMs)
 
         for (const auto& row : drumTrackControls)
         {
-            if (row == nullptr || row->mute.getToggleState() || ! row->steps[(size_t) nextStepIndex].getToggleState())
+            if (row == nullptr || row->mute.getToggleState() || ! row->triggerEnabled[(size_t) nextStepIndex])
                 continue;
 
             const int note = juce::jlimit (0, 127, (int) row->note.getValue());
@@ -3310,7 +3474,7 @@ void SequencerPanel::feedLookahead (double lookaheadMs)
         scheduledPlayheadMarks.push_back ({ transportStartMs + nextStepStartMs, nextStepIndex });
 
         prevStepIndex   = nextStepIndex;
-        nextStepIndex   = (nextStepIndex + 1) % 16;
+        nextStepIndex   = (nextStepIndex + 1) % juce::jlimit (1, casioxw::kMaxSteps, sequence.stepCount);
         nextStepStartMs += casioxw::stepIntervalMs (sequence);   // per-step read = live tempo/rate changes
     }
 }
@@ -3411,6 +3575,16 @@ void SequencerPanel::updatePlayheadStep()
         return;
 
     playheadStep = nextPlayhead;
+
+    // Follow toggle ON: page the view to wherever the playhead now is, same as real Elektron
+    // hardware -- OFF (the default) leaves paging fully manual, see setCurrentPage()'s doc comment.
+    if (autoFollowPlayhead && playheadStep >= 0)
+    {
+        const int targetPage = playheadStep / kStepsPerPage;
+        if (targetPage != currentPage)
+            setCurrentPage (targetPage);   // also repaints via refreshStepButtons()
+    }
+
     repaint (playheadLaneBounds);
 }
 
@@ -3431,6 +3605,9 @@ void SequencerPanel::resized()
             { &tempoLabel, 34, 2 }, { &tempoSlider, 150, 12 },
             { &rateLabel, 38, 2 }, { &rateCombo, 74, 12 },
             { &channelLabel, 26, 2 }, { &channelSlider, 118, 20 },
+            { &stepCountLabel, 40, 2 }, { &stepCountSlider, 110, 8 },
+            { &pageLeftButton, 26, 2 }, { &pageIndicator, 60, 2 }, { &pageRightButton, 26, 6 },
+            { &followPageToggle, 64, 20 },
             { &stepModeButton, 60, 2 }, { &editButton, 74, 12 },
             { &clearLocksButton, 96, 6 }, { &clearAllButton, 84, 20 },
             { &saveButton, 58, 4 }, { &loadButton, 58, 4 }, { &sequenceDirButton, 70, 0 },

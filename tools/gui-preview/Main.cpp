@@ -186,7 +186,7 @@ int main (int argc, char* argv[])
 
     if (mode == "sequencer" || mode == "sequencer-demo" || mode == "sequencer-pcm-demo"
         || mode == "sequencer-hex-demo" || mode == "sequencer-arranger-demo" || mode == "sequencer-poly-demo"
-        || mode == "sequencer-focus-demo")
+        || mode == "sequencer-focus-demo" || mode == "sequencer-paging-demo")
     {
         if (argc < 3)
         {
@@ -209,6 +209,8 @@ int main (int argc, char* argv[])
             panel.applyPolyPreviewState();
         else if (mode == "sequencer-focus-demo")   // Drum 2 focused, screen showing its NOTE/VEL base page
             panel.applyFocusPreviewState();
+        else if (mode == "sequencer-paging-demo")   // 40-step pattern, paged to its greyed-out last page
+            panel.applyPagingPreviewState();
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());
