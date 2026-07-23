@@ -540,7 +540,10 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;   // kept alive across the async dialog
     juce::Slider tempoSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
     juce::Slider channelSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
-    juce::Slider stepCountSlider { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+    // A rotary knob, not a linear slider like tempo/channel -- at the toolbar's compact row height a
+    // linear slider's thumb-on-a-track read as a toggle switch (owner feedback), whereas a small
+    // round knob stays legibly "a knob" even that small.
+    juce::Slider stepCountSlider { juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::TextBoxRight };
     juce::ComboBox rateCombo;
     juce::Label tempoLabel { {}, "BPM" };
     juce::Label channelLabel { {}, "CH" };
