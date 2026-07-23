@@ -440,12 +440,15 @@ namespace
     // The shared 3-cell NOTE/GATE/VEL page (raw kPcmNoteCell/GateCell/VelCell cells, see above) --
     // used both for PCM/poly voices (their only page) and, prepended to lockablePages, for the
     // solo lane's own primary voice (see refreshParamDisplayPages()).
-    ParamPageDisplay::Page buildNoteGateVelPage (const juce::String& name)
+    // gateMax is the calling track's OWN maxGatePercent(stepCount) -- every track shares the same
+    // global stepCount (see SequencerPanel's step-count control), so callers pass sequence.stepCount
+    // (the panel's single source of truth) through casioxw::maxGatePercent().
+    ParamPageDisplay::Page buildNoteGateVelPage (const juce::String& name, int gateMax)
     {
         ParamPageDisplay::CellSpec note, gate, vel;
         note.rawMin = 0;   note.rawMax = 127; note.rawFormat = ParamPageDisplay::ValueFormat::Note;
         note.shortName = "NOTE"; note.lockableIndex = kPcmNoteCell;
-        gate.rawMin = 1;   gate.rawMax = casioxw::kMaxGatePercent; gate.rawFormat = ParamPageDisplay::ValueFormat::GateLength;
+        gate.rawMin = 1;   gate.rawMax = gateMax; gate.rawFormat = ParamPageDisplay::ValueFormat::GateLength;
         gate.shortName = "GATE"; gate.lockableIndex = kPcmGateCell;
         vel.rawMin  = 1;   vel.rawMax  = 127; vel.rawFormat  = ParamPageDisplay::ValueFormat::Plain;
         vel.shortName  = "VEL";  vel.lockableIndex  = kPcmVelCell;
@@ -2516,7 +2519,7 @@ void SequencerPanel::onParamEdited (int lockableIndex, int value)
             return;   // shouldn't happen (the page wouldn't be showing), but guard anyway
 
         if (lockableIndex == kPcmNoteCell)      step->note        = juce::jlimit (0, 127, value);
-        else if (lockableIndex == kPcmGateCell) step->gatePercent = casioxw::snapGatePercent (value);
+        else if (lockableIndex == kPcmGateCell) step->gatePercent = casioxw::snapGatePercent (value, sequence.stepCount);
         else if (lockableIndex == kPcmVelCell)  step->velocity    = juce::jlimit (1, 127, value);
         refreshMelodicStepCellValues (displayedMelodicTarget);
         return;
@@ -2902,7 +2905,7 @@ void SequencerPanel::refreshParamDisplayPages()
         // pages right after it -- unlike PCM/poly voices (no lockable params of their own), the
         // solo lane still has a real lockable set (FILT/OSC/etc) to page through.
         std::vector<ParamPageDisplay::Page> pages;
-        pages.push_back (buildNoteGateVelPage ("NOTE"));
+        pages.push_back (buildNoteGateVelPage ("NOTE", casioxw::maxGatePercent (sequence.stepCount)));
         for (const auto& p : lockablePages)
             pages.push_back (p);
         paramDisplay->setPages (std::move (pages));
@@ -2922,7 +2925,7 @@ void SequencerPanel::refreshParamDisplayPages()
         pageName = "SYNTH V" + juce::String (target - 100);
 
     std::vector<ParamPageDisplay::Page> pages;
-    pages.push_back (buildNoteGateVelPage (pageName));
+    pages.push_back (buildNoteGateVelPage (pageName, casioxw::maxGatePercent (sequence.stepCount)));
     paramDisplay->setPages (std::move (pages));
     refreshMelodicStepCellValues (target);
 }

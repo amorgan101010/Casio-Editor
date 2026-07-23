@@ -38,9 +38,13 @@ namespace
                 const double t = (value - 200.0) / (rangeEnd - 200.0);
                 return kGateSplit + juce::jlimit (0.0, 1.0, t) * (1.0 - kGateSplit);
             },
-            [] (double, double, double value) -> double                 // snapToLegalValue
+            [] (double, double rangeEnd, double value) -> double        // snapToLegalValue
             {
-                return (double) casioxw::snapGatePercent ((int) std::llround (value));
+                // rangeEnd IS this cell's gate ceiling (maxGatePercent(stepCount), always a clean
+                // multiple of 100) -- dividing back out recovers the stepCount snapGatePercent needs,
+                // with no extra state to capture into this otherwise-stateless lambda.
+                const int stepCount = (int) std::llround (rangeEnd / 100.0);
+                return (double) casioxw::snapGatePercent ((int) std::llround (value), stepCount);
             });
     }
 
