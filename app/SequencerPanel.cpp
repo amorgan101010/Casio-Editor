@@ -1618,6 +1618,30 @@ bool SequencerPanel::verifySoloPolyRoundTripForPreview()
     return true;
 }
 
+bool SequencerPanel::verifyPagingClickResolvesAbsoluteStepForPreview()
+{
+    setPLockMode (false);   // STEP mode: a step click toggles `enabled`/triggerEnabled directly
+
+    setStepCount (32);
+    setCurrentPage (1);   // steps 16..31 -- column 1 here is absolute step 17, NOT step 1
+
+    if (drumTrackControls[0] == nullptr)
+        return false;
+    auto& drumRow = *drumTrackControls[0];
+
+    // Column 1 on EVERY lane should resolve to absolute step 17 on this page, not literal index 1.
+    // Button::triggerClick() merely POSTS an async command message -- never dispatched here (this
+    // console app runs no message loop) -- so call the (StepKeyButton::setClickingTogglesState
+    // (false), so equivalent to a real click for these buttons) onClick std::function directly,
+    // synchronously.
+    stepControls[1]->select.onClick();
+    drumRow.steps[1].onClick();
+
+    const bool soloOk = sequence.steps[17].enabled && ! sequence.steps[1].enabled;
+    const bool drumOk = drumRow.triggerEnabled[17] && ! drumRow.triggerEnabled[1];
+    return soloOk && drumOk;
+}
+
 void SequencerPanel::paint (juce::Graphics& g)
 {
     g.fillAll (EditorColours::chassisBg);

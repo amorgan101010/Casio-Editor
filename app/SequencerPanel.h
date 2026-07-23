@@ -170,6 +170,18 @@ public:
     bool verifyPcmRoundTripForPreview();
     bool verifySoloPolyRoundTripForPreview();
 
+    /** tools/gui-preview only: headless correctness check for the windowed-step-button click
+        resolution paging introduced (SequencerPanel.h's "windowed view" doc comment) -- the single
+        most bug-prone piece of that change (an off-by-page error in the col->abs math would still
+        RENDER fine, since refreshStepButtons() would just relabel/regrey the same widgets; it only
+        surfaces on an actual click). Sets stepCount=32, pages to page 1 (steps 16..31), simulates a
+        real click via StepKeyButton::triggerClick() on the solo lane's column 1 and a drum lane's
+        column 1, and confirms the step that toggled is the ABSOLUTE one under that column on the
+        CURRENT page (17) -- not column 1's literal index (1) and not some other page's step.
+        Returns true iff both resolve correctly and nothing else was touched. Never called by the
+        app itself; no display/JUCE peer required beyond component construction. */
+    bool verifyPagingClickResolvesAbsoluteStepForPreview();
+
     /** tools/gui-preview only: switch into Arranger mode and seed the sub-panel's representative
         demo rows (see ArrangerPanel::applyPreviewDemoState), so an offscreen snapshot can verify
         the row table's real layout at the app's real window size. Never called by the app itself. */
