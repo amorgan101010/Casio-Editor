@@ -186,7 +186,7 @@ int main (int argc, char* argv[])
 
     if (mode == "sequencer" || mode == "sequencer-demo" || mode == "sequencer-pcm-demo"
         || mode == "sequencer-hex-demo" || mode == "sequencer-arranger-demo" || mode == "sequencer-poly-demo"
-        || mode == "sequencer-focus-demo")
+        || mode == "sequencer-focus-demo" || mode == "sequencer-paging-demo")
     {
         if (argc < 3)
         {
@@ -209,6 +209,8 @@ int main (int argc, char* argv[])
             panel.applyPolyPreviewState();
         else if (mode == "sequencer-focus-demo")   // Drum 2 focused, screen showing its NOTE/VEL base page
             panel.applyFocusPreviewState();
+        else if (mode == "sequencer-paging-demo")   // 40-step pattern, paged to its greyed-out last page
+            panel.applyPagingPreviewState();
         const bool ok = saveSnapshot (panel, juce::File (argv[2]));
         std::printf (ok ? "wrote %s (size %dx%d)\n" : "FAILED to write %s\n",
                      argv[2], panel.getWidth(), panel.getHeight());
@@ -283,6 +285,23 @@ int main (int argc, char* argv[])
         return ok ? 0 : 1;
     }
 
-    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-hex-demo|sequencer-arranger-demo|sequencer-poly-demo|sequencer-focus-demo|sequencer-pcm-roundtrip|sequencer-solo-poly-roundtrip|wavepicker-bench)\n", mode.toRawUTF8());
+    if (mode == "sequencer-paging-click-roundtrip")
+    {
+        // Headless correctness check for the windowed-step-button click resolution paging
+        // introduced -- the col->abs math is the single most bug-prone piece of that change and
+        // would still RENDER fine even if broken (see SequencerPanel::
+        // verifyPagingClickResolvesAbsoluteStepForPreview()'s doc comment); this is the one check
+        // that actually simulates a click on a non-zero page.
+        auto model = casioxw::ParamModel::fromFile (jsonPath);
+        casioxw::SysExCodec codec (std::move (model));
+        casioxw::MidiIO midiIO;
+        SequencerPanel panel (codec, midiIO);
+        const bool ok = panel.verifyPagingClickResolvesAbsoluteStepForPreview();
+        std::printf (ok ? "PASS: a step click on page 1 resolves to the correct absolute step\n"
+                         : "FAIL: paged step click resolved to the wrong absolute step\n");
+        return ok ? 0 : 1;
+    }
+
+    std::fprintf (stderr, "unknown mode '%s' (expected knob|bar|panel|pcm|organ|hexlayer|icon|sequencer|sequencer-demo|sequencer-pcm-demo|sequencer-hex-demo|sequencer-arranger-demo|sequencer-poly-demo|sequencer-focus-demo|sequencer-paging-demo|sequencer-pcm-roundtrip|sequencer-solo-poly-roundtrip|sequencer-paging-click-roundtrip|wavepicker-bench)\n", mode.toRawUTF8());
     return 1;
 }

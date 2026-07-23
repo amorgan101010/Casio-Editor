@@ -21,17 +21,23 @@ namespace casioxw
 
     double stepGateMs (const Sequence& seq, int stepIndex)
     {
-        const int pct = snapGatePercent (seq.steps[(size_t) stepIndex].gatePercent);
+        const int pct = snapGatePercent (seq.steps[(size_t) stepIndex].gatePercent, seq.stepCount);
         return stepIntervalMs (seq) * (double) pct / 100.0;
     }
 
-    int snapGatePercent (int raw)
+    int maxGatePercent (int stepCount)
     {
-        const int v = juce::jlimit (1, kMaxGatePercent, raw);
+        return juce::jlimit (100, kMaxSteps * 100, stepCount * 100);
+    }
+
+    int snapGatePercent (int raw, int stepCount)
+    {
+        const int ceiling = maxGatePercent (stepCount);
+        const int v = juce::jlimit (1, ceiling, raw);
         if (v <= 100)
             return v;
         const int steps = (v + 99) / 100;   // round UP to the next whole step
-        return juce::jmin (kMaxGatePercent, steps * 100);
+        return juce::jmin (ceiling, steps * 100);
     }
 
     const ParamLock* findStepLock (const Step& step, const juce::String& paramId, int instance)
@@ -116,6 +122,7 @@ namespace casioxw
         juce::DynamicObject::Ptr root = new juce::DynamicObject();
         root->setProperty ("format", "casioxw-sequence");
         root->setProperty ("version", 1);
+        root->setProperty ("stepCount", seq.stepCount);
         root->setProperty ("channel", seq.channel);
         root->setProperty ("tempoBpm", seq.tempoBpm);
         root->setProperty ("stepsPerBeat", seq.stepsPerBeat);
@@ -165,6 +172,7 @@ namespace casioxw
             return std::nullopt;
 
         Sequence seq;
+        seq.stepCount    = juce::jlimit (1, kMaxSteps, (int) parsed.getProperty ("stepCount", 16));
         seq.channel      = (int) parsed.getProperty ("channel", 1);
         seq.tempoBpm     = (int) parsed.getProperty ("tempoBpm", 120);
         seq.stepsPerBeat = (int) parsed.getProperty ("stepsPerBeat", 4);
@@ -183,7 +191,7 @@ namespace casioxw
 
         if (const auto* sarr = parsed.getProperty ("steps", {}).getArray())
         {
-            const int n = juce::jmin (16, sarr->size());
+            const int n = juce::jmin (kMaxSteps, sarr->size());
             for (int i = 0; i < n; ++i)
             {
                 const auto& v = sarr->getReference (i);
@@ -212,12 +220,12 @@ namespace casioxw
 
     void shiftSteps (Sequence& seq, int delta)
     {
-        constexpr int n = 16;
-        const int d = ((delta % n) + n) % n;   // normalize to 0..15 (a left shift comes in negative)
+        const int n = juce::jlimit (1, kMaxSteps, seq.stepCount);
+        const int d = ((delta % n) + n) % n;   // normalize to 0..n-1 (a left shift comes in negative)
         if (d == 0)
             return;
 
-        std::array<Step, n> rotated {};
+        std::array<Step, kMaxSteps> rotated = seq.steps;   // slots beyond n are untouched copies
         for (int i = 0; i < n; ++i)
             rotated[(size_t) ((i + d) % n)] = seq.steps[(size_t) i];
         seq.steps = std::move (rotated);
@@ -261,12 +269,14 @@ namespace casioxw
             return minV + rng.nextInt (juce::jmax (1, maxV - minV + 1));
         };
 
-        for (auto& step : seq.steps)
+        const int n = juce::jlimit (1, kMaxSteps, seq.stepCount);
+        for (int i = 0; i < n; ++i)
         {
+            auto& step = seq.steps[(size_t) i];
             step.enabled = rng.nextFloat() < options.trigDensity;
             step.note = allowedNotes[(size_t) rng.nextInt ((int) allowedNotes.size())];
             step.velocity = juce::jlimit (1, 127, intIn (options.velocityMin, options.velocityMax));
-            step.gatePercent = snapGatePercent (intIn (options.gateMin, options.gateMax));
+            step.gatePercent = snapGatePercent (intIn (options.gateMin, options.gateMax), seq.stepCount);
 
             step.locks.clear();
             for (const int idx : eligible)

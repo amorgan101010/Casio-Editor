@@ -86,8 +86,8 @@ TEST_CASE ("stepGateMs: gate can sustain across multiple steps, up to the full 1
     seq.steps[0].gatePercent = 200;   CHECK (casioxw::stepGateMs (seq, 0) == 250.0);   // 2 steps
     seq.steps[0].gatePercent = 1600;  CHECK (casioxw::stepGateMs (seq, 0) == 2000.0);  // all 16 steps
 
-    seq.steps[0].gatePercent = 2000;  // beyond the 16-step ceiling
-    CHECK (casioxw::stepGateMs (seq, 0) == 125.0 * casioxw::kMaxGatePercent / 100.0);  // clamped
+    seq.steps[0].gatePercent = 2000;  // beyond the 16-step ceiling (seq.stepCount's default)
+    CHECK (casioxw::stepGateMs (seq, 0) == 125.0 * casioxw::maxGatePercent (seq.stepCount) / 100.0);  // clamped
 
     // A stored value that isn't itself a legal gate (e.g. hand-edited JSON) plays out at the value
     // it will DISPLAY as (rounded up to the next whole step), never a fraction of one.
@@ -96,18 +96,31 @@ TEST_CASE ("stepGateMs: gate can sustain across multiple steps, up to the full 1
 
 TEST_CASE ("snapGatePercent: 1..100 passes through unchanged, above that only whole-step multiples", "[sequence]")
 {
-    CHECK (casioxw::snapGatePercent (1)    == 1);
-    CHECK (casioxw::snapGatePercent (50)   == 50);
-    CHECK (casioxw::snapGatePercent (100)  == 100);       // still a percent, not "1x"
+    CHECK (casioxw::snapGatePercent (1, 16)    == 1);
+    CHECK (casioxw::snapGatePercent (50, 16)   == 50);
+    CHECK (casioxw::snapGatePercent (100, 16)  == 100);       // still a percent, not "1x"
 
-    CHECK (casioxw::snapGatePercent (101)  == 200);       // just past 100% jumps straight to 2x
-    CHECK (casioxw::snapGatePercent (150)  == 200);       // rounds UP, not to the nearer neighbour
-    CHECK (casioxw::snapGatePercent (200)  == 200);       // already legal -- idempotent
-    CHECK (casioxw::snapGatePercent (201)  == 300);
-    CHECK (casioxw::snapGatePercent (1600) == 1600);      // the 16-step ceiling
+    CHECK (casioxw::snapGatePercent (101, 16)  == 200);       // just past 100% jumps straight to 2x
+    CHECK (casioxw::snapGatePercent (150, 16)  == 200);       // rounds UP, not to the nearer neighbour
+    CHECK (casioxw::snapGatePercent (200, 16)  == 200);       // already legal -- idempotent
+    CHECK (casioxw::snapGatePercent (201, 16)  == 300);
+    CHECK (casioxw::snapGatePercent (1600, 16) == 1600);      // the 16-step ceiling
 
-    CHECK (casioxw::snapGatePercent (0)    == 1);         // clamped
-    CHECK (casioxw::snapGatePercent (9999) == 1600);      // clamped
+    CHECK (casioxw::snapGatePercent (0, 16)    == 1);         // clamped
+    CHECK (casioxw::snapGatePercent (9999, 16) == 1600);      // clamped
+}
+
+TEST_CASE ("maxGatePercent/snapGatePercent scale with a configurable step count", "[sequence]")
+{
+    CHECK (casioxw::maxGatePercent (16) == 1600);
+    CHECK (casioxw::maxGatePercent (32) == 3200);
+    CHECK (casioxw::maxGatePercent (64) == 6400);
+    CHECK (casioxw::maxGatePercent (1)  == 100);            // never below one whole step
+    CHECK (casioxw::maxGatePercent (99) == 6400);           // clamped to kMaxSteps even if asked for more
+
+    CHECK (casioxw::snapGatePercent (9999, 32) == 3200);    // a 32-step pattern's own ceiling
+    CHECK (casioxw::snapGatePercent (3201, 32) == 3200);    // clamped, not rounded up past its own ceiling
+    CHECK (casioxw::snapGatePercent (1601, 32) == 1700);    // still rounds up to the next whole step
 }
 
 // ---- p-locks -------------------------------------------------------------------------------
@@ -249,8 +262,33 @@ TEST_CASE ("sequenceFromJson: missing fields fall back to defaults", "[sequence]
     CHECK (back->tempoBpm == 90);
     CHECK (back->channel == 1);        // default
     CHECK (back->stepsPerBeat == 4);   // default
+    CHECK (back->stepCount == 16);     // default -- every file predating configurable step count is 16
     CHECK (back->engineTag.isEmpty()); // default -- SequencerPanel treats "" as TrackEngine::soloSynth
     CHECK_FALSE (back->steps[0].enabled);
+}
+
+TEST_CASE ("sequenceToJson/fromJson: round-trips stepCount and steps beyond the old 16-step limit",
+           "[sequence][json]")
+{
+    casioxw::Sequence seq;
+    seq.stepCount = 32;
+    seq.steps[20].enabled = true;
+    seq.steps[20].note = 77;
+    seq.steps[63].enabled = true;   // beyond stepCount too, but still a real slot -- must round-trip
+
+    const auto json = casioxw::sequenceToJson (seq);
+    const auto back = casioxw::sequenceFromJson (json);
+    REQUIRE (back.has_value());
+    CHECK (back->stepCount == 32);
+    CHECK (back->steps[20].enabled);
+    CHECK (back->steps[20].note == 77);
+    CHECK (back->steps[63].enabled);
+}
+
+TEST_CASE ("sequenceFromJson: clamps an out-of-range stepCount into 1..kMaxSteps", "[sequence][json]")
+{
+    CHECK (casioxw::sequenceFromJson ("{\"stepCount\":0}")->stepCount == 1);
+    CHECK (casioxw::sequenceFromJson ("{\"stepCount\":999}")->stepCount == casioxw::kMaxSteps);
 }
 
 // ---- shiftSteps ----------------------------------------------------------------------------
@@ -295,6 +333,21 @@ TEST_CASE ("shiftSteps: carries the whole step (gate + locks), and full rotation
     CHECK (seq.steps[2].locks[0].value == 17);
 }
 
+TEST_CASE ("shiftSteps: only rotates the active stepCount window, leaving steps beyond it untouched",
+           "[sequence][shift]")
+{
+    casioxw::Sequence seq;
+    seq.stepCount = 8;
+    for (int i = 0; i < casioxw::kMaxSteps; ++i)
+        seq.steps[(size_t) i].note = i;   // tag every slot, including beyond stepCount
+
+    casioxw::shiftSteps (seq, 1);
+    CHECK (seq.steps[1].note == 0);    // step 0's content moved into the 8-step window
+    CHECK (seq.steps[0].note == 7);    // step 7 wrapped around WITHIN the 8-step window, not to 63
+    CHECK (seq.steps[8].note == 8);    // untouched -- beyond stepCount, never part of the rotation
+    CHECK (seq.steps[63].note == 63);  // untouched
+}
+
 // ---- randomize -----------------------------------------------------------------------------
 
 TEST_CASE ("randomize: notes/velocities/lock values stay in range", "[sequence][random]")
@@ -306,8 +359,9 @@ TEST_CASE ("randomize: notes/velocities/lock values stay in range", "[sequence][
     juce::Random rng (12345);
     casioxw::randomize (seq, rng);
 
-    for (const auto& step : seq.steps)
+    for (int i = 0; i < seq.stepCount; ++i)   // only the active window is actually randomized
     {
+        const auto& step = seq.steps[(size_t) i];
         CHECK (step.note >= 0);
         CHECK (step.note <= 127);
         CHECK (step.velocity >= 1);
@@ -321,6 +375,20 @@ TEST_CASE ("randomize: notes/velocities/lock values stay in range", "[sequence][
             CHECK (lock.paramId == "tssFLTFcoff");   // only ever locks known lockable params
         }
     }
+}
+
+TEST_CASE ("randomize: only touches the active stepCount window", "[sequence][random]")
+{
+    auto seq = seqWithCutoff (90);
+    seq.stepCount = 10;
+    for (auto& step : seq.steps)
+        step.note = 111;   // sentinel note no scale-note in randomize's default range would produce
+
+    juce::Random rng (42);
+    casioxw::randomize (seq, rng);
+
+    for (int i = 10; i < casioxw::kMaxSteps; ++i)
+        CHECK (seq.steps[(size_t) i].note == 111);   // beyond stepCount: left exactly as seeded
 }
 
 TEST_CASE ("randomize: deterministic for a given seed", "[sequence][random]")
@@ -371,8 +439,9 @@ TEST_CASE ("randomize options: notes confined to range and scale", "[sequence][r
     static const int majorDeg[] = { 0, 2, 4, 5, 7, 9, 11 };
     juce::Random rng (42);
     casioxw::randomize (seq, rng, o);
-    for (const auto& step : seq.steps)
+    for (int i = 0; i < seq.stepCount; ++i)   // only the active window is actually randomized
     {
+        const auto& step = seq.steps[(size_t) i];
         CHECK (step.note >= 60);
         CHECK (step.note <= 71);
         const int pc = ((step.note - o.rootNote) % 12 + 12) % 12;
@@ -388,10 +457,10 @@ TEST_CASE ("randomize options: zero lock density locks nothing, zero trig densit
     o.trigDensity = 0.0f;
     juce::Random rng (7);
     casioxw::randomize (seq, rng, o);
-    for (const auto& step : seq.steps)
+    for (int i = 0; i < seq.stepCount; ++i)   // only the active window is actually randomized
     {
-        CHECK (step.locks.empty());
-        CHECK (! step.enabled);
+        CHECK (seq.steps[(size_t) i].locks.empty());
+        CHECK (! seq.steps[(size_t) i].enabled);
     }
 }
 TEST_CASE ("randomize options: lockableIndices restricts which params may lock", "[sequence][random]")
@@ -405,8 +474,9 @@ TEST_CASE ("randomize options: lockableIndices restricts which params may lock",
     o.lockableIndices = { 1 };     // ...but only resonance is eligible
     juce::Random rng (9);
     casioxw::randomize (seq, rng, o);
-    for (const auto& step : seq.steps)
+    for (int i = 0; i < seq.stepCount; ++i)   // only the active window is actually randomized
     {
+        const auto& step = seq.steps[(size_t) i];
         REQUIRE (step.locks.size() == 1);
         CHECK (step.locks[0].paramId == "tssFLTFreso");
     }
