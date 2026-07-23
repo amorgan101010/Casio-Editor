@@ -99,8 +99,18 @@ namespace casioxw
     /** How long a step's note sounds, in ms: stepIntervalMs * gatePercent/100 (clamped
         1..kMaxGatePercent%). The playback engine note-offs at this point; at 100% that's exactly
         the next step boundary (legato), and above 100% it lands one or more steps later (the note
-        sustains through/over any intervening steps' own note-ons). */
+        sustains through/over any intervening steps' own note-ons). Reads the raw value through
+        snapGatePercent(), so a stored value that isn't itself a legal gate (e.g. hand-edited JSON)
+        still times out at the value it will DISPLAY as, not some in-between fraction of a step. */
     double stepGateMs (const Sequence& seq, int stepIndex);
+
+    /** Snap a raw gate value to the nearest legal one: any integer 1..100 (percent of one step,
+        freely tunable), or an exact multiple of 100 above that, up to kMaxGatePercent -- once a
+        gate sustains past its own step it can only do so in whole-step increments (2x, 3x, ... up
+        to 16x), never a fraction of a step. Values between two legal multiples round UP to the
+        next one (dragging just past 100% lands on 2x, not back on 100%); already-legal values
+        (including every 1..100) pass through unchanged, so this is idempotent. */
+    int snapGatePercent (int raw);
 
     /** The lock a step holds for a given parameter, or nullptr if that parameter is unlocked on
         that step (so it inherits the base value). */
