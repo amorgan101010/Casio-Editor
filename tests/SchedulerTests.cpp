@@ -110,6 +110,21 @@ TEST_CASE ("scheduleStep: gate 100% note-off lands exactly at the next step boun
     CHECK (off->timeMs == casioxw::stepIntervalMs (seq));   // == one full step
 }
 
+TEST_CASE ("scheduleStep: gate above 100% lands the note-off past the next step boundary", "[scheduler]")
+{
+    auto seq = makeSeq();
+    seq.steps[0].enabled = true;
+    seq.steps[0].gatePercent = 300;   // 3 steps' worth -- ties over steps 1 and 2
+
+    const auto evs = casioxw::scheduleStep (seq, 0, 0, 0.0);
+    const ScheduledEvent* off = nullptr;
+    for (const auto& e : evs)
+        if (e.type == ScheduledEvent::Type::noteOff)
+            off = &e;
+    REQUIRE (off != nullptr);
+    CHECK (off->timeMs == casioxw::stepIntervalMs (seq) * 3.0);
+}
+
 TEST_CASE ("scheduleStep: disabled step emits its changed params but no note", "[scheduler]")
 {
     auto seq = makeSeq();

@@ -445,7 +445,7 @@ namespace
         ParamPageDisplay::CellSpec note, gate, vel;
         note.rawMin = 0;   note.rawMax = 127; note.rawFormat = ParamPageDisplay::ValueFormat::Note;
         note.shortName = "NOTE"; note.lockableIndex = kPcmNoteCell;
-        gate.rawMin = 1;   gate.rawMax = 100; gate.rawFormat = ParamPageDisplay::ValueFormat::Percent;
+        gate.rawMin = 1;   gate.rawMax = casioxw::kMaxGatePercent; gate.rawFormat = ParamPageDisplay::ValueFormat::Percent;
         gate.shortName = "GATE"; gate.lockableIndex = kPcmGateCell;
         vel.rawMin  = 1;   vel.rawMax  = 127; vel.rawFormat  = ParamPageDisplay::ValueFormat::Plain;
         vel.shortName  = "VEL";  vel.lockableIndex  = kPcmVelCell;
@@ -2516,7 +2516,7 @@ void SequencerPanel::onParamEdited (int lockableIndex, int value)
             return;   // shouldn't happen (the page wouldn't be showing), but guard anyway
 
         if (lockableIndex == kPcmNoteCell)      step->note        = juce::jlimit (0, 127, value);
-        else if (lockableIndex == kPcmGateCell) step->gatePercent = juce::jlimit (1, 100, value);
+        else if (lockableIndex == kPcmGateCell) step->gatePercent = juce::jlimit (1, casioxw::kMaxGatePercent, value);
         else if (lockableIndex == kPcmVelCell)  step->velocity    = juce::jlimit (1, 127, value);
         refreshMelodicStepCellValues (displayedMelodicTarget);
         return;

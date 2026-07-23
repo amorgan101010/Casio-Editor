@@ -8,6 +8,10 @@
 
 namespace casioxw
 {
+    /** Longest a step's gate can run: 16 steps' worth (1600%) -- a note locked to full gate on every
+        step sustains across the entire sequence. */
+    constexpr int kMaxGatePercent = 1600;
+
     /** A per-step parameter-lock: "on this step, force <paramId>/<instance> to <value>", overriding
         the track's base value for that parameter. Encoded on playback via the existing SysExCodec,
         exactly like a live tone edit — a p-lock IS a tone edit scheduled to a step. */
@@ -26,7 +30,8 @@ namespace casioxw
         int note = 60;   // C4
         int velocity = 100;
         bool enabled = false;
-        int gatePercent = 90;   // note length as % of the step interval (1..100); <100 = gap before next
+        int gatePercent = 90;   // note length as % of the step interval (1..kMaxGatePercent); <100 =
+                                 // gap before next, >100 = sustains into following step(s)
         std::vector<ParamLock> locks;
     };
 
@@ -91,9 +96,10 @@ namespace casioxw
         3 -> 8th-note triplets. */
     double stepIntervalMs (const Sequence& seq);
 
-    /** How long a step's note sounds, in ms: stepIntervalMs * gatePercent/100 (clamped 1..100%).
-        The playback engine note-offs at this point within the step; the remainder is silence
-        before the next step. */
+    /** How long a step's note sounds, in ms: stepIntervalMs * gatePercent/100 (clamped
+        1..kMaxGatePercent%). The playback engine note-offs at this point; at 100% that's exactly
+        the next step boundary (legato), and above 100% it lands one or more steps later (the note
+        sustains through/over any intervening steps' own note-ons). */
     double stepGateMs (const Sequence& seq, int stepIndex);
 
     /** The lock a step holds for a given parameter, or nullptr if that parameter is unlocked on

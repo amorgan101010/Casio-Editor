@@ -78,6 +78,18 @@ TEST_CASE ("stepGateMs: note length is gatePercent of the step interval", "[sequ
     seq.steps[0].gatePercent = 0;    CHECK (casioxw::stepGateMs (seq, 0) == 1.25);  // clamped to 1%
 }
 
+TEST_CASE ("stepGateMs: gate can sustain across multiple steps, up to the full 16-step sequence", "[sequence]")
+{
+    casioxw::Sequence seq;
+    seq.tempoBpm = 120;     // 125 ms/step at 1/16
+
+    seq.steps[0].gatePercent = 200;   CHECK (casioxw::stepGateMs (seq, 0) == 250.0);   // 2 steps
+    seq.steps[0].gatePercent = 1600;  CHECK (casioxw::stepGateMs (seq, 0) == 2000.0);  // all 16 steps
+
+    seq.steps[0].gatePercent = 2000;  // beyond the 16-step ceiling
+    CHECK (casioxw::stepGateMs (seq, 0) == 125.0 * casioxw::kMaxGatePercent / 100.0);  // clamped
+}
+
 // ---- p-locks -------------------------------------------------------------------------------
 
 namespace
