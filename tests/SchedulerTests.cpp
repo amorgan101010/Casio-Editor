@@ -125,6 +125,61 @@ TEST_CASE ("scheduleStep: gate above 100% lands the note-off past the next step 
     CHECK (off->timeMs == casioxw::stepIntervalMs (seq) * 3.0);
 }
 
+TEST_CASE ("scheduleStep: a long gate is cut short by an earlier same-pitch retrig, not overrun", "[scheduler]")
+{
+    auto seq = makeSeq();
+    seq.steps[0].enabled = true;
+    seq.steps[0].note = 60;
+    seq.steps[0].gatePercent = 800;   // would otherwise sustain 8 steps -- 1000 ms
+
+    seq.steps[2].enabled = true;      // same pitch, 2 steps later -- must cut step 0's note here
+    seq.steps[2].note = 60;
+
+    const auto evs = casioxw::scheduleStep (seq, 0, 0, 0.0);
+    const ScheduledEvent* off = nullptr;
+    for (const auto& e : evs)
+        if (e.type == ScheduledEvent::Type::noteOff)
+            off = &e;
+    REQUIRE (off != nullptr);
+    CHECK (off->timeMs == 2.0 * casioxw::stepIntervalMs (seq));   // cut at step 2's onset, not step 8's
+}
+
+TEST_CASE ("scheduleStep: a long gate is untouched when the retrig ahead is a DIFFERENT pitch", "[scheduler]")
+{
+    auto seq = makeSeq();
+    seq.steps[0].enabled = true;
+    seq.steps[0].note = 60;
+    seq.steps[0].gatePercent = 300;    // 3 steps -- 375 ms
+
+    seq.steps[1].enabled = true;       // different pitch, one step later -- must NOT cut step 0
+    seq.steps[1].note = 64;
+
+    const auto evs = casioxw::scheduleStep (seq, 0, 0, 0.0);
+    const ScheduledEvent* off = nullptr;
+    for (const auto& e : evs)
+        if (e.type == ScheduledEvent::Type::noteOff)
+            off = &e;
+    REQUIRE (off != nullptr);
+    CHECK (off->timeMs == 3.0 * casioxw::stepIntervalMs (seq));
+}
+
+TEST_CASE ("scheduleStep: a note with no other same-pitch trig is capped by its own next lap", "[scheduler]")
+{
+    auto seq = makeSeq();
+    seq.steps[5].enabled = true;
+    seq.steps[5].note = 67;
+    seq.steps[5].gatePercent = casioxw::kMaxGatePercent;   // full 16 steps -- no other step shares 67
+
+    const auto evs = casioxw::scheduleStep (seq, 5, 4, 625.0);   // step 5 at 5*125ms
+    const ScheduledEvent* off = nullptr;
+    for (const auto& e : evs)
+        if (e.type == ScheduledEvent::Type::noteOff)
+            off = &e;
+    REQUIRE (off != nullptr);
+    // Cut at its own next occurrence: step 5 again, one full 16-step lap later.
+    CHECK (off->timeMs == 625.0 + 16.0 * casioxw::stepIntervalMs (seq));
+}
+
 TEST_CASE ("scheduleStep: disabled step emits its changed params but no note", "[scheduler]")
 {
     auto seq = makeSeq();

@@ -47,7 +47,14 @@ namespace casioxw
              that real step; two negative sentinels cover the first step fed at play-start (see
              kPrevStepFresh / kPrevStepBaseline below).
           2. `noteOn` at `stepStartMs` — only if the step is enabled.
-          3. `noteOff` at `stepStartMs + stepGateMs(seq, stepIndex)` — only if the step is enabled.
+          3. `noteOff` at `stepStartMs + min(stepGateMs(seq, stepIndex), cut)` — only if the step is
+             enabled, where `cut` is the time until this step's own note (same pitch) next triggers
+             again, wrapping the loop if needed. At gate<=100% `cut` is never the tighter bound (the
+             next same-pitch trig, if any, is never closer than this note-off's own step boundary),
+             so this only matters above 100%: a long gate sustains over rest/other-pitch steps but
+             gets cut at the next trig of the SAME pitch, because MIDI note-off is pitch-scoped, not
+             voice-scoped -- two overlapping note-ons/offs for one pitch is an ambiguity on ANY
+             receiver, not a per-synth quirk to special-case around (bug-332).
 
         A disabled (rest) step still contributes its changed param events (a p-lock on a rest is
         valid), just no note. */
