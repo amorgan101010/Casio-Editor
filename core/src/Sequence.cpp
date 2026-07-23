@@ -21,8 +21,17 @@ namespace casioxw
 
     double stepGateMs (const Sequence& seq, int stepIndex)
     {
-        const int pct = juce::jlimit (1, 100, seq.steps[(size_t) stepIndex].gatePercent);
+        const int pct = snapGatePercent (seq.steps[(size_t) stepIndex].gatePercent);
         return stepIntervalMs (seq) * (double) pct / 100.0;
+    }
+
+    int snapGatePercent (int raw)
+    {
+        const int v = juce::jlimit (1, kMaxGatePercent, raw);
+        if (v <= 100)
+            return v;
+        const int steps = (v + 99) / 100;   // round UP to the next whole step
+        return juce::jmin (kMaxGatePercent, steps * 100);
     }
 
     const ParamLock* findStepLock (const Step& step, const juce::String& paramId, int instance)
@@ -257,7 +266,7 @@ namespace casioxw
             step.enabled = rng.nextFloat() < options.trigDensity;
             step.note = allowedNotes[(size_t) rng.nextInt ((int) allowedNotes.size())];
             step.velocity = juce::jlimit (1, 127, intIn (options.velocityMin, options.velocityMax));
-            step.gatePercent = juce::jlimit (1, 100, intIn (options.gateMin, options.gateMax));
+            step.gatePercent = snapGatePercent (intIn (options.gateMin, options.gateMax));
 
             step.locks.clear();
             for (const int idx : eligible)

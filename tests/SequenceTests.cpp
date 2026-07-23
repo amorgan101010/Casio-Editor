@@ -78,6 +78,38 @@ TEST_CASE ("stepGateMs: note length is gatePercent of the step interval", "[sequ
     seq.steps[0].gatePercent = 0;    CHECK (casioxw::stepGateMs (seq, 0) == 1.25);  // clamped to 1%
 }
 
+TEST_CASE ("stepGateMs: gate can sustain across multiple steps, up to the full 16-step sequence", "[sequence]")
+{
+    casioxw::Sequence seq;
+    seq.tempoBpm = 120;     // 125 ms/step at 1/16
+
+    seq.steps[0].gatePercent = 200;   CHECK (casioxw::stepGateMs (seq, 0) == 250.0);   // 2 steps
+    seq.steps[0].gatePercent = 1600;  CHECK (casioxw::stepGateMs (seq, 0) == 2000.0);  // all 16 steps
+
+    seq.steps[0].gatePercent = 2000;  // beyond the 16-step ceiling
+    CHECK (casioxw::stepGateMs (seq, 0) == 125.0 * casioxw::kMaxGatePercent / 100.0);  // clamped
+
+    // A stored value that isn't itself a legal gate (e.g. hand-edited JSON) plays out at the value
+    // it will DISPLAY as (rounded up to the next whole step), never a fraction of one.
+    seq.steps[0].gatePercent = 150;   CHECK (casioxw::stepGateMs (seq, 0) == 250.0);   // rounds up to 2x
+}
+
+TEST_CASE ("snapGatePercent: 1..100 passes through unchanged, above that only whole-step multiples", "[sequence]")
+{
+    CHECK (casioxw::snapGatePercent (1)    == 1);
+    CHECK (casioxw::snapGatePercent (50)   == 50);
+    CHECK (casioxw::snapGatePercent (100)  == 100);       // still a percent, not "1x"
+
+    CHECK (casioxw::snapGatePercent (101)  == 200);       // just past 100% jumps straight to 2x
+    CHECK (casioxw::snapGatePercent (150)  == 200);       // rounds UP, not to the nearer neighbour
+    CHECK (casioxw::snapGatePercent (200)  == 200);       // already legal -- idempotent
+    CHECK (casioxw::snapGatePercent (201)  == 300);
+    CHECK (casioxw::snapGatePercent (1600) == 1600);      // the 16-step ceiling
+
+    CHECK (casioxw::snapGatePercent (0)    == 1);         // clamped
+    CHECK (casioxw::snapGatePercent (9999) == 1600);      // clamped
+}
+
 // ---- p-locks -------------------------------------------------------------------------------
 
 namespace

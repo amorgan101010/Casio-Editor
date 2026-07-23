@@ -2,6 +2,7 @@
 
 #include "EditorLookAndFeel.h"
 #include "casioxw/NoteNames.h"
+#include "casioxw/Sequence.h"
 
 namespace
 {
@@ -11,6 +12,37 @@ namespace
     constexpr int kHeaderHeight  = 22;
     constexpr int kGridCols      = 4;
     constexpr int kGridRows      = 2;
+
+    // The GATE knob's drag sweep: half for the continuous 1..100% zone, half for the 15 whole-step
+    // multiples (2x..16x) above it -- a plain linear 1..1600 range would squeeze the common
+    // 1..100% zone into ~6% of the sweep (100 of 1600 units), which read as "stuck near zero" for
+    // any everyday gate value. snapToLegalValue enforces the actual constraint (no landing between
+    // two multiples above 100%); the split just keeps both zones comfortable to dial in.
+    constexpr double kGateSplit = 0.5;
+
+    juce::NormalisableRange<double> makeGateRange (double rangeMin, double rangeMax)
+    {
+        return juce::NormalisableRange<double> (
+            rangeMin, rangeMax,
+            [] (double, double rangeEnd, double proportion) -> double   // convertFrom0To1
+            {
+                if (proportion <= kGateSplit)
+                    return 1.0 + (proportion / kGateSplit) * 99.0;
+                const double t = (proportion - kGateSplit) / (1.0 - kGateSplit);
+                return 200.0 + t * (rangeEnd - 200.0);
+            },
+            [] (double, double rangeEnd, double value) -> double        // convertTo0To1
+            {
+                if (value <= 100.0)
+                    return (value - 1.0) / 99.0 * kGateSplit;
+                const double t = (value - 200.0) / (rangeEnd - 200.0);
+                return kGateSplit + juce::jlimit (0.0, 1.0, t) * (1.0 - kGateSplit);
+            },
+            [] (double, double, double value) -> double                 // snapToLegalValue
+            {
+                return (double) casioxw::snapGatePercent ((int) std::llround (value));
+            });
+    }
 
     // A double-click reset here isn't "set this value" (juce::Slider::setDoubleClickReturnValue's
     // usual job) -- it's an ACTION the owner must interpret against p-lock state (clear the lock
@@ -51,7 +83,10 @@ struct ParamPageDisplay::Cell : public juce::Component
 
         knob.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         knob.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        knob.setRange ((double) rangeMin, (double) rangeMax, 1.0);
+        if (spec.info == nullptr && spec.rawFormat == ValueFormat::GateLength)
+            knob.setNormalisableRange (makeGateRange ((double) rangeMin, (double) rangeMax));
+        else
+            knob.setRange ((double) rangeMin, (double) rangeMax, 1.0);
         knob.onValueChange = [this]
         {
             repaint();
@@ -93,9 +128,10 @@ struct ParamPageDisplay::Cell : public juce::Component
         {
             switch (spec.rawFormat)
             {
-                case ValueFormat::Note:    return casioxw::midiNoteName (v);
-                case ValueFormat::Percent: return juce::String (v) + "%";
-                case ValueFormat::Plain:   default: return juce::String (v);
+                case ValueFormat::Note: return casioxw::midiNoteName (v);
+                case ValueFormat::GateLength:
+                    return v <= 100 ? juce::String (v) + "%" : juce::String (v / 100) + "x";
+                case ValueFormat::Plain: default: return juce::String (v);
             }
         }
 

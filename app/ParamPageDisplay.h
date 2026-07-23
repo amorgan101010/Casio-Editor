@@ -34,8 +34,10 @@ class ParamPageDisplay : public juce::Component
 public:
     /** How a raw (non-ParamInfo) cell's value is formatted for display. Ignored when `info` is
         set -- that path already derives formatting from the param's own metadata (unit=="note",
-        enum tables, etc). */
-    enum class ValueFormat { Plain, Note, Percent };
+        enum tables, etc). GateLength is its own thing, not a generic percent: 1..100 reads as a
+        percent, but the knob can't land in between two whole-step multiples above 100 (snapped via
+        casioxw::snapGatePercent), so those read "2x".."16x" instead. */
+    enum class ValueFormat { Plain, Note, GateLength };
 
     struct CellSpec
     {
