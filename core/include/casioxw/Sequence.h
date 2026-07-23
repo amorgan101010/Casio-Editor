@@ -8,9 +8,20 @@
 
 namespace casioxw
 {
-    /** Longest a step's gate can run: 16 steps' worth (1600%) -- a note locked to full gate on every
-        step sustains across the entire sequence. */
-    constexpr int kMaxGatePercent = 1600;
+    /** Hard capacity of a Sequence's step array -- the largest a configurable pattern can ever be.
+        `Sequence::stepCount` (1..kMaxSteps) is the actual, currently-active pattern length; slots
+        from stepCount..kMaxSteps-1 stay allocated but inert (not played, not rotated, not
+        randomized) -- same "inert rather than deleted" precedent as an unselected engine's p-locks
+        -- so shrinking stepCount never destroys previously-authored steps beyond the new length. */
+    constexpr int kMaxSteps = 64;
+
+    /** Longest a step's gate can run for a pattern of `stepCount` steps: the WHOLE pattern's worth
+        (stepCount*100%), clamped to kMaxSteps -- a note locked to full gate on every step always
+        sustains across the entire sequence, at any configured length. Replaces the old flat 1600%
+        (16 steps' worth) now that step count is configurable; every existing call site already has
+        a `Sequence` (or its stepCount) in scope, so this takes stepCount explicitly rather than
+        assuming 16. */
+    int maxGatePercent (int stepCount);
 
     /** A per-step parameter-lock: "on this step, force <paramId>/<instance> to <value>", overriding
         the track's base value for that parameter. Encoded on playback via the existing SysExCodec,
@@ -22,16 +33,17 @@ namespace casioxw
         int value = 0;
     };
 
-    /** One step of a 16-step note sequence. Disabled == a rest. `locks` holds any per-step
-        parameter overrides (empty on a plain note step). No tie / microtiming / trig conditions —
-        flat MVP scope (see SEQUENCER_HANDOFF.md), not the full roadmap's Track/Pattern model. */
+    /** One step of a note sequence (up to kMaxSteps long). Disabled == a rest. `locks` holds any
+        per-step parameter overrides (empty on a plain note step). No tie / microtiming / trig
+        conditions — flat MVP scope (see SEQUENCER_HANDOFF.md), not the full roadmap's Track/Pattern
+        model. */
     struct Step
     {
         int note = 60;   // C4
         int velocity = 100;
         bool enabled = false;
-        int gatePercent = 90;   // note length as % of the step interval (1..kMaxGatePercent); <100 =
-                                 // gap before next, >100 = sustains into following step(s)
+        int gatePercent = 90;   // note length as % of the step interval (1..maxGatePercent(stepCount));
+                                 // <100 = gap before next, >100 = sustains into following step(s)
         std::vector<ParamLock> locks;
     };
 
@@ -48,11 +60,18 @@ namespace casioxw
         int maxValue = 127;
     };
 
-    /** A single-track, single-channel, 16-step note sequence with per-step parameter locks.
-        In-memory only — no JSON persistence in the MVP. */
+    /** A single-track, single-channel note sequence with per-step parameter locks. `steps` is
+        always allocated at kMaxSteps capacity; `stepCount` (1..kMaxSteps) is the actual pattern
+        length everything else (playback, JSON, shiftSteps, randomize) operates over — slots at or
+        beyond it are simply inert, never played/rotated/randomized (see kMaxSteps's doc comment).
+        stepCount is set the SAME on every Sequence-backed track/voice in a SequencerPanel (one
+        global control, not a per-track setting) but lives here, per-Sequence, so every pure
+        function below that already takes a Sequence has everything it needs without a second
+        parameter threaded through. */
     struct Sequence
     {
-        std::array<Step, 16> steps {};
+        std::array<Step, kMaxSteps> steps {};
+        int stepCount = 16;   // 1..kMaxSteps
         int channel = 1;     // MIDI channel, 1-16
         int tempoBpm = 120;
         int stepsPerBeat = 4;   // rate/time-scale: 4 = 16th notes, 2 = 8ths, 8 = 32nds, 3 = 8th triplets
@@ -97,20 +116,22 @@ namespace casioxw
     double stepIntervalMs (const Sequence& seq);
 
     /** How long a step's note sounds, in ms: stepIntervalMs * gatePercent/100 (clamped
-        1..kMaxGatePercent%). The playback engine note-offs at this point; at 100% that's exactly
-        the next step boundary (legato), and above 100% it lands one or more steps later (the note
-        sustains through/over any intervening steps' own note-ons). Reads the raw value through
-        snapGatePercent(), so a stored value that isn't itself a legal gate (e.g. hand-edited JSON)
+        1..maxGatePercent(seq.stepCount)%). The playback engine note-offs at this point; at 100%
+        that's exactly the next step boundary (legato), and above 100% it lands one or more steps
+        later (the note sustains through/over any intervening steps' own note-ons). Reads the raw
+        value through snapGatePercent(), so a stored value that isn't itself a legal gate (e.g.
+        hand-edited JSON, or one left over from a longer stepCount that has since been shrunk)
         still times out at the value it will DISPLAY as, not some in-between fraction of a step. */
     double stepGateMs (const Sequence& seq, int stepIndex);
 
-    /** Snap a raw gate value to the nearest legal one: any integer 1..100 (percent of one step,
-        freely tunable), or an exact multiple of 100 above that, up to kMaxGatePercent -- once a
-        gate sustains past its own step it can only do so in whole-step increments (2x, 3x, ... up
-        to 16x), never a fraction of a step. Values between two legal multiples round UP to the
-        next one (dragging just past 100% lands on 2x, not back on 100%); already-legal values
-        (including every 1..100) pass through unchanged, so this is idempotent. */
-    int snapGatePercent (int raw);
+    /** Snap a raw gate value to the nearest legal one for a pattern of `stepCount` steps: any
+        integer 1..100 (percent of one step, freely tunable), or an exact multiple of 100 above
+        that, up to maxGatePercent(stepCount) -- once a gate sustains past its own step it can only
+        do so in whole-step increments (2x, 3x, ... up to stepCount x), never a fraction of a step.
+        Values between two legal multiples round UP to the next one (dragging just past 100% lands
+        on 2x, not back on 100%); already-legal values (including every 1..100) pass through
+        unchanged, so this is idempotent. */
+    int snapGatePercent (int raw, int stepCount);
 
     /** The lock a step holds for a given parameter, or nullptr if that parameter is unlocked on
         that step (so it inherits the base value). */
@@ -140,19 +161,23 @@ namespace casioxw
     /** Remove every lock on a step. */
     void clearStepLocks (Sequence& seq, int stepIndex);
 
-    /** Serialize a sequence to a JSON string: every step (note/velocity/enabled/gatePercent/locks),
-        channel/tempo/rate, and each lockable param's base value. Round-trips with sequenceFromJson().
-        (min/max are metadata re-seeded from the param model on load, so they aren't stored.) */
+    /** Serialize a sequence to a JSON string: stepCount, every step slot up to kMaxSteps (note/
+        velocity/enabled/gatePercent/locks), channel/tempo/rate, and each lockable param's base
+        value. Round-trips with sequenceFromJson(). (min/max are metadata re-seeded from the param
+        model on load, so they aren't stored.) */
     juce::String sequenceToJson (const Sequence& seq);
 
     /** Parse a sequence from a sequenceToJson() string. std::nullopt if the text isn't a valid
-        sequence object; missing fields fall back to defaults and at most 16 steps are read, so a
-        slightly-off or future-versioned file degrades rather than crashes. */
+        sequence object; missing fields fall back to defaults (stepCount defaults to 16 -- every
+        file predating configurable step count is exactly a 16-step file) and at most kMaxSteps
+        step slots are read, so a slightly-off or future-versioned file degrades rather than
+        crashes. */
     std::optional<Sequence> sequenceFromJson (const juce::String& text);
 
-    /** Rotate all 16 steps (note/gate/velocity/enable/locks move together) by `delta` positions,
-        wrapping around: delta>0 shifts later/right (step i -> i+delta), delta<0 earlier/left. Lets
-        a pattern be re-anchored to a different starting step without re-authoring it. */
+    /** Rotate the active `seq.stepCount` steps (note/gate/velocity/enable/locks move together) by
+        `delta` positions, wrapping within that window: delta>0 shifts later/right (step i ->
+        i+delta), delta<0 earlier/left. Steps at/beyond stepCount are left untouched. Lets a pattern
+        be re-anchored to a different starting step without re-authoring it. */
     void shiftSteps (Sequence& seq, int delta);
 
     /** Tuning for randomize() — trig density, note range/scale/root, lock density, and which

@@ -169,7 +169,7 @@ TEST_CASE ("scheduleStep: a note with no other trig at all is capped by its own 
     auto seq = makeSeq();
     seq.steps[5].enabled = true;
     seq.steps[5].note = 67;
-    seq.steps[5].gatePercent = casioxw::kMaxGatePercent;   // full 16 steps -- no other step is enabled
+    seq.steps[5].gatePercent = casioxw::maxGatePercent (seq.stepCount);   // full 16 steps -- no other step is enabled
 
     const auto evs = casioxw::scheduleStep (seq, 5, 4, 625.0);   // step 5 at 5*125ms
     const ScheduledEvent* off = nullptr;
@@ -179,6 +179,28 @@ TEST_CASE ("scheduleStep: a note with no other trig at all is capped by its own 
     REQUIRE (off != nullptr);
     // Cut at its own next occurrence: step 5 again, one full 16-step lap later.
     CHECK (off->timeMs == 625.0 + 16.0 * casioxw::stepIntervalMs (seq));
+}
+
+TEST_CASE ("scheduleStep: the next-trig search honours stepCount, not the full 64-slot array",
+           "[scheduler]")
+{
+    auto seq = makeSeq();
+    seq.stepCount = 8;
+    seq.steps[0].enabled = true;
+    seq.steps[0].note = 60;
+    seq.steps[0].gatePercent = casioxw::maxGatePercent (seq.stepCount);   // full 8-step pattern
+    // A trig sitting outside the active window must NOT be treated as "the next trig" -- it should
+    // never shorten this note; the cut should wrap at step 8 (the active window's own length), not
+    // find step 20 first just because it's an earlier array index than a second lap of 8.
+    seq.steps[20].enabled = true;
+
+    const auto evs = casioxw::scheduleStep (seq, 0, -1, 0.0);
+    const ScheduledEvent* off = nullptr;
+    for (const auto& e : evs)
+        if (e.type == ScheduledEvent::Type::noteOff)
+            off = &e;
+    REQUIRE (off != nullptr);
+    CHECK (off->timeMs == 8.0 * casioxw::stepIntervalMs (seq));   // one full 8-step lap, not to step 20
 }
 
 TEST_CASE ("scheduleStep: poly voices never cut each other -- each is its own Sequence", "[scheduler]")
@@ -191,7 +213,7 @@ TEST_CASE ("scheduleStep: poly voices never cut each other -- each is its own Se
     auto voiceA = makeSeq();
     voiceA.steps[0].enabled = true;
     voiceA.steps[0].note = 60;
-    voiceA.steps[0].gatePercent = casioxw::kMaxGatePercent;   // full 16 steps
+    voiceA.steps[0].gatePercent = casioxw::maxGatePercent (voiceA.stepCount);   // full 16 steps
 
     auto voiceB = makeSeq();
     voiceB.steps[1].enabled = true;    // fires one step after voiceA's onset

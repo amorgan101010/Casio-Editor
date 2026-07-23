@@ -12,12 +12,14 @@ namespace casioxw
         // (SequencerPanel's synthExtraVoices / PcmTrackControl::extraVoices), so this can never see
         // -- and therefore never cut across -- another voice's steps; polyphony between voices on
         // the same part is preserved by construction, not by a check in here. Always resolves
-        // within seq.steps.size() steps -- worst case, a line with only ONE trig in the whole
+        // within seq.stepCount steps -- worst case, a line with only ONE trig in the whole
         // pattern still "retriggers" itself at the top of the next lap -- so a note is never left
-        // with no eventual cut point.
+        // with no eventual cut point. Uses stepCount, NOT seq.steps.size() (always kMaxSteps=64
+        // now that step count is configurable) -- steps beyond stepCount are inert and must never
+        // be wrapped into this search.
         int stepsUntilNextTrig (const Sequence& seq, int stepIndex)
         {
-            const int n = (int) seq.steps.size();
+            const int n = juce::jlimit (1, (int) seq.steps.size(), seq.stepCount);
             for (int delta = 1; delta <= n; ++delta)
                 if (seq.steps[(size_t) ((stepIndex + delta) % n)].enabled)
                     return delta;
