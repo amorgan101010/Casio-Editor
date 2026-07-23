@@ -144,15 +144,15 @@ TEST_CASE ("scheduleStep: a long gate is cut short by an earlier same-pitch retr
     CHECK (off->timeMs == 2.0 * casioxw::stepIntervalMs (seq));   // cut at step 2's onset, not step 8's
 }
 
-TEST_CASE ("scheduleStep: a long gate is untouched when the retrig ahead is a DIFFERENT pitch", "[scheduler]")
+TEST_CASE ("scheduleStep: a long gate is ALSO cut short by a DIFFERENT-pitch retrig -- one line, one voice", "[scheduler]")
 {
     auto seq = makeSeq();
     seq.steps[0].enabled = true;
     seq.steps[0].note = 60;
-    seq.steps[0].gatePercent = 300;    // 3 steps -- 375 ms
+    seq.steps[0].gatePercent = 300;    // would otherwise sustain 3 steps -- 375 ms
 
-    seq.steps[1].enabled = true;       // different pitch, one step later -- must NOT cut step 0
-    seq.steps[1].note = 64;
+    seq.steps[1].enabled = true;       // different pitch, one step later -- still cuts step 0:
+    seq.steps[1].note = 64;            // a track/voice is monophonic, so ANY trig supersedes it.
 
     const auto evs = casioxw::scheduleStep (seq, 0, 0, 0.0);
     const ScheduledEvent* off = nullptr;
@@ -160,15 +160,16 @@ TEST_CASE ("scheduleStep: a long gate is untouched when the retrig ahead is a DI
         if (e.type == ScheduledEvent::Type::noteOff)
             off = &e;
     REQUIRE (off != nullptr);
-    CHECK (off->timeMs == 3.0 * casioxw::stepIntervalMs (seq));
+    CHECK (off->timeMs == casioxw::stepIntervalMs (seq));         // cut at step 1's onset, not step 3's
+    CHECK (off->note   == 60);                                    // the note-off is still for step 0's OWN pitch
 }
 
-TEST_CASE ("scheduleStep: a note with no other same-pitch trig is capped by its own next lap", "[scheduler]")
+TEST_CASE ("scheduleStep: a note with no other trig at all is capped by its own next lap", "[scheduler]")
 {
     auto seq = makeSeq();
     seq.steps[5].enabled = true;
     seq.steps[5].note = 67;
-    seq.steps[5].gatePercent = casioxw::kMaxGatePercent;   // full 16 steps -- no other step shares 67
+    seq.steps[5].gatePercent = casioxw::kMaxGatePercent;   // full 16 steps -- no other step is enabled
 
     const auto evs = casioxw::scheduleStep (seq, 5, 4, 625.0);   // step 5 at 5*125ms
     const ScheduledEvent* off = nullptr;
@@ -178,6 +179,31 @@ TEST_CASE ("scheduleStep: a note with no other same-pitch trig is capped by its 
     REQUIRE (off != nullptr);
     // Cut at its own next occurrence: step 5 again, one full 16-step lap later.
     CHECK (off->timeMs == 625.0 + 16.0 * casioxw::stepIntervalMs (seq));
+}
+
+TEST_CASE ("scheduleStep: poly voices never cut each other -- each is its own Sequence", "[scheduler]")
+{
+    // A poly "sub-track" is modelled as an entirely separate casioxw::Sequence (SequencerPanel's
+    // synthExtraVoices / PcmTrackControl::extraVoices), scheduled via its own scheduleStep() call.
+    // There is no shared state between them at this layer, so voice B's steps existing at all can't
+    // shorten voice A's gate -- this test exists to make that isolation explicit and regression-
+    // proof, not just an emergent property of "we happened to pass a different seq".
+    auto voiceA = makeSeq();
+    voiceA.steps[0].enabled = true;
+    voiceA.steps[0].note = 60;
+    voiceA.steps[0].gatePercent = casioxw::kMaxGatePercent;   // full 16 steps
+
+    auto voiceB = makeSeq();
+    voiceB.steps[1].enabled = true;    // fires one step after voiceA's onset
+    voiceB.steps[1].note = 60;         // even the SAME pitch as voiceA -- still a different Sequence
+
+    const auto evs = casioxw::scheduleStep (voiceA, 0, 0, 0.0);
+    const ScheduledEvent* off = nullptr;
+    for (const auto& e : evs)
+        if (e.type == ScheduledEvent::Type::noteOff)
+            off = &e;
+    REQUIRE (off != nullptr);
+    CHECK (off->timeMs == 16.0 * casioxw::stepIntervalMs (voiceA));   // full 16 steps, untouched
 }
 
 TEST_CASE ("scheduleStep: disabled step emits its changed params but no note", "[scheduler]")
