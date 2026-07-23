@@ -80,6 +80,16 @@ namespace
     constexpr int kPcmNoteCell = -1;
     constexpr int kPcmGateCell = -2;
     constexpr int kPcmVelCell  = -3;
+    // A focused drum lane's base NOTE/VEL raw cells (no GATE -- drums have no gate concept).
+    constexpr int kDrumNoteCell = -4;
+    constexpr int kDrumVelCell  = -5;
+
+    // displayedMelodicTarget encodings for focus-driven "Base" pages (no step selected anywhere,
+    // but a drum/PCM lane is the focused track -- see SequencerPanel::refreshParamDisplayPages()).
+    // 200+drumIndex (0-4) and 300+pcmIndex (0-3): both comfortably clear of the highest step-
+    // selection encoding in use (100+voice, max 103).
+    constexpr int kDrumBaseTargetBase = 200;
+    constexpr int kPcmBaseTargetBase  = 300;
 
     // The p-lockable parameter set, organised into ParamPageDisplay pages (Digitakt-style: one
     // page of 8 cells on screen at a time). Base defaults are musical/neutral — the sequencer
@@ -441,6 +451,40 @@ namespace
         vel.shortName  = "VEL";  vel.lockableIndex  = kPcmVelCell;
         return { name, { note, gate, vel } };
     }
+
+    // A focused drum lane's base page: NOTE + VEL only (raw cells, kDrumNoteCell/kDrumVelCell) --
+    // no GATE (drums have no gate concept) and no NOTE/GATE/VEL-per-step editor (a drum step is
+    // just a trigger on/off; NOTE and VEL here are the lane's whole-pattern base values, already
+    // visible in the row's own note/velocity sliders -- this page just mirrors them for the
+    // focused-track LCD display, per the owner's "one consistent rule for every track type" call).
+    ParamPageDisplay::Page buildDrumBasePage (const juce::String& name)
+    {
+        ParamPageDisplay::CellSpec note, vel;
+        note.rawMin = 0; note.rawMax = 127; note.rawFormat = ParamPageDisplay::ValueFormat::Note;
+        note.shortName = "NOTE"; note.lockableIndex = kDrumNoteCell;
+        vel.rawMin  = 1; vel.rawMax  = 127; vel.rawFormat  = ParamPageDisplay::ValueFormat::Plain;
+        vel.shortName  = "VEL";  vel.lockableIndex  = kDrumVelCell;
+        return { name, { note, vel } };
+    }
+
+    // The solo lane's gutter label (synthLabel) needs a name as terse as "Drum 1"/"Chords" to
+    // render at the SAME un-shrunk font size those labels do -- juce::Label's default minimum-
+    // horizontal-scale silently shrinks text that doesn't fit its (narrow, kLaneLabelWidth) box,
+    // and "Solo Synth"/"Hex Layer"/"Drawbar Organ" (the resolveEngineLockableSet() displayName
+    // strings, all-caps + much longer) don't fit -- which made this ONE label look like it was in
+    // a visibly smaller/different font (owner-flagged live). Deliberately a separate short form
+    // from EngineLockableSet::displayName (which stays the full name for its other use), not a
+    // truncation of it.
+    juce::String shortEngineLabel (TrackEngine engine)
+    {
+        switch (engine)
+        {
+            case TrackEngine::hexLayer:     return "Hex Layer";
+            case TrackEngine::drawbarOrgan: return "Organ";
+            case TrackEngine::soloSynth:    break;
+        }
+        return "Synth";
+    }
 }
 
 //==============================================================================
@@ -730,6 +774,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
             b.setToggleState (false, juce::dontSendNotification);
             b.onClick = [this, v, step]
             {
+                setFocusedTrack (FocusedTrackKind::soloSynth, -1);
                 if (editButton.getToggleState())
                 {
                     const bool wasThisCell = (synthPolyStep == (int) step && synthSelectedVoice == (int) v + 1);
@@ -771,6 +816,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         sc->select.setStepIndex (i);
         sc->select.onClick = [this, i]
         {
+            setFocusedTrack (FocusedTrackKind::soloSynth, -1);
             if (editButton.getToggleState())
                 selectStep (selectedStep == i ? -1 : i);
             else
@@ -900,23 +946,38 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
     clearAllButton.onClick = [this] { clearAllSteps(); };
     addAndMakeVisible (clearAllButton);
 
-    shiftLeftButton.onClick  = [this] { casioxw::shiftSteps (sequence, -1); refreshParamControls(); refreshStepButtons(); };
-    shiftRightButton.onClick = [this] { casioxw::shiftSteps (sequence,  1); refreshParamControls(); refreshStepButtons(); };
+    shiftLeftButton.onClick  = [this] { shiftFocusedTrack (-1); };
+    shiftRightButton.onClick = [this] { shiftFocusedTrack (1); };
     addAndMakeVisible (shiftLeftButton);
     addAndMakeVisible (shiftRightButton);
+
+    // Clicking the solo lane's own label focuses it -- the drum/PCM equivalent of each row's
+    // trackLabel. synthLabel already tracks the current engine's display name ("SOLO SYNTH"/
+    // "HEX LAYER"/"DRAWBAR ORGAN", set in applyEngine()) and is repositioned in resized() to sit
+    // in the same lane-label-gutter column drum/PCM rows use, instead of the top header. mouseDown()
+    // below routes on eventComponent identity.
+    synthLabel.addMouseListener (this, false);
 
     statusLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
     statusLabel.setFont (EditorFonts::mono (11.0f));
     addAndMakeVisible (statusLabel);
 
     // ---- drum-track controls (5 lanes, each with channel + note + 16 step on/off + velocity) ---
-    for (auto* l : { &drumTracksLabel, &pcmTracksLabel, &synthLabel })
+    for (auto* l : { &drumTracksLabel, &pcmTracksLabel })
     {
         l->setColour (juce::Label::textColourId, EditorColours::textHeader);
         l->setJustificationType (juce::Justification::centredLeft);
         l->setFont (EditorFonts::header (12.0f));
         addAndMakeVisible (*l);
     }
+
+    // synthLabel is styled like a DrumTrackControl/PcmTrackControl row's trackLabel (textMuted,
+    // smaller) now that it lives in that same lane-label-gutter column, not like the "DRUM TRACKS"/
+    // "PCM TRACKS" section-title styling above -- see its header doc comment.
+    synthLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
+    synthLabel.setJustificationType (juce::Justification::centredLeft);
+    synthLabel.setFont (EditorFonts::header (11.0f));
+    addAndMakeVisible (synthLabel);
 
     const int noteMin = 0;
     const int noteMax = 127;
@@ -931,6 +992,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         row->trackLabel.setJustificationType (juce::Justification::centredLeft);
         row->trackLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
         row->trackLabel.setFont (EditorFonts::header (11.0f));
+        row->trackLabel.addMouseListener (this, false);   // click focuses this lane -- mouseDown() below
         addAndMakeVisible (row->trackLabel);
 
         row->mute.setClickingTogglesState (true);
@@ -977,8 +1039,9 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
             b.setStepIndex ((int) step);
             b.setClickingTogglesState (false);
             b.setToggleState (false, juce::dontSendNotification);
-            b.onClick = [this, rowPtr, step]
+            b.onClick = [this, rowPtr, i, step]
             {
+                setFocusedTrack (FocusedTrackKind::drum, (int) i);
                 if (editButton.getToggleState())
                 {
                     rowPtr->selectedStep = (rowPtr->selectedStep == (int) step ? -1 : (int) step);
@@ -1026,6 +1089,7 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
         row->trackLabel.setJustificationType (juce::Justification::centredLeft);
         row->trackLabel.setColour (juce::Label::textColourId, EditorColours::textMuted);
         row->trackLabel.setFont (EditorFonts::header (11.0f));
+        row->trackLabel.addMouseListener (this, false);   // click focuses this lane -- mouseDown() below
         addAndMakeVisible (row->trackLabel);
 
         row->mute.setClickingTogglesState (true);
@@ -1093,8 +1157,9 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
                     b.setStepIndex ((int) step);
                     b.setClickingTogglesState (false);
                     b.setToggleState (false, juce::dontSendNotification);
-                    b.onClick = [this, rowPtr, v, step]
+                    b.onClick = [this, rowPtr, i, v, step]
                     {
+                        setFocusedTrack (FocusedTrackKind::pcm, (int) i);
                         if (editButton.getToggleState())
                         {
                             const bool wasThisCell = (rowPtr->selectedStep == (int) step
@@ -1133,8 +1198,9 @@ SequencerPanel::SequencerPanel (casioxw::SysExCodec& codecIn, casioxw::MidiIO& m
             b.setStepIndex ((int) step);
             b.setClickingTogglesState (false);
             b.setToggleState (false, juce::dontSendNotification);
-            b.onClick = [this, rowPtr, step]
+            b.onClick = [this, rowPtr, i, step]
             {
+                setFocusedTrack (FocusedTrackKind::pcm, (int) i);
                 if (editButton.getToggleState())
                 {
                     const bool wasThisCell = (rowPtr->selectedStep == (int) step && rowPtr->selectedVoice == 0);
@@ -1260,6 +1326,9 @@ void SequencerPanel::applyPcmStepEditPreviewState()
         row->track.steps[3] = { 43, 110, true, 70, {} };   // note/velocity/enabled/gatePercent/locks
         row->selectedStep = 3;                             // select it for editing
         row->mute.setToggleState (false, juce::dontSendNotification);
+        focusedTrackKind = FocusedTrackKind::pcm;           // a real click would set this too --
+        focusedTrackIndex = 0;                              // seeded directly since this demo pokes
+                                                             // selectedStep the same way, bypassing onClick
     }
     if (auto& row = pcmTrackControls[2])   // Solo 2 -- muted, to check the mute button renders distinctly
         row->mute.setToggleState (true, juce::dontSendNotification);
@@ -1305,6 +1374,20 @@ void SequencerPanel::applyPolyPreviewState()
     refreshStepButtons();   // also swaps the screen + computes the amber/cyan step-key dots
     updateStatusLabel();
     resized();
+}
+
+void SequencerPanel::applyFocusPreviewState()
+{
+    editButton.setToggleState (true, juce::dontSendNotification);
+    stepModeButton.setToggleState (false, juce::dontSendNotification);
+
+    if (auto& row = drumTrackControls[1])   // Drum 2: distinctive base note/velocity to spot in the page
+    {
+        row->note.setValue (38.0, juce::dontSendNotification);
+        row->baseVelocity = 77;
+    }
+
+    setFocusedTrack (FocusedTrackKind::drum, 1);   // exercises the exact click path, not a shortcut
 }
 
 void SequencerPanel::applyArrangerPreviewState()
@@ -1461,6 +1544,28 @@ void SequencerPanel::paint (juce::Graphics& g)
         g.fillRoundedRectangle (card.toFloat(), 8.0f);
         g.setColour (EditorColours::border.withAlpha (0.3f));
         g.drawRoundedRectangle (card.toFloat().reduced (0.5f), 8.0f, 1.0f);
+    }
+
+    // Focused-track highlight: a soft wash across whichever lane the shift arrows + the LCD's
+    // "Base" display currently act on (see FocusedTrackKind's doc comment). Amber-toned
+    // (EditorColours::selected), not the playhead's cyan, so playback position and edit focus
+    // never share a colour -- the same rule the original playhead-vs-selected comment below states.
+    juce::Rectangle<int> focusRow;
+    if (focusedTrackKind == FocusedTrackKind::drum && focusedTrackIndex >= 0
+        && drumTrackControls[(size_t) focusedTrackIndex] != nullptr)
+        focusRow = drumTrackControls[(size_t) focusedTrackIndex]->rowBounds;
+    else if (focusedTrackKind == FocusedTrackKind::pcm && focusedTrackIndex >= 0
+             && pcmTrackControls[(size_t) focusedTrackIndex] != nullptr)
+        focusRow = pcmTrackControls[(size_t) focusedTrackIndex]->rowBounds;
+    else if (focusedTrackKind == FocusedTrackKind::soloSynth)
+        focusRow = synthFocusBounds;
+
+    if (! focusRow.isEmpty())
+    {
+        g.setColour (EditorColours::selected.withAlpha (0.14f));
+        g.fillRoundedRectangle (focusRow.toFloat(), 6.0f);
+        g.setColour (EditorColours::selected.withAlpha (0.55f));
+        g.drawRoundedRectangle (focusRow.toFloat().reduced (0.5f), 6.0f, 1.5f);
     }
 
     if (playheadStep < 0 || playheadLaneBounds.isEmpty())
@@ -2263,6 +2368,112 @@ void SequencerPanel::selectStep (int step)
     updateStatusLabel();
 }
 
+void SequencerPanel::setFocusedTrack (FocusedTrackKind kind, int index)
+{
+    focusedTrackKind = kind;
+    focusedTrackIndex = index;
+    refreshStepButtons();   // tail-calls refreshParamDisplayPages(), keeping the LCD in sync too
+    updateStatusLabel();
+    repaint();              // the row highlight lives in paint(), not any child widget
+}
+
+void SequencerPanel::shiftDrumTrack (DrumTrackControl& row, int delta)
+{
+    // Mirrors casioxw::shiftSteps()'s own rotation exactly (Sequence.cpp) -- a drum lane has no
+    // Sequence backing it (its pattern is the StepKeyButtons' own toggle state + velocityLocks,
+    // see DrumTrackControl's doc comment), so the rotation has to be done by hand here instead of
+    // reusing the core function, but the direction/formula must stay identical or drum shifting
+    // would feel backwards relative to every other lane's shift.
+    constexpr int n = 16;
+    const int d = ((delta % n) + n) % n;
+    if (d == 0)
+        return;
+
+    std::array<bool, n> rotatedTriggers {};
+    std::array<std::optional<int>, n> rotatedLocks {};
+    for (int i = 0; i < n; ++i)
+    {
+        rotatedTriggers[(size_t) ((i + d) % n)] = row.steps[(size_t) i].getToggleState();
+        rotatedLocks[(size_t) ((i + d) % n)]    = row.velocityLocks[(size_t) i];
+    }
+    for (int i = 0; i < n; ++i)
+        row.steps[(size_t) i].setToggleState (rotatedTriggers[(size_t) i], juce::dontSendNotification);
+    row.velocityLocks = rotatedLocks;
+}
+
+void SequencerPanel::shiftFocusedTrack (int delta)
+{
+    switch (focusedTrackKind)
+    {
+        case FocusedTrackKind::soloSynth:
+            casioxw::shiftSteps (sequence, delta);
+            if (synthPolyMode)
+                for (auto& voice : synthExtraVoices)
+                    casioxw::shiftSteps (voice.track, delta);
+            break;
+
+        case FocusedTrackKind::drum:
+            if (focusedTrackIndex >= 0 && focusedTrackIndex < (int) drumTrackControls.size()
+                && drumTrackControls[(size_t) focusedTrackIndex] != nullptr)
+                shiftDrumTrack (*drumTrackControls[(size_t) focusedTrackIndex], delta);
+            break;
+
+        case FocusedTrackKind::pcm:
+            if (focusedTrackIndex >= 0 && focusedTrackIndex < (int) pcmTrackControls.size()
+                && pcmTrackControls[(size_t) focusedTrackIndex] != nullptr)
+            {
+                auto& row = *pcmTrackControls[(size_t) focusedTrackIndex];
+                casioxw::shiftSteps (row.track, delta);
+                if (row.polyMode)
+                    for (auto& voice : row.extraVoices)
+                        casioxw::shiftSteps (voice.track, delta);
+            }
+            break;
+    }
+    refreshParamControls();
+    refreshStepButtons();
+}
+
+void SequencerPanel::mouseDown (const juce::MouseEvent& e)
+{
+    // A label click is a PURE focus change -- unlike a step click (which sets focus alongside its
+    // own selection), it has no step of its own to select. A step selection left over on some
+    // OTHER lane would otherwise still win refreshParamDisplayPages()'s priority order (it checks
+    // selections before falling back to focus), so the LCD would show that stale step instead of
+    // the newly-focused track's Base -- clear every lane's selection here so focus and the LCD
+    // never disagree. selectStep(-1) alone would break a step's own toggle-off click (that handler
+    // relies on reading its lane's still-live selectedStep to decide select-vs-deselect), which is
+    // exactly why this clear lives here and not inside setFocusedTrack() itself.
+    const auto clearAllSelections = [this]
+    {
+        selectedStep = -1;
+        clearDrumSelections();
+        clearPcmSelections();
+        clearSynthPolySelection();
+    };
+
+    if (e.eventComponent == &synthLabel)
+    {
+        clearAllSelections();
+        setFocusedTrack (FocusedTrackKind::soloSynth, -1);
+        return;
+    }
+    for (size_t i = 0; i < drumTrackControls.size(); ++i)
+        if (drumTrackControls[i] != nullptr && e.eventComponent == &drumTrackControls[i]->trackLabel)
+        {
+            clearAllSelections();
+            setFocusedTrack (FocusedTrackKind::drum, (int) i);
+            return;
+        }
+    for (size_t i = 0; i < pcmTrackControls.size(); ++i)
+        if (pcmTrackControls[i] != nullptr && e.eventComponent == &pcmTrackControls[i]->trackLabel)
+        {
+            clearAllSelections();
+            setFocusedTrack (FocusedTrackKind::pcm, (int) i);
+            return;
+        }
+}
+
 void SequencerPanel::setPLockMode (bool pLockMode)
 {
     if (! pLockMode)
@@ -2280,6 +2491,24 @@ void SequencerPanel::setPLockMode (bool pLockMode)
 
 void SequencerPanel::onParamEdited (int lockableIndex, int value)
 {
+    if (lockableIndex == kDrumNoteCell || lockableIndex == kDrumVelCell)
+    {
+        // A focused drum lane's base NOTE/VEL cell -- writes the lane's whole-pattern base value
+        // (the same field its own always-visible note/velocity slider reads), not a per-step value.
+        const int drumIndex = displayedMelodicTarget - kDrumBaseTargetBase;
+        if (drumIndex < 0 || drumIndex >= (int) drumTrackControls.size()
+            || drumTrackControls[(size_t) drumIndex] == nullptr)
+            return;
+        auto& row = *drumTrackControls[(size_t) drumIndex];
+        if (lockableIndex == kDrumNoteCell)
+            row.note.setValue (juce::jlimit (0, 127, value), juce::dontSendNotification);
+        else
+            row.baseVelocity = juce::jlimit (1, 127, value);
+        refreshDrumBaseCellValues (drumIndex);
+        refreshStepButtons();   // keeps the row's own note/velocity sliders in sync with this edit
+        return;
+    }
+
     if (lockableIndex < 0)   // a melodic track's step NOTE/GATE/VEL cell, not a real synth param
     {
         auto* step = melodicStepForTarget (displayedMelodicTarget);
@@ -2385,9 +2614,7 @@ void SequencerPanel::applyEngine (TrackEngine newEngine)
         clearSynthPolySelection();
     }
 
-    synthLabel.setText (resolveEngineLockableSet (currentEngine, codec.model(), currentSoloSynthBlock,
-                                                   currentSoloSynthInstance, currentHexLayer).displayName,
-                         juce::dontSendNotification);
+    synthLabel.setText (shortEngineLabel (currentEngine), juce::dontSendNotification);
     engineCombo.setSelectedId ((int) currentEngine + 1, juce::dontSendNotification);
 
     rebuildSynthParamPages();   // also re-seeds continuousLockables + min/max for the new table
@@ -2588,6 +2815,16 @@ void SequencerPanel::refreshMelodicStepCellValues (int target)
     paramDisplay->setCellState (kPcmVelCell,  step->velocity, false);
 }
 
+void SequencerPanel::refreshDrumBaseCellValues (int drumIndex)
+{
+    if (drumIndex < 0 || drumIndex >= (int) drumTrackControls.size()
+        || drumTrackControls[(size_t) drumIndex] == nullptr)
+        return;
+    const auto& row = *drumTrackControls[(size_t) drumIndex];
+    paramDisplay->setCellState (kDrumNoteCell, (int) row.note.getValue(), false);
+    paramDisplay->setCellState (kDrumVelCell,  row.baseVelocity, false);
+}
+
 void SequencerPanel::refreshParamDisplayPages()
 {
     // The current melodic edit target across every possible source, encoded per
@@ -2610,19 +2847,52 @@ void SequencerPanel::refreshParamDisplayPages()
     if (target < 0 && selectedStep >= 0)
         target = 100;   // the solo lane's own primary voice
 
+    // No STEP is selected anywhere -- fall back to whichever track is FOCUSED (see
+    // FocusedTrackKind's doc comment; setFocusedTrack() is also called from every step's onClick,
+    // so an actual step selection above always matches the same lane and never disagrees with
+    // this). soloSynth leaves target at -1 (its existing Base/lockablePages behaviour, unchanged).
+    if (target < 0)
+    {
+        if (focusedTrackKind == FocusedTrackKind::drum && focusedTrackIndex >= 0
+            && drumTrackControls[(size_t) focusedTrackIndex] != nullptr)
+            target = kDrumBaseTargetBase + focusedTrackIndex;
+        else if (focusedTrackKind == FocusedTrackKind::pcm && focusedTrackIndex >= 0
+                 && pcmTrackControls[(size_t) focusedTrackIndex] != nullptr)
+            target = kPcmBaseTargetBase + focusedTrackIndex;
+    }
+
     if (target == displayedMelodicTarget)
     {
-        if (target >= 0)
+        if (target >= kPcmBaseTargetBase)
+            {}   // the blank PCM-focus placeholder page has no cells to refresh
+        else if (target >= kDrumBaseTargetBase)
+            refreshDrumBaseCellValues (target - kDrumBaseTargetBase);
+        else if (target >= 0)
             refreshMelodicStepCellValues (target);   // same target -- but the selected step may differ
         return;
     }
 
     displayedMelodicTarget = target;
 
-    if (target < 0)   // Base mode: nothing selected anywhere -- just this engine's p-lock pages
+    if (target < 0)   // Base mode: nothing selected/focused anywhere lockable -- this engine's own pages
     {
         paramDisplay->setPages (lockablePages);
         refreshParamControls();   // freshly-set cells default to range min -- populate real values
+        return;
+    }
+
+    if (target >= kPcmBaseTargetBase)   // a focused PCM lane with no step selected -- no base values
+    {
+        const int pcmIndex = target - kPcmBaseTargetBase;
+        paramDisplay->setPages ({ ParamPageDisplay::Page { kPcmTracks[(size_t) pcmIndex].label, {} } });
+        return;
+    }
+
+    if (target >= kDrumBaseTargetBase)   // a focused drum lane with no step selected -- NOTE/VEL base
+    {
+        const int drumIndex = target - kDrumBaseTargetBase;
+        paramDisplay->setPages ({ buildDrumBasePage (kDrumTracks[(size_t) drumIndex].label) });
+        refreshDrumBaseCellValues (drumIndex);
         return;
     }
 
@@ -2786,7 +3056,14 @@ void SequencerPanel::updateStatusLabel()
             }
         }
         if (! hasTarget)
-            text = "P-LOCK  BASE SOUND";
+        {
+            if (focusedTrackKind == FocusedTrackKind::drum && focusedTrackIndex >= 0)
+                text = "P-LOCK  DRUM " + juce::String (focusedTrackIndex + 1) + "  BASE";
+            else if (focusedTrackKind == FocusedTrackKind::pcm && focusedTrackIndex >= 0)
+                text = juce::String (kPcmTrackNames[(size_t) focusedTrackIndex]) + "  BASE";
+            else
+                text = "P-LOCK  BASE SOUND";
+        }
     }
     else
         text = "P-LOCK  STEP " + juce::String (selectedStep + 1).paddedLeft ('0', 2);
@@ -3190,9 +3467,14 @@ void SequencerPanel::resized()
         if (row == nullptr)
             continue;
         auto r = bounds.removeFromTop (kDrumTrackRowHeight);
+        const int rowLeft = r.getX();
         auto stepCells = r.removeFromLeft (kStepGridWidth);
         r.removeFromLeft (kSectionGap);
-        row->trackLabel.setBounds (r.removeFromLeft (kLaneLabelWidth));
+        const auto labelArea = r.removeFromLeft (kLaneLabelWidth);
+        row->trackLabel.setBounds (labelArea);
+        // Steps + label only -- NOT the mute/channel/note/velocity card to the right (owner: the
+        // focus wash spilling onto the card "looks weird", live-flagged against the solo lane).
+        row->rowBounds = juce::Rectangle<int> (rowLeft, r.getY(), labelArea.getRight() - rowLeft, r.getHeight());
         r.removeFromLeft (kSectionGap);
 
         auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
@@ -3231,9 +3513,14 @@ void SequencerPanel::resized()
         if (row == nullptr)
             continue;
         auto r = bounds.removeFromTop (kPcmTrackRowHeight);
+        const int rowLeft = r.getX();
         auto stepCells = r.removeFromLeft (kStepGridWidth);
         r.removeFromLeft (kSectionGap);
-        row->trackLabel.setBounds (r.removeFromLeft (kLaneLabelWidth));
+        const auto labelArea = r.removeFromLeft (kLaneLabelWidth);
+        row->trackLabel.setBounds (labelArea);
+        // Steps + label only -- NOT the mute/channel/poly card to the right (see the drum row's
+        // identical comment above).
+        row->rowBounds = juce::Rectangle<int> (rowLeft, r.getY(), labelArea.getRight() - rowLeft, r.getHeight());
         r.removeFromLeft (kSectionGap);
 
         auto controls = r.removeFromLeft (kCardWidth).reduced (8, 2);
@@ -3290,8 +3577,11 @@ void SequencerPanel::resized()
     bounds.removeFromTop (10);
 
     // ---- synth section ---------------------------------------------------------------------
+    // synthLabel no longer lives in this header row -- it's positioned below, in the lane-label-
+    // gutter column (same place as a DrumTrackControl/PcmTrackControl row's trackLabel). engineCombo
+    // already displays the same "Solo Synth"/"Hex Layer"/"Drawbar Organ" text on its own, so freeing
+    // this space isn't a loss of information, just a redundant label removed.
     auto synthHeader = bounds.removeFromTop (20);
-    synthLabel.setBounds (synthHeader.removeFromLeft (140));
     engineCombo.setBounds (synthHeader.removeFromLeft (140).reduced (2, 1));
     synthHeader.removeFromLeft (4);
     if (currentEngine == TrackEngine::hexLayer)
@@ -3365,10 +3655,13 @@ void SequencerPanel::resized()
                                                       : juce::Rectangle<int>();
     synthSection.removeFromLeft (kSectionGap);
 
-    // Lane label gutter: kept (unpopulated) purely so the card's left edge stays aligned with the
-    // drum/PCM cards' (same column width feeding the same cardX) -- no label text lives here now
-    // that the Pitch/Gate/Velocity knob rows are gone.
-    synthSection.removeFromLeft (kLaneLabelWidth);
+    // Lane label gutter: same column width the drum/PCM cards feed cardX from, but now actually
+    // POPULATED by synthLabel (owner: the clickable engine-name label belongs in the same place as
+    // every drum/PCM track label, not up in the header) -- aligned to trigRow's Y/height, not the
+    // whole (much taller, poly-inclusive) synthSection, so it sits at the same visual height as the
+    // step keys rather than stretching down over the poly sub-rows.
+    auto synthLabelGutter = synthSection.removeFromLeft (kLaneLabelWidth);
+    synthLabel.setBounds (synthLabelGutter.withY (trigRow.getY()).withHeight (trigRow.getHeight()));
     synthSection.removeFromLeft (kSectionGap);
 
     auto card = synthSection.removeFromLeft (kCardWidth);
@@ -3392,6 +3685,20 @@ void SequencerPanel::resized()
     paramDisplay->setBounds (cardInner);
     paramDisplay->setVisible (true);
     synthCardBounds = card;
+    // The solo lane's rowBounds counterpart (DrumTrackControl/PcmTrackControl have their own field;
+    // the solo lane has no per-row array to hold one) -- steps through the (now-relocated)
+    // synthLabel's right edge, same shape as a drum/PCM row's rowBounds (steps+label, not the
+    // card). A drum/PCM row's OWN rowBounds is its full 52px row height around a 34px button --
+    // 9px of built-in breathing room top/bottom (kDrumTrackRowHeight/kPcmTrackRowHeight vs
+    // kDrumKeyHeight) -- but trigRow's cell has NO such padding of its own (matches its button
+    // height exactly, see kSynthTrigToPolyGap's doc comment), so using trigRow's bounds bare left
+    // the wash flush against the step keys, tighter than every other lane's (owner: "too close
+    // now" after a first cut that went too far the other way and used the whole card). Pad it out
+    // by that same 9px to match, rather than introducing a third distinct row-padding constant.
+    constexpr int kSynthFocusPad = (kDrumTrackRowHeight - kDrumKeyHeight) / 2;
+    synthFocusBounds = juce::Rectangle<int> (gridX, trigRow.getY() - kSynthFocusPad,
+                                             synthLabelGutter.getRight() - gridX,
+                                             trigRow.getHeight() + 2 * kSynthFocusPad);
 
     for (int i = 0; i < 16; ++i)
     {
