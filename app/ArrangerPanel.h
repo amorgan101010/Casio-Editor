@@ -82,15 +82,20 @@ public:
         int channel = 10;
         int note = 36;
         int baseVelocity = 100;
-        std::array<bool, 16> steps {};
-        std::array<std::optional<int>, 16> velocityLocks {};
+        std::array<bool, casioxw::kMaxSteps> steps {};
+        std::array<std::optional<int>, casioxw::kMaxSteps> velocityLocks {};
     };
 
 private:
     //==========================================================================
     /** The fully-resolved, independent copy of whatever a row's referenced file(s) contain --
         reloaded fresh at every row-boundary from the row's current file references, never shared
-        with SequencerPanel's live widgets. */
+        with SequencerPanel's live widgets. stepCount is the row's own pattern length (global
+        within a SequencerPanel session, per casioxw::Sequence::stepCount's doc comment, but a
+        Song's rows load INDEPENDENT files that could in principle have been saved at different
+        step counts) -- resolved once in loadRowRuntime() from whichever loaded part actually
+        carries a stepCount (solo, else the first loaded PCM track, else the drums file's own
+        top-level stepCount), defaulting to 16 to match every file that predates this field. */
     struct RowRuntime
     {
         std::optional<casioxw::Sequence> solo;
@@ -98,6 +103,7 @@ private:
         std::array<DrumTrackData, 5> drums {};
         bool hasPcm = false;
         std::array<std::optional<casioxw::Sequence>, 4> pcm {};
+        int stepCount = 16;
     };
 
     /** The row's index-number cell doubles as its drag-to-reorder handle. A plain juce::Label

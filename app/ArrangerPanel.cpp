@@ -679,13 +679,21 @@ juce::File ArrangerPanel::resolveFile (const juce::String& relativeName) const
 namespace
 {
     // Parses a .xwdrm file's "tracks" array (SequencerPanel::serializeDrumsToJson's shape) into
-    // plain DrumTrackData, independent of any live SequencerPanel widgets.
-    bool parseDrumTracks (const juce::String& text, std::array<ArrangerPanel::DrumTrackData, 5>& out)
+    // plain DrumTrackData, independent of any live SequencerPanel widgets. stepCountOut receives
+    // the file's own top-level stepCount (default 16 -- every file predating configurable step
+    // count is exactly a 16-step file); a drums file has no per-track stepCount, only this one
+    // global value, matching casioxw::Sequence::stepCount's "one value for the whole row" model.
+    bool parseDrumTracks (const juce::String& text, std::array<ArrangerPanel::DrumTrackData, 5>& out,
+                          int& stepCountOut)
     {
         const auto parsed = juce::JSON::parse (text);
         auto* obj = parsed.getDynamicObject();
         if (obj == nullptr || obj->getProperty ("format").toString() != defaultDrumsDataFormat())
             return false;
+
+        const auto stepCountVar = obj->getProperty ("stepCount");
+        stepCountOut = stepCountVar.isVoid() ? 16
+                                             : juce::jlimit (1, casioxw::kMaxSteps, (int) stepCountVar);
 
         const auto* tracks = obj->getProperty ("tracks").getArray();
         if (tracks == nullptr)
@@ -705,13 +713,13 @@ namespace
 
             if (const auto* steps = t->getProperty ("steps").getArray())
             {
-                const int stepCount = juce::jmin (16, steps->size());
-                for (int s = 0; s < stepCount; ++s)
+                const int n2 = juce::jmin (casioxw::kMaxSteps, steps->size());
+                for (int s = 0; s < n2; ++s)
                     track.steps[(size_t) s] = (bool) steps->getReference (s);
             }
             if (const auto* locks = t->getProperty ("velocityLocks").getArray())
             {
-                const int lockCount = juce::jmin (16, locks->size());
+                const int lockCount = juce::jmin (casioxw::kMaxSteps, locks->size());
                 for (int s = 0; s < lockCount; ++s)
                 {
                     const auto& v = locks->getReference (s);
@@ -750,6 +758,7 @@ namespace
 ArrangerPanel::RowRuntime ArrangerPanel::loadRowRuntime (const casioxw::SongRow& row) const
 {
     RowRuntime runtime;
+    int drumsStepCount = 16;
 
     // A loaded set is the BASELINE, not exclusive -- soloFile/drumsFile/pcmFile below (if any are
     // also set) OVERRIDE just their one part, so a row can load a whole .xwset and still swap out
@@ -762,7 +771,7 @@ ArrangerPanel::RowRuntime ArrangerPanel::loadRowRuntime (const casioxw::SongRow&
         if (obj != nullptr && obj->getProperty ("format").toString() == defaultSetDataFormat())
         {
             runtime.solo = casioxw::sequenceFromJson (juce::JSON::toString (obj->getProperty ("solo")));
-            runtime.hasDrums = parseDrumTracks (juce::JSON::toString (obj->getProperty ("drums")), runtime.drums);
+            runtime.hasDrums = parseDrumTracks (juce::JSON::toString (obj->getProperty ("drums")), runtime.drums, drumsStepCount);
             runtime.hasPcm = parsePcmTracks (juce::JSON::toString (obj->getProperty ("pcm")), runtime.pcm);
         }
     }
@@ -770,9 +779,26 @@ ArrangerPanel::RowRuntime ArrangerPanel::loadRowRuntime (const casioxw::SongRow&
     if (row.soloFile.isNotEmpty())
         runtime.solo = casioxw::sequenceFromJson (resolveFile (row.soloFile).loadFileAsString());
     if (row.drumsFile.isNotEmpty())
-        runtime.hasDrums = parseDrumTracks (resolveFile (row.drumsFile).loadFileAsString(), runtime.drums);
+        runtime.hasDrums = parseDrumTracks (resolveFile (row.drumsFile).loadFileAsString(), runtime.drums, drumsStepCount);
     if (row.pcmFile.isNotEmpty())
         runtime.hasPcm = parsePcmTracks (resolveFile (row.pcmFile).loadFileAsString(), runtime.pcm);
+
+    // The row's one global step count (see RowRuntime's doc comment): prefer the solo track's own
+    // (the main clock every other part already mirrors tempo/rate from in SequencerPanel), else
+    // the first loaded PCM track's, else the drums file's own top-level stepCount, else the 16-step
+    // default every pre-existing file implies.
+    if (runtime.solo.has_value())
+        runtime.stepCount = runtime.solo->stepCount;
+    else
+    {
+        runtime.stepCount = drumsStepCount;
+        for (const auto& pcm : runtime.pcm)
+            if (pcm.has_value())
+            {
+                runtime.stepCount = pcm->stepCount;
+                break;
+            }
+    }
 
     return runtime;
 }
@@ -1097,10 +1123,10 @@ void ArrangerPanel::feedLookahead (double lookaheadMs)
             midiIO.scheduleBlock (buffer, transportStartMs, kScheduleSampleRate);
 
         prevStepIndex = nextStepIndex;
-        nextStepIndex = (nextStepIndex + 1) % 16;
+        nextStepIndex = (nextStepIndex + 1) % juce::jlimit (1, casioxw::kMaxSteps, currentRuntime.stepCount);
         nextStepStartMs += stepMs;
 
-        if (nextStepIndex == 0)   // this row's 16 steps just finished one full loop
+        if (nextStepIndex == 0)   // this row's stepCount steps just finished one full loop
         {
             const auto next = casioxw::advanceSongPosition (song, currentPosition);
             if (! next.has_value())
